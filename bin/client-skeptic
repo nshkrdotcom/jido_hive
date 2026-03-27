@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+exec env \
+  PARTICIPANT_ROLE=skeptic \
+  PARTICIPANT_ID=skeptic \
+  TARGET_ID=target-skeptic \
+  USER_ID=user-skeptic \
+  "$ROOT/bin/client" "$@"

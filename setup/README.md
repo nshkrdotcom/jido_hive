@@ -36,27 +36,47 @@ export JIDO_HIVE_NOTION_SUBJECT=notion-workspace
 
 ## Quick Flow
 
-Start the local stack in separate terminals:
+The fast path is three commands in three terminals:
 
 ```bash
-bin/server
+bin/live-demo-server
 bin/client-architect
 bin/client-skeptic
 ```
 
-Check that the server is up and the targets are visible:
+That is enough for a developer to get a real collaborative run. The server
+wrapper waits for both clients, creates the room, runs the slice, and prints the
+room snapshot plus publication plan.
+
+If you already have live connection ids, set these before `bin/live-demo-server`
+to auto-publish as part of the same flow:
 
 ```bash
-setup/hive doctor
+export JIDO_HIVE_GITHUB_CONNECTION=connection-github-1
+export JIDO_HIVE_GITHUB_REPO=owner/repo
+export JIDO_HIVE_NOTION_CONNECTION=connection-notion-1
+export JIDO_HIVE_NOTION_DATA_SOURCE_ID=data-source-id
+export JIDO_HIVE_NOTION_TITLE_PROPERTY=Name
+export JIDO_HIVE_AUTO_PUBLISH=1
+```
+
+## Manual Operator Flow
+
+Wait for the server and both clients:
+
+```bash
+setup/hive wait-server
+setup/hive wait-targets
 ```
 
 Create and run a room:
 
 ```bash
-setup/hive create-room room-manual-1
-setup/hive run-room room-manual-1 --turn-timeout-ms 180000
-setup/hive publication-plan room-manual-1
+setup/hive live-demo --room-id room-manual-1
 ```
+
+That command waits for the stack, creates or reuses the room, runs the
+collaboration loop, and prints the room snapshot plus publication plan.
 
 ## GitHub Install
 
@@ -143,6 +163,18 @@ Show help:
 
 ```bash
 setup/hive help
+```
+
+Wait for the server:
+
+```bash
+setup/hive wait-server
+```
+
+Wait for the default architect and skeptic targets:
+
+```bash
+setup/hive wait-targets
 ```
 
 Fetch a room snapshot:

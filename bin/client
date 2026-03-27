@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+URL="${JIDO_HIVE_URL:-ws://127.0.0.1:4000/socket/websocket}"
+WORKSPACE_ID="${JIDO_HIVE_WORKSPACE_ID:-workspace-local}"
+RELAY_TOPIC="${JIDO_HIVE_RELAY_TOPIC:-relay:$WORKSPACE_ID}"
+WORKSPACE_ROOT="${JIDO_HIVE_WORKSPACE_ROOT:-$ROOT}"
+PARTICIPANT_ROLE="${PARTICIPANT_ROLE:-architect}"
+PARTICIPANT_ID="${PARTICIPANT_ID:-$PARTICIPANT_ROLE}"
+TARGET_ID="${TARGET_ID:-target-$PARTICIPANT_ROLE}"
+USER_ID="${USER_ID:-user-$PARTICIPANT_ROLE}"
+CAPABILITY_ID="${CAPABILITY_ID:-codex.exec.session}"
+JIDO_HIVE_PROVIDER="${JIDO_HIVE_PROVIDER:-codex}"
+JIDO_HIVE_MODEL="${JIDO_HIVE_MODEL:-}"
+JIDO_HIVE_TIMEOUT_MS="${JIDO_HIVE_TIMEOUT_MS:-}"
+JIDO_HIVE_CLI_PATH="${JIDO_HIVE_CLI_PATH:-}"
+
+cd "$ROOT/jido_hive_client"
+
+exec mix run --no-halt -e 'JidoHiveClient.CLI.main(System.argv())' -- \
+  --url "$URL" \
+  --relay-topic "$RELAY_TOPIC" \
+  --workspace-id "$WORKSPACE_ID" \
+  --user-id "$USER_ID" \
+  --participant-id "$PARTICIPANT_ID" \
+  --participant-role "$PARTICIPANT_ROLE" \
+  --target-id "$TARGET_ID" \
+  --capability-id "$CAPABILITY_ID" \
+  --workspace-root "$WORKSPACE_ROOT" \
+  --provider "$JIDO_HIVE_PROVIDER" \
+  ${JIDO_HIVE_MODEL:+--model "$JIDO_HIVE_MODEL"} \
+  ${JIDO_HIVE_TIMEOUT_MS:+--timeout-ms "$JIDO_HIVE_TIMEOUT_MS"} \
+  ${JIDO_HIVE_CLI_PATH:+--cli-path "$JIDO_HIVE_CLI_PATH"} \
+  "$@"

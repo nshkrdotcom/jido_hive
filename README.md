@@ -22,12 +22,12 @@ The current slice is a real client-server collaboration loop:
 
 ## Quick Start
 
-Open four terminals.
+Open three terminals.
 
 Terminal 1:
 
 ```bash
-bin/server
+bin/live-demo-server
 ```
 
 Terminal 2:
@@ -42,13 +42,7 @@ Terminal 3:
 bin/client-skeptic
 ```
 
-Terminal 4:
-
-```bash
-bin/demo-first-slice
-```
-
-That script will:
+The server wrapper will:
 
 1. wait for both local targets
 2. create a room
@@ -56,8 +50,26 @@ That script will:
 4. print the final room snapshot
 5. print the publication plan
 
-For live AI runs, `bin/demo-first-slice` also accepts
-`JIDO_HIVE_TURN_TIMEOUT_MS` and defaults to `180000`.
+The room id is printed in the server terminal when it starts.
+
+If you want the older operator-only wrapper, `bin/demo-first-slice` now delegates
+to `setup/hive live-demo`.
+
+For live AI runs, `bin/live-demo-server` and `bin/demo-first-slice` honor:
+
+- `ROOM_ID`
+- `JIDO_HIVE_TURN_TIMEOUT_MS`
+- `JIDO_HIVE_WAIT_TIMEOUT_MS`
+
+If you already have live connector connections, `bin/live-demo-server` can also
+publish automatically when these env vars are set before launch:
+
+- `JIDO_HIVE_GITHUB_CONNECTION`
+- `JIDO_HIVE_GITHUB_REPO`
+- `JIDO_HIVE_NOTION_CONNECTION`
+- `JIDO_HIVE_NOTION_DATA_SOURCE_ID`
+- `JIDO_HIVE_NOTION_TITLE_PROPERTY`
+- `JIDO_HIVE_AUTO_PUBLISH=1`
 
 ## Setup Toolkit
 
@@ -70,14 +82,19 @@ setup/hive help
 ```
 
 That wrapper turns the raw install / connection / publish API flow into a small
-set of shell commands with defaults, input validation, and JSON output.
+set of shell commands with defaults, waiting helpers, input validation, and JSON
+output.
+
+For the fastest local run, prefer the three-command path above with
+`bin/live-demo-server`.
 
 ## Manual Flow
 
-Check the local server and list current targets:
+Wait for the local server and both targets:
 
 ```bash
-setup/hive doctor
+setup/hive wait-server
+setup/hive wait-targets
 ```
 
 Create a room:

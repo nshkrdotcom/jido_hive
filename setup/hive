@@ -11,12 +11,17 @@ usage() {
 Usage:
   setup/hive help
   setup/hive doctor
+  setup/hive wait-server
+  setup/hive wait-targets
   setup/hive targets
   setup/hive room ROOM_ID
-  setup/hive create-room [ROOM_ID] [--brief TEXT] [--rule TEXT]
+  setup/hive create-room [ROOM_ID] [--brief TEXT] [--rule TEXT] [--if-missing]
   setup/hive run-room ROOM_ID [--max-turns N] [--turn-timeout-ms N]
   setup/hive publication-plan ROOM_ID
   setup/hive publication-runs ROOM_ID
+  setup/hive live-demo [--room-id ROOM_ID] [--brief TEXT] [--rule TEXT]
+      [--max-turns N] [--turn-timeout-ms N] [--wait-timeout-ms N]
+      [--publish-from-env]
   setup/hive start-install github|notion [--subject VALUE] [--scope VALUE]
   setup/hive show-install INSTALL_ID
   setup/hive complete-install INSTALL_ID [--subject VALUE]
@@ -36,8 +41,10 @@ Environment defaults:
 
 Examples:
   setup/hive doctor
+  setup/hive wait-targets
   setup/hive create-room room-manual-1
   setup/hive run-room room-manual-1 --turn-timeout-ms 180000
+  setup/hive live-demo --room-id room-live-demo
   setup/hive publication-plan room-manual-1
   setup/hive start-install github --subject octocat --scope repo
   setup/hive complete-install install-123 --subject octocat
@@ -53,6 +60,118 @@ require_room_id() {
   [[ -n "$room_id" ]] || die "room id is required"
 }
 
+build_room_payload() {
+  local room_id="$1"
+  local brief="$2"
+  shift 2 || true
+
+  local -a rules=("$@")
+  local rules_json
+
+  rules_json="$(printf '%s\n' "${rules[@]}" | jq -R . | jq -s .)"
+
+  jq -n \
+    --arg room_id "$room_id" \
+    --arg brief "$brief" \
+    --argjson rules "$rules_json" \
+    '{
+      room_id: $room_id,
+      brief: $brief,
+      rules: $rules,
+      participants: [
+        {
+          participant_id: "architect",
+          role: "architect",
+          target_id: "target-architect",
+          capability_id: "codex.exec.session"
+        },
+        {
+          participant_id: "skeptic",
+          role: "skeptic",
+          target_id: "target-skeptic",
+          capability_id: "codex.exec.session"
+        }
+      ]
+    }'
+}
+
+cmd_wait_server() {
+  require_base_tools
+
+  local timeout_ms='30000'
+  local interval_ms='250'
+
+  while (($# > 0)); do
+    case "$1" in
+      --timeout-ms)
+        shift
+        [[ $# -gt 0 ]] || die "--timeout-ms requires a value"
+        timeout_ms="$1"
+        ;;
+
+      --interval-ms)
+        shift
+        [[ $# -gt 0 ]] || die "--interval-ms requires a value"
+        interval_ms="$1"
+        ;;
+
+      *)
+        die "unknown option for wait-server: $1"
+        ;;
+    esac
+
+    shift || true
+  done
+
+  log "waiting for API on $JIDO_HIVE_API_BASE"
+  wait_for_api "$timeout_ms" "$interval_ms"
+  log "API is reachable"
+}
+
+cmd_wait_targets() {
+  require_base_tools
+
+  local timeout_ms='30000'
+  local interval_ms='250'
+  local -a targets=('target-architect' 'target-skeptic')
+  local using_default_targets=1
+
+  while (($# > 0)); do
+    case "$1" in
+      --timeout-ms)
+        shift
+        [[ $# -gt 0 ]] || die "--timeout-ms requires a value"
+        timeout_ms="$1"
+        ;;
+
+      --interval-ms)
+        shift
+        [[ $# -gt 0 ]] || die "--interval-ms requires a value"
+        interval_ms="$1"
+        ;;
+
+      --target)
+        shift
+        [[ $# -gt 0 ]] || die "--target requires a value"
+        if (( using_default_targets )); then
+          targets=()
+          using_default_targets=0
+        fi
+        targets+=("$1")
+        ;;
+
+      *)
+        die "unknown option for wait-targets: $1"
+        ;;
+    esac
+
+    shift || true
+  done
+
+  log "waiting for targets: ${targets[*]}"
+  wait_for_targets "$timeout_ms" "$interval_ms" "${targets[@]}"
+}
+
 cmd_doctor() {
   require_base_tools
 
@@ -60,7 +179,8 @@ cmd_doctor() {
   log "tenant id: $JIDO_HIVE_TENANT_ID"
   log "actor id: $JIDO_HIVE_ACTOR_ID"
 
-  api_get "/targets"
+  cmd_wait_server --timeout-ms 3000 --interval-ms 250 >/dev/null
+  cmd_targets
 }
 
 cmd_targets() {
@@ -81,6 +201,8 @@ cmd_create_room() {
   require_base_tools
 
   local room_id="${1:-room-$(date +%s)}"
+  local if_missing=0
+
   if [[ "${room_id#--}" != "$room_id" ]]; then
     room_id="room-$(date +%s)"
   else
@@ -109,6 +231,10 @@ cmd_create_room() {
         rules+=("$1")
         ;;
 
+      --if-missing)
+        if_missing=1
+        ;;
+
       *)
         die "unknown option for create-room: $1"
         ;;
@@ -117,38 +243,37 @@ cmd_create_room() {
     shift || true
   done
 
-  local rules_json
-  rules_json="$(printf '%s\n' "${rules[@]}" | jq -R . | jq -s .)"
-
   local payload
-  payload="$(
-    jq -n \
-      --arg room_id "$room_id" \
-      --arg brief "$brief" \
-      --argjson rules "$rules_json" \
-      '{
-        room_id: $room_id,
-        brief: $brief,
-        rules: $rules,
-        participants: [
-          {
-            participant_id: "architect",
-            role: "architect",
-            target_id: "target-architect",
-            capability_id: "codex.exec.session"
-          },
-          {
-            participant_id: "skeptic",
-            role: "skeptic",
-            target_id: "target-skeptic",
-            capability_id: "codex.exec.session"
-          }
-        ]
-      }'
-  )"
+  payload="$(build_room_payload "$room_id" "$brief" "${rules[@]}")"
 
   log "creating room: $room_id"
-  api_post "/rooms" "$payload"
+
+  if (( if_missing == 0 )); then
+    api_post "/rooms" "$payload"
+    return 0
+  fi
+
+  perform_request POST "${JIDO_HIVE_API_BASE}/rooms" "$payload"
+
+  case "$JIDO_HIVE_HTTP_STATUS" in
+    201)
+      json_print_file "$JIDO_HIVE_HTTP_BODY_FILE"
+      cleanup_http_response
+      ;;
+
+    409)
+      cleanup_http_response
+      log "room already exists, reusing: $room_id"
+      api_get "/rooms/$room_id"
+      ;;
+
+    *)
+      log "POST ${JIDO_HIVE_API_BASE}/rooms failed with HTTP $JIDO_HIVE_HTTP_STATUS"
+      json_print_file "$JIDO_HIVE_HTTP_BODY_FILE" >&2 || cat "$JIDO_HIVE_HTTP_BODY_FILE" >&2
+      cleanup_http_response
+      exit 1
+      ;;
+  esac
 }
 
 cmd_run_room() {
@@ -213,6 +338,131 @@ cmd_publication_runs() {
   require_room_id "$room_id"
 
   api_get "/rooms/$room_id/publications"
+}
+
+cmd_live_demo() {
+  require_base_tools
+
+  local room_id="${ROOM_ID:-room-$(date +%s)}"
+  local brief='Develop a distributed collaboration protocol for two AI clients.'
+  local -a rules=('Every objection must target a claim.')
+  local using_default_rules=1
+  local max_turns='6'
+  local turn_timeout_ms="${JIDO_HIVE_TURN_TIMEOUT_MS:-180000}"
+  local wait_timeout_ms='120000'
+  local publish_from_env=0
+
+  while (($# > 0)); do
+    case "$1" in
+      --room-id)
+        shift
+        [[ $# -gt 0 ]] || die "--room-id requires a value"
+        room_id="$1"
+        ;;
+
+      --brief)
+        shift
+        [[ $# -gt 0 ]] || die "--brief requires a value"
+        brief="$1"
+        ;;
+
+      --rule)
+        shift
+        [[ $# -gt 0 ]] || die "--rule requires a value"
+        if (( using_default_rules )); then
+          rules=()
+          using_default_rules=0
+        fi
+        rules+=("$1")
+        ;;
+
+      --max-turns)
+        shift
+        [[ $# -gt 0 ]] || die "--max-turns requires a value"
+        max_turns="$1"
+        ;;
+
+      --turn-timeout-ms)
+        shift
+        [[ $# -gt 0 ]] || die "--turn-timeout-ms requires a value"
+        turn_timeout_ms="$1"
+        ;;
+
+      --wait-timeout-ms)
+        shift
+        [[ $# -gt 0 ]] || die "--wait-timeout-ms requires a value"
+        wait_timeout_ms="$1"
+        ;;
+
+      --publish-from-env)
+        publish_from_env=1
+        ;;
+
+      *)
+        die "unknown option for live-demo: $1"
+        ;;
+    esac
+
+    shift || true
+  done
+
+  local -a create_room_args=("$room_id" "--if-missing" "--brief" "$brief")
+  local rule=''
+
+  for rule in "${rules[@]}"; do
+    create_room_args+=("--rule" "$rule")
+  done
+
+  log "live demo room: $room_id"
+
+  cmd_wait_server --timeout-ms "$wait_timeout_ms" --interval-ms 250 >/dev/null
+  cmd_wait_targets --timeout-ms "$wait_timeout_ms" --interval-ms 250 >/dev/null
+  cmd_create_room "${create_room_args[@]}" >/dev/null
+
+  printf '\n=== Running Room %s ===\n' "$room_id"
+  cmd_run_room "$room_id" --max-turns "$max_turns" --turn-timeout-ms "$turn_timeout_ms"
+  printf '\n=== Room Snapshot %s ===\n' "$room_id"
+  cmd_room "$room_id"
+  printf '\n=== Publication Plan %s ===\n' "$room_id"
+  cmd_publication_plan "$room_id"
+
+  if (( publish_from_env == 0 )); then
+    return 0
+  fi
+
+  local -a publish_args=("$room_id")
+  local publish_enabled=0
+
+  if [[ -n "${JIDO_HIVE_GITHUB_CONNECTION:-}" || -n "${JIDO_HIVE_GITHUB_REPO:-}" ]]; then
+    [[ -n "${JIDO_HIVE_GITHUB_CONNECTION:-}" ]] || die "JIDO_HIVE_GITHUB_CONNECTION is required for GitHub publication"
+    [[ -n "${JIDO_HIVE_GITHUB_REPO:-}" ]] || die "JIDO_HIVE_GITHUB_REPO is required for GitHub publication"
+    publish_args+=(
+      --github-connection "$JIDO_HIVE_GITHUB_CONNECTION"
+      --github-repo "$JIDO_HIVE_GITHUB_REPO"
+    )
+    publish_enabled=1
+  fi
+
+  if [[ -n "${JIDO_HIVE_NOTION_CONNECTION:-}" || -n "${JIDO_HIVE_NOTION_DATA_SOURCE_ID:-}" ]]; then
+    [[ -n "${JIDO_HIVE_NOTION_CONNECTION:-}" ]] || die "JIDO_HIVE_NOTION_CONNECTION is required for Notion publication"
+    [[ -n "${JIDO_HIVE_NOTION_DATA_SOURCE_ID:-}" ]] || die "JIDO_HIVE_NOTION_DATA_SOURCE_ID is required for Notion publication"
+    publish_args+=(
+      --notion-connection "$JIDO_HIVE_NOTION_CONNECTION"
+      --notion-data-source-id "$JIDO_HIVE_NOTION_DATA_SOURCE_ID"
+      --notion-title-property "${JIDO_HIVE_NOTION_TITLE_PROPERTY:-Name}"
+    )
+    publish_enabled=1
+  fi
+
+  if (( publish_enabled == 0 )); then
+    log "publish-from-env requested but no publish environment variables were set"
+    return 0
+  fi
+
+  printf '\n=== Publication Run %s ===\n' "$room_id"
+  cmd_publish "${publish_args[@]}"
+  printf '\n=== Publication History %s ===\n' "$room_id"
+  cmd_publication_runs "$room_id"
 }
 
 cmd_start_install() {
@@ -521,6 +771,16 @@ main() {
       cmd_doctor "$@"
       ;;
 
+    wait-server)
+      shift || true
+      cmd_wait_server "$@"
+      ;;
+
+    wait-targets)
+      shift || true
+      cmd_wait_targets "$@"
+      ;;
+
     targets)
       shift || true
       cmd_targets "$@"
@@ -549,6 +809,11 @@ main() {
     publication-runs)
       shift || true
       cmd_publication_runs "$@"
+      ;;
+
+    live-demo)
+      shift || true
+      cmd_live_demo "$@"
       ;;
 
     start-install)

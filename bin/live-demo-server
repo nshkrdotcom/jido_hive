@@ -1,0 +1,52 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+ROOM_ID="${ROOM_ID:-room-live-$(date +%s)}"
+WAIT_TIMEOUT_MS="${JIDO_HIVE_WAIT_TIMEOUT_MS:-120000}"
+PUBLISH_FLAG=()
+SERVER_PID=''
+DEMO_PID=''
+
+cleanup() {
+  local exit_code=$?
+
+  if [[ -n "$DEMO_PID" ]] && kill -0 "$DEMO_PID" >/dev/null 2>&1; then
+    kill "$DEMO_PID" >/dev/null 2>&1 || true
+    wait "$DEMO_PID" >/dev/null 2>&1 || true
+  fi
+
+  if [[ -n "$SERVER_PID" ]] && kill -0 "$SERVER_PID" >/dev/null 2>&1; then
+    kill "$SERVER_PID" >/dev/null 2>&1 || true
+    wait "$SERVER_PID" >/dev/null 2>&1 || true
+  fi
+
+  exit "$exit_code"
+}
+
+if [[ "${JIDO_HIVE_AUTO_PUBLISH:-}" == "1" ]] ||
+  [[ -n "${JIDO_HIVE_GITHUB_CONNECTION:-}" ]] ||
+  [[ -n "${JIDO_HIVE_NOTION_CONNECTION:-}" ]]; then
+  PUBLISH_FLAG+=(--publish-from-env)
+fi
+
+printf '[jido_hive live-demo] room id: %s\n' "$ROOM_ID" >&2
+printf '[jido_hive live-demo] server terminal booting now\n' >&2
+printf '[jido_hive live-demo] start these in two more terminals:\n' >&2
+printf '  bin/client-architect\n' >&2
+printf '  bin/client-skeptic\n' >&2
+
+trap cleanup EXIT INT TERM
+
+"$ROOT/bin/server" &
+SERVER_PID=$!
+
+"$ROOT/setup/hive" live-demo \
+  --room-id "$ROOM_ID" \
+  --wait-timeout-ms "$WAIT_TIMEOUT_MS" \
+  "${PUBLISH_FLAG[@]}" \
+  "$@" &
+DEMO_PID=$!
+
+wait "$SERVER_PID"

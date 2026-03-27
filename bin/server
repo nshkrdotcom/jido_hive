@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+cd "$ROOT/jido_hive_server"
+mix ecto.create >/dev/null 2>&1 || true
+mix ecto.migrate
+exec env PHX_SERVER=true PORT="${PORT:-4000}" mix phx.server

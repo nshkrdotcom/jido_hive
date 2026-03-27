@@ -40,6 +40,9 @@ The server uses SQLite through Ecto for:
 The repo-level `bin/server` wrapper runs `mix ecto.create` and `mix ecto.migrate`
 before starting Phoenix.
 
+For the fastest end-to-end local run, use `bin/live-demo-server` from the repo
+root with `bin/client-architect` and `bin/client-skeptic` in two more terminals.
+
 For the guided operator flow around installs, connections, and publication
 execution, use the root setup toolkit in
 [../setup/README.md](../setup/README.md).
