@@ -24,11 +24,9 @@ defmodule JidoHiveServer.Runtime do
   defp normalize_map(_), do: %{}
 
   defp normalize_key(key) when is_binary(key) do
-    try do
-      String.to_existing_atom(key)
-    rescue
-      ArgumentError -> String.to_atom(key)
-    end
+    String.to_existing_atom(key)
+  rescue
+    ArgumentError -> String.to_atom(key)
   end
 
   defp normalize_key(key), do: key

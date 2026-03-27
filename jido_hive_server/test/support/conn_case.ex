@@ -32,6 +32,7 @@ defmodule JidoHiveServerWeb.ConnCase do
   end
 
   setup _tags do
+    JidoHiveServer.PersistenceCase.reset_repo!()
     {:ok, conn: Phoenix.ConnTest.build_conn()}
   end
 end

@@ -1,21 +1,51 @@
 # JidoHiveClient
 
-**TODO: Add description**
+`jido_hive_client` is the local executor for `jido_hive`.
 
-## Installation
+It connects outbound to the Phoenix relay, advertises a session target, and
+runs collaboration turns through `Jido.Harness` on the ASM runtime-driver path.
 
-If [available in Hex](https://hex.pm/docs/publish), the package can be installed
-by adding `jido_hive_client` to your list of dependencies in `mix.exs`:
+## What It Does
 
-```elixir
-def deps do
-  [
-    {:jido_hive_client, "~> 0.1.0"}
-  ]
-end
+- joins a relay topic over websockets
+- advertises one `codex.exec.session` target
+- receives `job.start` packets with a collaboration envelope
+- builds a strict JSON run contract from that envelope
+- executes the turn through `Jido.Harness -> asm -> ASM`
+- performs one strict no-tool repair pass if the provider returns prose instead
+  of the JSON room contract
+- returns structured actions, tool events, approvals, artifacts, and execution
+  metadata as `job.result`
+
+## CLI
+
+The app is usually started through the repo-level `bin/client` wrapper, but the
+raw CLI accepts:
+
+```bash
+mix run --no-halt -e 'JidoHiveClient.CLI.main(System.argv())' -- \
+  --url ws://127.0.0.1:4000/socket/websocket \
+  --relay-topic relay:workspace-local \
+  --workspace-id workspace-local \
+  --user-id user-architect \
+  --participant-id architect \
+  --participant-role architect \
+  --target-id target-architect \
+  --capability-id codex.exec.session \
+  --workspace-root /path/to/repo \
+  --provider codex
 ```
 
-Documentation can be generated with [ExDoc](https://github.com/elixir-lang/ex_doc)
-and published on [HexDocs](https://hexdocs.pm). Once published, the docs can
-be found at <https://hexdocs.pm/jido_hive_client>.
+Optional execution flags:
 
+- `--model`
+- `--timeout-ms`
+- `--cli-path`
+
+## Dev
+
+```bash
+mix deps.get
+mix test
+mix quality
+```

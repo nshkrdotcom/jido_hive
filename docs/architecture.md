@@ -18,9 +18,10 @@ The repo is intentionally not an umbrella app. The server and client are indepen
 `jido_hive_server` currently owns:
 
 - Phoenix websocket relay at `/socket`
-- HTTP API for `GET /api/targets`, `POST /api/rooms`, `GET /api/rooms/:id`,
-  `GET /api/rooms/:id/publication_plan`, and `POST /api/rooms/:id/first_slice`
-- room lifecycle and room-state accumulation
+- HTTP API for room creation, execution, publication planning, publication
+  execution, and connector install/connection flows
+- room lifecycle, referee planning, and collaboration-envelope assembly
+- durable SQLite persistence for room snapshots, targets, and publication runs
 - `Jido.Signal.Bus`
 - `jido_os` bootstrap
 - `Jido.Integration.V2` connector registration for `codex.exec.session`,
@@ -36,10 +37,53 @@ The repo is intentionally not an umbrella app. The server and client are indepen
 - outbound websocket connection to the relay topic
 - target registration payloads
 - local execution dispatch through `RelayWorker`
-- deterministic scripted executors for the first slice
+- real session execution through `Jido.Harness -> asm -> ASM`
 - a CLI entrypoint suitable for running multiple local client processes
 
-## First-Slice Protocol
+## Collaboration Envelope
+
+The server now sends each turn as a versioned collaboration envelope:
+
+- `schema_version`
+- `room`
+  - room id
+  - brief
+  - rules
+  - current room status
+- `referee`
+  - phase
+  - directives
+  - open disputes
+  - whether publication has been requested
+- `turn`
+  - phase
+  - round
+  - participant id and role
+  - objective
+  - strict JSON response contract
+- `shared`
+  - shared context entries
+  - instruction log from prior turns
+  - tool-call log from prior turns
+  - artifact log from prior turns
+
+The client turns that envelope into one `RunRequest` with a strict JSON-only
+output contract. The returned `job.result` packet carries:
+
+- top-level turn status
+- summary
+- structured actions
+- tool events
+- approvals
+- artifacts
+- full execution event stream
+- normalized execution metadata
+
+If a live provider returns prose or malformed JSON, the client performs one
+follow-up repair run with tools disabled and the same contract so the server
+still receives normalized actions when the underlying content is salvageable.
+
+## Refereed Loop
 
 The current room loop is:
 
@@ -47,17 +91,18 @@ The current room loop is:
 2. clients send `relay.hello` and `target.upsert`
 3. the server exposes registered targets through `RemoteExec` and mirrors compatible targets into `Jido.Integration.V2`
 4. `POST /api/rooms` creates room state with participants and rules
-5. `POST /api/rooms/:id/first_slice` opens one architect turn and one skeptic turn
+5. `POST /api/rooms/:id/run` opens a proposal turn, a critique turn, and a
+   resolution turn as needed; the API also accepts `turn_timeout_ms` for
+   real-provider latency
 6. each client receives `job.start`, executes locally, and returns `job.result`
-7. the server merges result actions into shared context entries and disputes
+7. the server merges result actions into shared context entries, disputes,
+   turn histories, and publication run state
 
-The first slice shares:
+The referee currently drives three phases:
 
-- brief
-- rules
-- context summary
-- shared instruction log
-- shared tool log
+- `proposal`
+- `critique`
+- `resolution`
 
 The resulting room state captures:
 
@@ -65,9 +110,13 @@ The resulting room state captures:
 - evidence
 - publish requests
 - objections
+- revisions
+- decisions
 - disputes
 - completed turn records
+- full execution metadata and event logs
 - derived GitHub and Notion publication drafts
+- durable publication run history
 
 ## Why This Shape
 
@@ -78,11 +127,15 @@ This keeps the trust boundary aligned with the Jido docs:
 - compatibility and target truth flow through `jido_integration`
 - future publication workflows can reuse the same room state and review packets
 
-## Near-Term Next Steps
+## Current Gaps
 
-1. Replace the scripted client executor with real ASM-backed session execution via `jido_harness` and `agent_session_manager`.
-2. Introduce a stable collaboration envelope for prompts, tool calls, partial results, approvals, and streamed artifacts.
-3. Add referee logic for objection targeting, turn admission, and dispute resolution.
-4. Promote the publication-plan seam into credentialed GitHub and Notion
-   execution flows through `jido_integration` installs and invokes.
-5. Persist room state and execution references instead of keeping them in memory.
+1. Publication execution is real, but this repo does not automate the provider
+   auth dance; the operator still needs to bring the provider code/token back to
+   the install-complete endpoint.
+2. The current referee is still a simple architect/skeptic/resolution protocol,
+   not a generalized N-party protocol.
+3. Persistence is durable and correct for this app slice, but still app-local
+   SQLite rather than a multi-node store.
+4. Publication readiness still depends on the room actually emitting a
+   `publish_request` entry; live model runs can complete in `in_review` if they
+   solve the disputes but do not request publication.

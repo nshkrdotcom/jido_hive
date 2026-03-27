@@ -3,6 +3,7 @@ set -euo pipefail
 
 API_BASE="${JIDO_HIVE_API_BASE:-http://127.0.0.1:4000/api}"
 ROOM_ID="${ROOM_ID:-room-$(date +%s)}"
+TURN_TIMEOUT_MS="${JIDO_HIVE_TURN_TIMEOUT_MS:-180000}"
 
 printf 'Waiting for local targets on %s\n' "$API_BASE"
 
@@ -50,11 +51,11 @@ curl -fsS -X POST "$API_BASE/rooms" \
 }
 JSON
 
-printf '\nRunning first slice for %s\n' "$ROOM_ID"
+printf '\nRunning refereed slice for %s\n' "$ROOM_ID"
 
-curl -fsS -X POST "$API_BASE/rooms/$ROOM_ID/first_slice" \
+curl -fsS -X POST "$API_BASE/rooms/$ROOM_ID/run" \
   -H 'content-type: application/json' \
-  -d '{}'
+  -d "{\"turn_timeout_ms\": $TURN_TIMEOUT_MS}"
 
 printf '\nFinal room snapshot for %s\n' "$ROOM_ID"
 

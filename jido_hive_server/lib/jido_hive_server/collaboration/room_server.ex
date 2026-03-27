@@ -3,8 +3,11 @@ defmodule JidoHiveServer.Collaboration.RoomServer do
 
   use GenServer
 
+  alias Jido.Signal
+  alias Jido.Signal.Bus
   alias JidoHiveServer.Collaboration.Actions.{ApplyResult, OpenTurn}
   alias JidoHiveServer.Collaboration.RoomAgent
+  alias JidoHiveServer.Persistence
 
   def start_link(opts) when is_list(opts) do
     room_id = Keyword.fetch!(opts, :room_id)
@@ -29,21 +32,25 @@ defmodule JidoHiveServer.Collaboration.RoomServer do
 
   @impl true
   def init(opts) do
-    initial_state = %{
-      room_id: Keyword.fetch!(opts, :room_id),
-      session_id: Keyword.fetch!(opts, :session_id),
-      brief: Keyword.fetch!(opts, :brief),
-      rules: Keyword.get(opts, :rules, []),
-      participants: Keyword.get(opts, :participants, []),
-      turns: [],
-      context_entries: [],
-      disputes: [],
-      current_turn: %{},
-      status: "idle",
-      round: 0,
-      next_entry_seq: 1,
-      next_dispute_seq: 1
-    }
+    initial_state =
+      Keyword.get_lazy(opts, :snapshot, fn ->
+        %{
+          room_id: Keyword.fetch!(opts, :room_id),
+          session_id: Keyword.fetch!(opts, :session_id),
+          brief: Keyword.fetch!(opts, :brief),
+          rules: Keyword.get(opts, :rules, []),
+          participants: Keyword.get(opts, :participants, []),
+          turns: [],
+          context_entries: [],
+          disputes: [],
+          current_turn: %{},
+          status: "idle",
+          phase: "idle",
+          round: 0,
+          next_entry_seq: 1,
+          next_dispute_seq: 1
+        }
+      end)
 
     {:ok, %{agent: RoomAgent.new(state: initial_state)}}
   end
@@ -52,6 +59,7 @@ defmodule JidoHiveServer.Collaboration.RoomServer do
   def handle_call({:open_turn, payload}, _from, %{agent: agent} = state) do
     {:ok, _result, state_op} = OpenTurn.run(normalize_payload(payload), %{state: agent.state})
     {:ok, agent} = apply_state_op(agent, state_op)
+    {:ok, _snapshot} = Persistence.persist_room_snapshot(agent.state)
     publish_signal("room.turn.opened", agent.state)
     {:reply, {:ok, agent.state}, %{state | agent: agent}}
   end
@@ -59,6 +67,7 @@ defmodule JidoHiveServer.Collaboration.RoomServer do
   def handle_call({:apply_result, payload}, _from, %{agent: agent} = state) do
     {:ok, _result, state_op} = ApplyResult.run(normalize_payload(payload), %{state: agent.state})
     {:ok, agent} = apply_state_op(agent, state_op)
+    {:ok, _snapshot} = Persistence.persist_room_snapshot(agent.state)
     publish_signal("room.turn.completed", agent.state)
     {:reply, {:ok, agent.state}, %{state | agent: agent}}
   end
@@ -76,8 +85,8 @@ defmodule JidoHiveServer.Collaboration.RoomServer do
   defp normalize_key(key), do: key
 
   defp publish_signal(type, data) do
-    signal = Jido.Signal.new!(type, data, source: "/jido_hive_server/room_server")
-    _ = Jido.Signal.Bus.publish(JidoHiveServer.SignalBus, [signal])
+    signal = Signal.new!(type, data, source: "/jido_hive_server/room_server")
+    _ = Bus.publish(JidoHiveServer.SignalBus, [signal])
     :ok
   end
 

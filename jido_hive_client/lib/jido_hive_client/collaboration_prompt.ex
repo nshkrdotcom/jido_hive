@@ -1,0 +1,173 @@
+defmodule JidoHiveClient.CollaborationPrompt do
+  @moduledoc false
+
+  alias Jido.Harness.RunRequest
+
+  @schema_version "jido_hive/collab_envelope.v1"
+
+  @spec to_run_request(map(), keyword()) :: RunRequest.t()
+  def to_run_request(job, opts \\ []) when is_map(job) and is_list(opts) do
+    envelope = Map.fetch!(job, "collaboration_envelope")
+
+    RunRequest.new!(%{
+      prompt: render_prompt(envelope),
+      cwd: Keyword.get(opts, :cwd, workspace_root(job)),
+      model: Keyword.get(opts, :model),
+      timeout_ms: Keyword.get(opts, :timeout_ms),
+      system_prompt: render_system_prompt(envelope),
+      allowed_tools: Keyword.get(opts, :allowed_tools),
+      metadata: %{
+        "schema_version" => @schema_version,
+        "room_id" => Map.get(job, "room_id"),
+        "job_id" => Map.get(job, "job_id"),
+        "participant_id" => Map.get(job, "participant_id"),
+        "participant_role" => Map.get(job, "participant_role")
+      }
+    })
+  end
+
+  @spec schema_version() :: String.t()
+  def schema_version, do: @schema_version
+
+  @spec to_repair_run_request(String.t(), map(), keyword()) :: RunRequest.t()
+  def to_repair_run_request(text, job, opts \\ [])
+      when is_binary(text) and is_map(job) and is_list(opts) do
+    RunRequest.new!(%{
+      prompt: render_repair_prompt(text),
+      cwd: Keyword.get(opts, :cwd, workspace_root(job)),
+      model: Keyword.get(opts, :model),
+      timeout_ms: Keyword.get(opts, :timeout_ms, 30_000),
+      system_prompt: render_repair_system_prompt(job),
+      allowed_tools: [],
+      metadata: %{
+        "schema_version" => @schema_version,
+        "room_id" => Map.get(job, "room_id"),
+        "job_id" => Map.get(job, "job_id"),
+        "participant_id" => Map.get(job, "participant_id"),
+        "participant_role" => Map.get(job, "participant_role"),
+        "repair" => true
+      }
+    })
+  end
+
+  @spec render_system_prompt(map()) :: String.t()
+  def render_system_prompt(envelope) when is_map(envelope) do
+    turn = Map.fetch!(envelope, "turn")
+    referee = Map.fetch!(envelope, "referee")
+    room = Map.fetch!(envelope, "room")
+
+    """
+    You are #{turn["participant_role"]} in Jido Hive room #{room["room_id"]}.
+
+    Follow the referee objective exactly:
+    #{turn["objective"]}
+
+    Follow these referee directives:
+    #{Enum.map_join(referee["directives"] || [], "\n", &"* #{&1}")}
+
+    Return only JSON matching this contract:
+    {
+      "summary": "string",
+      "actions": [
+        {
+          "op": "CLAIM|EVIDENCE|OBJECT|REVISE|DECIDE|PUBLISH",
+          "title": "string",
+          "body": "string",
+          "severity": "low|medium|high|null",
+          "targets": [
+            {
+              "entry_ref": "claim:1|evidence:2|publish_request:3|null",
+              "dispute_id": "dispute:1|null"
+            }
+          ]
+        }
+      ],
+      "artifacts": [
+        {
+          "artifact_type": "prompt|tool_output|note",
+          "title": "string",
+          "body": "string"
+        }
+      ]
+    }
+
+    Do not inspect local files or run shell commands unless the objective
+    cannot be completed from the shared envelope alone.
+
+    Do not add markdown fences, prose, or commentary outside that JSON object.
+    """
+    |> String.trim()
+  end
+
+  @spec render_prompt(map()) :: String.t()
+  def render_prompt(envelope) when is_map(envelope) do
+    """
+    Execute the current collaboration turn using this shared envelope.
+
+    #{Jason.encode!(envelope, pretty: true)}
+    """
+    |> String.trim()
+  end
+
+  defp workspace_root(job) do
+    get_in(job, ["session", "workspace_root"]) ||
+      Map.get(job, "workspace_root") ||
+      File.cwd!()
+  end
+
+  defp render_repair_system_prompt(job) do
+    allowed_ops = allowed_ops(job)
+
+    """
+    Convert the provided assistant response into strict JSON only.
+
+    Required contract:
+    {
+      "summary": "string",
+      "actions": [
+        {
+          "op": "#{allowed_ops}",
+          "title": "string",
+          "body": "string",
+          "severity": "low|medium|high|null",
+          "targets": [
+            {
+              "entry_ref": "string|null",
+              "dispute_id": "string|null"
+            }
+          ]
+        }
+      ],
+      "artifacts": [
+        {
+          "artifact_type": "prompt|tool_output|note",
+          "title": "string",
+          "body": "string"
+        }
+      ]
+    }
+
+    Preserve meaning. If the source mentions dispute IDs or entry refs inline,
+    move them into targets. Do not use tools. Return JSON only.
+    """
+    |> String.trim()
+  end
+
+  defp render_repair_prompt(text) do
+    """
+    Convert this assistant response into the required JSON contract:
+
+    #{text}
+    """
+    |> String.trim()
+  end
+
+  defp allowed_ops(job) do
+    job
+    |> get_in(["collaboration_envelope", "turn", "response_contract", "allowed_ops"])
+    |> case do
+      ops when is_list(ops) -> Enum.join(ops, "|")
+      _other -> "CLAIM|EVIDENCE|OBJECT|REVISE|DECIDE|PUBLISH"
+    end
+  end
+end

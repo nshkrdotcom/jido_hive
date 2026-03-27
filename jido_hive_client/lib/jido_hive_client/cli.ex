@@ -1,7 +1,6 @@
 defmodule JidoHiveClient.CLI do
   @moduledoc false
 
-  alias JidoHiveClient.Executor.Scripted
   alias JidoHiveClient.RelayWorker
 
   def main(args) do
@@ -28,8 +27,11 @@ defmodule JidoHiveClient.CLI do
           participant_role: :string,
           target_id: :string,
           capability_id: :string,
-          scripted_role: :string,
-          workspace_root: :string
+          workspace_root: :string,
+          provider: :string,
+          model: :string,
+          timeout_ms: :integer,
+          cli_path: :string
         ]
       )
 
@@ -44,11 +46,6 @@ defmodule JidoHiveClient.CLI do
   defp normalize_cli_opts(opts) do
     workspace_id = Keyword.get(opts, :workspace_id, "workspace-local")
 
-    scripted_role =
-      opts
-      |> Keyword.get(:scripted_role, Keyword.get(opts, :participant_role, "architect"))
-      |> String.to_atom()
-
     [
       url: Keyword.get(opts, :url, "ws://127.0.0.1:4000/socket/websocket"),
       relay_topic: Keyword.get(opts, :relay_topic, "relay:#{workspace_id}"),
@@ -59,7 +56,17 @@ defmodule JidoHiveClient.CLI do
       target_id: Keyword.get(opts, :target_id, "target-local"),
       capability_id: Keyword.get(opts, :capability_id, "codex.exec.session"),
       workspace_root: Keyword.get(opts, :workspace_root, File.cwd!()),
-      executor: {Scripted, [role: scripted_role]}
+      executor:
+        {JidoHiveClient.Executor.Session,
+         [
+           provider: parse_provider(Keyword.get(opts, :provider, "codex")),
+           model: Keyword.get(opts, :model),
+           timeout_ms: Keyword.get(opts, :timeout_ms),
+           cli_path: Keyword.get(opts, :cli_path)
+         ]}
     ]
   end
+
+  defp parse_provider(provider) when is_binary(provider), do: String.to_atom(provider)
+  defp parse_provider(provider) when is_atom(provider), do: provider
 end

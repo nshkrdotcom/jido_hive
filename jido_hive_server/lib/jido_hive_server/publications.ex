@@ -2,6 +2,13 @@ defmodule JidoHiveServer.Publications do
   @moduledoc false
 
   alias Jido.Integration.V2
+  alias JidoHiveServer.Persistence
+
+  defmodule Gateway do
+    @moduledoc false
+
+    @callback invoke_publication(map(), map(), map()) :: {:ok, term()} | {:error, term()}
+  end
 
   @compatibility_requirements %{
     version_requirement: "~> 1.0",
@@ -54,6 +61,18 @@ defmodule JidoHiveServer.Publications do
 
   def compatibility_requirements, do: @compatibility_requirements
 
+  @spec execute(map(), map()) :: {:ok, map()} | {:error, term()}
+  def execute(snapshot, attrs) when is_map(snapshot) and is_map(attrs) do
+    plan = build_plan(snapshot)
+
+    runs =
+      plan.publications
+      |> selected_channels(attrs)
+      |> Enum.map(&execute_publication(&1, snapshot, attrs))
+
+    {:ok, %{room_id: snapshot.room_id, runs: runs}}
+  end
+
   defp publication_plan(spec, snapshot, summary) do
     %{
       channel: spec.channel,
@@ -64,6 +83,72 @@ defmodule JidoHiveServer.Publications do
       requested: summary.publish_requests != [],
       draft: draft(spec.channel, snapshot, summary)
     }
+  end
+
+  defp execute_publication(plan, snapshot, attrs) do
+    channel = plan.channel || plan["channel"]
+    connection_id = connection_id(attrs, channel)
+    bindings = bindings(attrs, channel)
+    publication_run_id = unique_id("publication")
+    input = build_input(channel, plan, bindings)
+
+    {:ok, _queued} =
+      Persistence.create_publication_run(%{
+        publication_run_id: publication_run_id,
+        room_id: snapshot.room_id,
+        channel: channel,
+        connector_id: plan.connector_id,
+        capability_id: plan.capability_id,
+        status: "queued",
+        request: %{
+          "draft" => plan.draft,
+          "input" => input,
+          "connection_id" => connection_id,
+          "bindings" => bindings
+        }
+      })
+
+    result =
+      case gateway().invoke_publication(plan, input, %{
+             connection_id: connection_id,
+             actor_id: attrs["actor_id"] || attrs[:actor_id],
+             tenant_id: attrs["tenant_id"] || attrs[:tenant_id],
+             notion_client: attrs["notion_client"] || attrs[:notion_client]
+           }) do
+        {:ok, invocation} ->
+          {:ok,
+           %{
+             "run" => normalize(invocation.run),
+             "output" => normalize(invocation.output)
+           }}
+
+        {:error, error} ->
+          {:error, normalize(error)}
+      end
+
+    persist_publication_result(publication_run_id, result)
+  end
+
+  defp persist_publication_result(publication_run_id, {:ok, result}) do
+    {:ok, persisted} =
+      Persistence.update_publication_run(publication_run_id, %{
+        status: "completed",
+        result: result,
+        error: %{}
+      })
+
+    persisted
+  end
+
+  defp persist_publication_result(publication_run_id, {:error, error}) do
+    {:ok, persisted} =
+      Persistence.update_publication_run(publication_run_id, %{
+        status: "failed",
+        result: %{},
+        error: error
+      })
+
+    persisted
   end
 
   defp compatible_targets(capability_id) do
@@ -96,6 +181,56 @@ defmodule JidoHiveServer.Publications do
       children: notion_children(snapshot, summary)
     }
   end
+
+  defp selected_channels(publications, attrs) do
+    requested =
+      attrs["channels"] || attrs[:channels] ||
+        Enum.filter(publications, & &1.requested) |> Enum.map(& &1.channel)
+
+    Enum.filter(publications, &(&1.channel in requested))
+  end
+
+  defp connection_id(attrs, channel) do
+    attrs
+    |> Map.get("connections", Map.get(attrs, :connections, %{}))
+    |> Map.get(channel)
+  end
+
+  defp bindings(attrs, channel) do
+    attrs
+    |> Map.get("bindings", Map.get(attrs, :bindings, %{}))
+    |> Map.get(channel, %{})
+  end
+
+  defp build_input("github", plan, bindings) do
+    %{
+      repo: Map.get(bindings, "repo") || Map.get(bindings, :repo),
+      title: plan.draft.title,
+      body: plan.draft.body
+    }
+  end
+
+  defp build_input("notion", plan, bindings) do
+    title_property =
+      Map.get(bindings, "title_property") || Map.get(bindings, :title_property) || "Name"
+
+    data_source_id =
+      Map.get(bindings, "parent.data_source_id") ||
+        get_in(bindings, ["parent", "data_source_id"]) ||
+        get_in(bindings, [:parent, :data_source_id])
+
+    %{
+      parent: %{"data_source_id" => data_source_id},
+      properties: %{
+        title_property => %{
+          "title" => [%{"text" => %{"content" => plan.draft.title}}]
+        }
+      },
+      children: plan.draft.children
+    }
+  end
+
+  defp build_input(_channel, plan, _bindings), do: plan.draft
 
   defp summarize_room(snapshot) do
     %{
@@ -210,4 +345,33 @@ defmodule JidoHiveServer.Publications do
       }
     end)
   end
+
+  defp gateway do
+    Application.get_env(
+      :jido_hive_server,
+      :publication_gateway,
+      JidoHiveServer.Publications.IntegrationGateway
+    )
+  end
+
+  defp unique_id(prefix) do
+    "#{prefix}-#{System.unique_integer([:positive, :monotonic])}"
+  end
+
+  defp normalize(%_{} = struct) do
+    struct
+    |> Map.from_struct()
+    |> normalize()
+  end
+
+  defp normalize(map) when is_map(map) do
+    Map.new(map, fn {key, value} -> {normalize_key(key), normalize(value)} end)
+  end
+
+  defp normalize(list) when is_list(list), do: Enum.map(list, &normalize/1)
+  defp normalize(value) when is_atom(value), do: Atom.to_string(value)
+  defp normalize(value), do: value
+
+  defp normalize_key(key) when is_atom(key), do: Atom.to_string(key)
+  defp normalize_key(key), do: key
 end

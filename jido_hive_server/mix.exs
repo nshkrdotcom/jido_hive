@@ -10,11 +10,13 @@ defmodule JidoHiveServer.MixProject do
       app: :jido_hive_server,
       version: "0.1.0",
       elixir: "~> 1.19",
+      elixirc_options: [warnings_as_errors: true],
       elixirc_paths: elixirc_paths(Mix.env()),
       start_permanent: Mix.env() == :prod,
       aliases: aliases(),
       deps: deps(),
-      listeners: [Phoenix.CodeReloader]
+      listeners: [Phoenix.CodeReloader],
+      dialyzer: [plt_add_apps: [:ex_unit]]
     ]
   end
 
@@ -30,7 +32,13 @@ defmodule JidoHiveServer.MixProject do
 
   def cli do
     [
-      preferred_envs: [precommit: :test]
+      preferred_envs: [
+        credo: :test,
+        dialyzer: :test,
+        docs: :dev,
+        precommit: :test,
+        quality: :test
+      ]
     ]
   end
 
@@ -50,6 +58,8 @@ defmodule JidoHiveServer.MixProject do
       {:jason, "~> 1.2"},
       {:dns_cluster, "~> 0.2.0"},
       {:bandit, "~> 1.5"},
+      {:ecto_sql, "~> 3.13"},
+      {:ecto_sqlite3, "~> 0.20"},
       DependencyResolver.jido(override: true),
       DependencyResolver.jido_action(override: true),
       DependencyResolver.jido_signal(override: true),
@@ -63,6 +73,9 @@ defmodule JidoHiveServer.MixProject do
       DependencyResolver.jido_integration_codex_cli(),
       DependencyResolver.jido_integration_github(),
       DependencyResolver.jido_integration_notion(),
+      {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
+      {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false},
+      {:ex_doc, "~> 0.34", only: [:dev, :test], runtime: false},
       {:jido_hive_client, path: "../jido_hive_client", only: :test},
       {:phoenix_client, "~> 0.11.1", only: :test}
     ]
@@ -77,6 +90,14 @@ defmodule JidoHiveServer.MixProject do
   defp aliases do
     [
       setup: ["deps.get"],
+      quality: [
+        "format --check-formatted",
+        "compile",
+        "test",
+        "credo --strict",
+        "dialyzer",
+        "docs"
+      ],
       test_all: ["test"],
       precommit: ["compile --warnings-as-errors", "deps.unlock --unused", "format", "test"]
     ]

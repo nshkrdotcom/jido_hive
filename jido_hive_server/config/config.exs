@@ -9,7 +9,15 @@ import Config
 
 config :jido_hive_server,
   generators: [timestamp_type: :utc_datetime, binary_id: true],
-  default_instance_id: "jido_hive_server_default"
+  default_instance_id: "jido_hive_server_default",
+  turn_wait_timeout_ms: 180_000,
+  turn_wait_poll_ms: 250,
+  ecto_repos: [JidoHiveServer.Repo]
+
+config :jido_hive_server, JidoHiveServer.Repo,
+  adapter: Ecto.Adapters.SQLite3,
+  migration_primary_key: [type: :string, autogenerate: false],
+  migration_timestamps: [type: :utc_datetime_usec]
 
 # Configure the endpoint
 config :jido_hive_server, JidoHiveServerWeb.Endpoint,

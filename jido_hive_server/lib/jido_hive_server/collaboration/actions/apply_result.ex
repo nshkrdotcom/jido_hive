@@ -8,12 +8,18 @@ defmodule JidoHiveServer.Collaboration.Actions.ApplyResult do
       job_id: [type: :string, required: true],
       participant_id: [type: :string, required: true],
       participant_role: [type: :string, required: true],
+      status: [type: :string, default: "completed"],
       summary: [type: :string, default: ""],
       actions: [type: {:list, :map}, default: []],
-      tool_events: [type: {:list, :map}, default: []]
+      tool_events: [type: {:list, :map}, default: []],
+      events: [type: {:list, :map}, default: []],
+      approvals: [type: {:list, :map}, default: []],
+      artifacts: [type: {:list, :map}, default: []],
+      execution: [type: :map, default: %{}]
     ]
 
   alias Jido.Agent.StateOp
+  alias JidoHiveServer.Collaboration.Referee
 
   @impl true
   def run(params, context) do
@@ -27,6 +33,7 @@ defmodule JidoHiveServer.Collaboration.Actions.ApplyResult do
         entry = %{
           entry_ref: entry_ref,
           entry_type: entry_type,
+          job_id: params.job_id,
           participant_id: params.participant_id,
           participant_role: params.participant_role,
           title: action["title"],
@@ -45,8 +52,10 @@ defmodule JidoHiveServer.Collaboration.Actions.ApplyResult do
           dispute = %{
             dispute_id: "dispute:#{seq}",
             title: entry.title,
+            severity: entry.severity,
             status: :open,
-            opened_by_entry_id: entry.entry_ref
+            opened_by_entry_ref: entry.entry_ref,
+            target_entry_refs: Enum.map(entry.targets, &Map.get(&1, "entry_ref"))
           }
 
           {[dispute | disputes], seq + 1}
@@ -55,33 +64,26 @@ defmodule JidoHiveServer.Collaboration.Actions.ApplyResult do
         end
       end)
 
-    updated_turns =
-      case Enum.split(state.turns, -1) do
-        {existing, [last_turn]} ->
-          existing ++
-            [
-              Map.merge(last_turn, %{
-                status: :completed,
-                result_summary: params.summary,
-                actions: params.actions,
-                tool_events: params.tool_events
-              })
-            ]
+    updated_turns = complete_turns(state.turns, params)
 
-        {_existing, []} ->
-          state.turns
-      end
+    updated_disputes =
+      resolve_disputes(state.disputes ++ Enum.reverse(new_disputes), entries, params.job_id)
+
+    updated_state = %{
+      state
+      | current_turn: %{},
+        turns: updated_turns,
+        context_entries: state.context_entries ++ entries,
+        disputes: updated_disputes,
+        next_entry_seq: next_entry_seq,
+        next_dispute_seq: next_dispute_seq
+    }
 
     {:ok, %{},
      StateOp.replace_state(%{
-       state
-       | current_turn: %{},
-         turns: updated_turns,
-         context_entries: state.context_entries ++ entries,
-         disputes: state.disputes ++ Enum.reverse(new_disputes),
-         next_entry_seq: next_entry_seq,
-         next_dispute_seq: next_dispute_seq,
-         status: "idle"
+       updated_state
+       | phase: Referee.phase(updated_state),
+         status: room_status(updated_state, params.status)
      })}
   end
 
@@ -92,4 +94,70 @@ defmodule JidoHiveServer.Collaboration.Actions.ApplyResult do
   defp map_entry_type("DECIDE"), do: "decision"
   defp map_entry_type("PUBLISH"), do: "publish_request"
   defp map_entry_type(_), do: "system_note"
+
+  defp complete_turns(turns, params) do
+    Enum.map(turns, fn turn ->
+      if turn.job_id == params.job_id do
+        Map.merge(turn, %{
+          status: turn_status(params.status),
+          result_summary: params.summary,
+          actions: params.actions,
+          tool_events: params.tool_events,
+          events: params.events,
+          approvals: params.approvals,
+          artifacts: params.artifacts,
+          execution: params.execution,
+          completed_at: DateTime.utc_now()
+        })
+      else
+        turn
+      end
+    end)
+  end
+
+  defp resolve_disputes(disputes, entries, job_id) do
+    Enum.reduce(entries, disputes, fn entry, acc ->
+      case entry.entry_type do
+        type when type in ["revision", "decision"] ->
+          resolve_targeted_disputes(acc, entry, job_id)
+
+        _other ->
+          acc
+      end
+    end)
+  end
+
+  defp resolve_targeted_disputes(disputes, entry, job_id) do
+    targeted_disputes =
+      entry.targets
+      |> Enum.map(&Map.get(&1, "dispute_id"))
+      |> Enum.reject(&is_nil/1)
+
+    Enum.map(disputes, &resolve_dispute(&1, targeted_disputes, entry, job_id))
+  end
+
+  defp resolve_dispute(
+         %{status: :open, dispute_id: dispute_id} = dispute,
+         targeted,
+         entry,
+         job_id
+       ) do
+    if dispute_id in targeted do
+      Map.merge(dispute, %{
+        status: :resolved,
+        resolved_by_entry_ref: entry.entry_ref,
+        resolved_in_job_id: job_id
+      })
+    else
+      dispute
+    end
+  end
+
+  defp resolve_dispute(dispute, _targeted, _entry, _job_id), do: dispute
+
+  defp room_status(_updated_state, "failed"), do: "failed"
+  defp room_status(updated_state, _status), do: Referee.room_status(updated_state)
+
+  defp turn_status("failed"), do: :failed
+  defp turn_status(_status), do: :completed
 end

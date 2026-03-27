@@ -23,6 +23,13 @@ end
 config :jido_hive_server, JidoHiveServerWeb.Endpoint,
   http: [port: String.to_integer(System.get_env("PORT", "4000"))]
 
+config :jido_hive_server, JidoHiveServer.Repo,
+  database:
+    System.get_env(
+      "JIDO_HIVE_SERVER_DB",
+      Path.expand("../tmp/jido_hive_server_#{config_env()}.db", __DIR__)
+    )
+
 if config_env() == :prod do
   # The secret key base is used to sign/encrypt cookies and other secrets.
   # A default value is used in config/dev.exs and config/test.exs but you

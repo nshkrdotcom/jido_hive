@@ -3,6 +3,8 @@ defmodule JidoHiveClient.RelayWorker do
 
   use GenServer
 
+  alias Jido.Signal
+  alias Jido.Signal.Bus
   alias PhoenixClient.{Channel, Message, Socket}
 
   @join_retry_ms 200
@@ -82,23 +84,40 @@ defmodule JidoHiveClient.RelayWorker do
       target_id: state.target_id
     })
 
-    with {:ok, result} <- execute_job(job, state) do
-      outbound =
-        result
-        |> Map.put_new("room_id", job["room_id"])
-        |> Map.put_new("target_id", state.target_id)
-        |> Map.put_new("capability_id", state.capability_id)
-        |> Map.put_new("participant_id", state.participant_id)
-        |> Map.put_new("participant_role", state.participant_role)
+    outbound =
+      case execute_job(job, state) do
+        {:ok, result} ->
+          result
 
-      {:ok, _} = Channel.push(channel, "job.result", outbound)
+        {:error, reason} ->
+          %{
+            "job_id" => job["job_id"],
+            "status" => "failed",
+            "summary" => "runtime execution failed",
+            "actions" => [],
+            "tool_events" => [],
+            "events" => [],
+            "approvals" => [],
+            "artifacts" => [],
+            "execution" => %{
+              "status" => "failed",
+              "error" => %{"reason" => inspect(reason)}
+            }
+          }
+      end
+      |> Map.put_new("room_id", job["room_id"])
+      |> Map.put_new("target_id", state.target_id)
+      |> Map.put_new("capability_id", state.capability_id)
+      |> Map.put_new("participant_id", state.participant_id)
+      |> Map.put_new("participant_role", state.participant_role)
 
-      publish_signal("client.job.completed", %{
-        job_id: job["job_id"],
-        participant_id: state.participant_id,
-        target_id: state.target_id
-      })
-    end
+    {:ok, _} = Channel.push(channel, "job.result", outbound)
+
+    publish_signal("client.job.completed", %{
+      job_id: job["job_id"],
+      participant_id: state.participant_id,
+      target_id: state.target_id
+    })
 
     {:noreply, state}
   end
@@ -127,7 +146,7 @@ defmodule JidoHiveClient.RelayWorker do
   defp normalize_executor(module) when is_atom(module), do: {module, []}
 
   defp normalize_executor(nil) do
-    {JidoHiveClient.Executor.Scripted, [role: :architect]}
+    {JidoHiveClient.Executor.Session, [provider: :codex]}
   end
 
   defp hello_payload(state) do
@@ -155,8 +174,8 @@ defmodule JidoHiveClient.RelayWorker do
   end
 
   defp publish_signal(type, data) do
-    signal = Jido.Signal.new!(type, data, source: "/jido_hive_client/relay_worker")
-    _ = Jido.Signal.Bus.publish(JidoHiveClient.SignalBus, [signal])
+    signal = Signal.new!(type, data, source: "/jido_hive_client/relay_worker")
+    _ = Bus.publish(JidoHiveClient.SignalBus, [signal])
     :ok
   end
 end

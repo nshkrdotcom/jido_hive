@@ -7,6 +7,10 @@ config :jido_hive_server, JidoHiveServerWeb.Endpoint,
   secret_key_base: "ppeB9jid2nqWqC4jgH9GxVIduzOcG1aTnhc43mwBjyOiYbSDuDWKhz7ezhm1fRsk",
   server: true
 
+config :jido_hive_server, JidoHiveServer.Repo,
+  database: Path.expand("../tmp/jido_hive_server_test.db", __DIR__),
+  pool_size: 5
+
 # Print only warnings and errors during test
 config :logger, level: :warning
 

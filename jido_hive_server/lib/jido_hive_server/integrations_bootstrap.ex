@@ -4,8 +4,8 @@ defmodule JidoHiveServer.IntegrationsBootstrap do
   use GenServer
 
   alias Jido.Integration.V2
-  alias Jido.Integration.V2.Connectors.{GitHub, Notion}
   alias Jido.Integration.V2.Connectors.CodexCli
+  alias Jido.Integration.V2.Connectors.{GitHub, Notion}
   alias Jido.Integration.V2.RuntimeAsmBridge.HarnessDriver
   alias Jido.Integration.V2.TargetDescriptor
 
@@ -30,10 +30,8 @@ defmodule JidoHiveServer.IntegrationsBootstrap do
   end
 
   defp register_connector(module) do
-    case V2.register_connector(module) do
-      :ok -> :ok
-      {:error, _reason} -> :ok
-    end
+    _ = V2.register_connector(module)
+    :ok
   end
 
   defp announce_server_targets(module) do

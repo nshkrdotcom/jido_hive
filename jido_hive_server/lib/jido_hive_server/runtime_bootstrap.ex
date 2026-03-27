@@ -51,24 +51,24 @@ defmodule JidoHiveServer.RuntimeBootstrap do
     context = bootstrap_context(instance_id)
 
     case SystemInstanceSupervisor.lookup_instance(instance_id) do
-      {:ok, _pid} ->
-        if wait_until(fn -> Instance.ready?(instance_id) end),
-          do: :ok,
-          else: {:error, :instance_not_ready}
+      {:ok, _pid} -> ensure_instance_ready(instance_id)
+      :error -> start_instance(instance_id, context)
+    end
+  end
 
-      :error ->
-        case SystemInstanceSupervisor.start_instance(instance_id, context) do
-          {:ok, _pid} ->
-            if wait_until(fn -> Instance.ready?(instance_id) end),
-              do: :ok,
-              else: {:error, :instance_not_ready}
+  defp start_instance(instance_id, context) do
+    case SystemInstanceSupervisor.start_instance(instance_id, context) do
+      {:ok, _pid} -> ensure_instance_ready(instance_id)
+      {:error, {:already_started, _pid}} -> :ok
+      {:error, reason} -> {:error, reason}
+    end
+  end
 
-          {:error, {:already_started, _pid}} ->
-            :ok
-
-          {:error, reason} ->
-            {:error, reason}
-        end
+  defp ensure_instance_ready(instance_id) do
+    if wait_until(fn -> Instance.ready?(instance_id) end) do
+      :ok
+    else
+      {:error, :instance_not_ready}
     end
   end
 

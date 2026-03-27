@@ -1,4 +1,6 @@
 defmodule JidoHiveServerWeb.RelayChannel do
+  @moduledoc false
+
   use Phoenix.Channel
 
   alias JidoHiveServer.{Collaboration, RemoteExec}

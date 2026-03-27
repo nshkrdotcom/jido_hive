@@ -5,6 +5,16 @@ defmodule JidoHiveClient.Application do
 
   @impl true
   def start(_type, _args) do
+    Application.put_env(
+      :jido_harness,
+      :runtime_drivers,
+      Map.put(
+        Application.get_env(:jido_harness, :runtime_drivers, %{}),
+        :asm,
+        Jido.Integration.V2.RuntimeAsmBridge.HarnessDriver
+      )
+    )
+
     children = [
       {Jido.Signal.Bus, name: JidoHiveClient.SignalBus}
     ]

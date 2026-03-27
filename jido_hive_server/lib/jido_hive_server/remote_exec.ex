@@ -5,6 +5,7 @@ defmodule JidoHiveServer.RemoteExec do
 
   alias Jido.Integration.V2
   alias Jido.Integration.V2.TargetDescriptor
+  alias JidoHiveServer.Persistence
 
   def start_link(opts \\ []) do
     GenServer.start_link(__MODULE__, opts, name: __MODULE__)
@@ -26,12 +27,17 @@ defmodule JidoHiveServer.RemoteExec do
     GenServer.cast(__MODULE__, {:remove_channel, channel_pid})
   end
 
+  def fetch_target(target_id) when is_binary(target_id) do
+    GenServer.call(__MODULE__, {:fetch_target, target_id})
+  end
+
   def list_targets do
     GenServer.call(__MODULE__, :list_targets)
   end
 
   @impl true
   def init(_opts) do
+    :ok = Persistence.mark_all_targets_offline()
     {:ok, %{connections: %{}, targets: %{}}}
   end
 
@@ -69,6 +75,7 @@ defmodule JidoHiveServer.RemoteExec do
 
     targets = Map.put(state.targets, target.target_id, target)
     maybe_announce_target(target)
+    {:ok, _snapshot} = Persistence.upsert_target(target)
     {:reply, {:ok, target}, %{state | targets: targets}}
   end
 
@@ -83,8 +90,15 @@ defmodule JidoHiveServer.RemoteExec do
     end
   end
 
+  def handle_call({:fetch_target, target_id}, _from, state) do
+    case Map.fetch(state.targets, target_id) do
+      {:ok, target} -> {:reply, {:ok, target}, state}
+      :error -> {:reply, Persistence.fetch_target(target_id), state}
+    end
+  end
+
   def handle_call(:list_targets, _from, state) do
-    {:reply, Map.values(state.targets), state}
+    {:reply, Persistence.list_targets(status: "online"), state}
   end
 
   @impl true
@@ -95,6 +109,12 @@ defmodule JidoHiveServer.RemoteExec do
       state.targets
       |> Enum.reject(fn {_target_id, target} -> target.channel_pid == channel_pid end)
       |> Map.new()
+
+    Enum.each(state.targets, fn {_target_id, target} ->
+      if target.channel_pid == channel_pid do
+        :ok = Persistence.mark_target_offline(target.target_id)
+      end
+    end)
 
     {:noreply, %{state | connections: connections, targets: targets}}
   end

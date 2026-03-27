@@ -1,13 +1,15 @@
 defmodule JidoHiveServer.Collaboration.RelaySliceTest do
   use ExUnit.Case, async: false
+  use JidoHiveServer.PersistenceCase
 
   alias Jido.Integration.V2
-  alias JidoHiveClient.Executor.Scripted
+  alias JidoHiveClient.Executor.Session
   alias JidoHiveClient.RelayWorker
+  alias JidoHiveClient.TestSupport.ScriptedRunModule
   alias JidoHiveServer.Collaboration
   alias JidoHiveServer.RemoteExec
 
-  test "two local clients collaborate through the relay and produce a reviewable room state" do
+  test "two local clients collaborate through the relay, share tool lineage, and finish publication-ready" do
     port =
       Application.fetch_env!(:jido_hive_server, JidoHiveServerWeb.Endpoint)
       |> Keyword.fetch!(:http)
@@ -26,7 +28,7 @@ defmodule JidoHiveServer.Collaboration.RelaySliceTest do
        participant_role: "architect",
        target_id: "target-architect",
        capability_id: "codex.exec.session",
-       executor: {Scripted, [role: :architect]}}
+       executor: {Session, [provider: :claude, driver: ScriptedRunModule]}}
     )
 
     start_supervised!(
@@ -40,7 +42,7 @@ defmodule JidoHiveServer.Collaboration.RelaySliceTest do
        participant_role: "skeptic",
        target_id: "target-skeptic",
        capability_id: "codex.exec.session",
-       executor: {Scripted, [role: :skeptic]}}
+       executor: {Session, [provider: :claude, driver: ScriptedRunModule]}}
     )
 
     assert wait_until(fn ->
@@ -75,13 +77,14 @@ defmodule JidoHiveServer.Collaboration.RelaySliceTest do
              })
 
     assert room.room_id == "room-relay-1"
-    assert {:ok, _snapshot} = Collaboration.run_first_slice("room-relay-1")
+    assert {:ok, _snapshot} = Collaboration.run_room("room-relay-1", max_turns: 6)
 
     assert wait_until(fn ->
              case Collaboration.fetch_room("room-relay-1") do
                {:ok, snapshot} ->
-                 length(snapshot.context_entries) >= 3 and
-                   Enum.any?(snapshot.disputes, &(&1.status == :open))
+                 snapshot.status == "publication_ready" and
+                   length(snapshot.turns) == 3 and
+                   Enum.all?(snapshot.disputes, &(&1.status == :resolved))
 
                _ ->
                  false
@@ -89,14 +92,30 @@ defmodule JidoHiveServer.Collaboration.RelaySliceTest do
            end)
 
     assert {:ok, snapshot} = Collaboration.fetch_room("room-relay-1")
-    assert Enum.any?(snapshot.disputes, &(&1.status == :open))
+    assert snapshot.status == "publication_ready"
+    assert Enum.all?(snapshot.disputes, &(&1.status == :resolved))
 
     assert Enum.map(snapshot.context_entries, & &1.entry_type) == [
              "claim",
              "evidence",
              "publish_request",
-             "objection"
+             "objection",
+             "revision",
+             "decision"
            ]
+
+    assert Enum.map(snapshot.turns, & &1.phase) == ["proposal", "critique", "resolution"]
+
+    critique_turn = Enum.at(snapshot.turns, 1)
+    assert critique_turn.collaboration_envelope["shared"]["instruction_log"] != []
+    assert critique_turn.collaboration_envelope["shared"]["tool_call_log"] != []
+
+    resolution_turn = Enum.at(snapshot.turns, 2)
+
+    assert [%{"dispute_id" => "dispute:1"}] =
+             resolution_turn.collaboration_envelope["referee"]["open_disputes"]
+
+    assert Enum.all?(snapshot.turns, &(&1.execution["status"] == "completed"))
   end
 
   defp wait_until(fun, attempts \\ 50)

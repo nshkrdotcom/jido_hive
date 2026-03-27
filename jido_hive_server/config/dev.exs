@@ -16,6 +16,10 @@ config :jido_hive_server, JidoHiveServerWeb.Endpoint,
   secret_key_base: "y94TfGOAEmYbEUUfXFcujjB1M0Zese2F4IP3MB69ydxy8wIXzZiwQVdTNDVPYdOl",
   watchers: []
 
+config :jido_hive_server, JidoHiveServer.Repo,
+  database: Path.expand("../tmp/jido_hive_server_dev.db", __DIR__),
+  pool_size: 5
+
 # ## SSL Support
 #
 # In order to use HTTPS in development, a self-signed

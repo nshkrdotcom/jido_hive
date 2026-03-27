@@ -12,6 +12,7 @@ defmodule JidoHiveServer.Application do
       {DNSCluster, query: Application.get_env(:jido_hive_server, :dns_cluster_query) || :ignore},
       {Phoenix.PubSub, name: JidoHiveServer.PubSub},
       {Jido.Signal.Bus, name: JidoHiveServer.SignalBus},
+      JidoHiveServer.Repo,
       {Registry, keys: :unique, name: JidoHiveServer.Collaboration.Registry},
       {DynamicSupervisor,
        strategy: :one_for_one, name: JidoHiveServer.Collaboration.RoomSupervisor},

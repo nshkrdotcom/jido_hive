@@ -2,11 +2,36 @@ defmodule JidoHiveServerWeb.RoomControllerTest do
   use JidoHiveServerWeb.ConnCase, async: false
 
   alias Jido.Integration.V2
-  alias JidoHiveClient.Executor.Scripted
+  alias JidoHiveClient.Executor.Session
   alias JidoHiveClient.RelayWorker
+  alias JidoHiveClient.TestSupport.ScriptedRunModule
   alias JidoHiveServer.RemoteExec
 
-  test "creates a room, runs the first slice, and returns the room snapshot", %{conn: conn} do
+  defmodule GatewayStub do
+    @behaviour JidoHiveServer.Publications.Gateway
+
+    @impl true
+    def invoke_publication(plan, input, _opts) do
+      {:ok, %{run: %{run_id: "run-#{plan.channel}"}, output: %{"input" => input}}}
+    end
+  end
+
+  setup do
+    old_gateway = Application.get_env(:jido_hive_server, :publication_gateway)
+    Application.put_env(:jido_hive_server, :publication_gateway, GatewayStub)
+
+    on_exit(fn ->
+      if old_gateway do
+        Application.put_env(:jido_hive_server, :publication_gateway, old_gateway)
+      else
+        Application.delete_env(:jido_hive_server, :publication_gateway)
+      end
+    end)
+
+    :ok
+  end
+
+  test "creates a room, runs the refereed slice, and executes publication runs", %{conn: conn} do
     port =
       Application.fetch_env!(:jido_hive_server, JidoHiveServerWeb.Endpoint)
       |> Keyword.fetch!(:http)
@@ -25,7 +50,7 @@ defmodule JidoHiveServerWeb.RoomControllerTest do
        participant_role: "architect",
        target_id: "target-architect-http",
        capability_id: "codex.exec.session",
-       executor: {Scripted, [role: :architect]}}
+       executor: {Session, [provider: :claude, driver: ScriptedRunModule]}}
     )
 
     start_supervised!(
@@ -39,7 +64,7 @@ defmodule JidoHiveServerWeb.RoomControllerTest do
        participant_role: "skeptic",
        target_id: "target-skeptic-http",
        capability_id: "codex.exec.session",
-       executor: {Scripted, [role: :skeptic]}}
+       executor: {Session, [provider: :claude, driver: ScriptedRunModule]}}
     )
 
     assert wait_until(fn ->
@@ -96,13 +121,19 @@ defmodule JidoHiveServerWeb.RoomControllerTest do
              }
            } = json_response(create_conn, 201)
 
-    run_conn = post(recycle(create_conn), ~p"/api/rooms/room-http-1/first_slice", %{})
+    run_conn =
+      post(recycle(create_conn), ~p"/api/rooms/room-http-1/run", %{
+        "max_turns" => 6,
+        "turn_timeout_ms" => 5_000
+      })
 
     assert %{
              "data" => %{
                "room_id" => "room-http-1",
+               "status" => "publication_ready",
                "context_entries" => entries,
-               "disputes" => disputes
+               "disputes" => disputes,
+               "turns" => turns
              }
            } = json_response(run_conn, 200)
 
@@ -110,17 +141,24 @@ defmodule JidoHiveServerWeb.RoomControllerTest do
              "claim",
              "evidence",
              "publish_request",
-             "objection"
+             "objection",
+             "revision",
+             "decision"
            ]
 
-    assert Enum.any?(disputes, &(&1["status"] == "open"))
+    assert Enum.all?(disputes, &(&1["status"] == "resolved"))
+    assert Enum.map(turns, & &1["phase"]) == ["proposal", "critique", "resolution"]
 
     show_conn = get(recycle(run_conn), ~p"/api/rooms/room-http-1")
 
     assert %{
              "data" => %{
                "room_id" => "room-http-1",
-               "turns" => [%{"status" => "completed"}, %{"status" => "completed"}]
+               "turns" => [
+                 %{"status" => "completed"},
+                 %{"status" => "completed"},
+                 %{"status" => "completed"}
+               ]
              }
            } = json_response(show_conn, 200)
 
@@ -144,17 +182,36 @@ defmodule JidoHiveServerWeb.RoomControllerTest do
            } = Enum.find(publications, &(&1["channel"] == "github"))
 
     assert github_body =~ "Shared packet"
-    assert github_body =~ "Conflict handling is underspecified"
+    assert github_body =~ "Conflict retention is underspecified"
+
+    execute_conn =
+      post(recycle(publication_conn), ~p"/api/rooms/room-http-1/publications", %{
+        "channels" => ["github", "notion"],
+        "connections" => %{
+          "github" => "connection-github-http",
+          "notion" => "connection-notion-http"
+        },
+        "bindings" => %{
+          "github" => %{"repo" => "owner/repo"},
+          "notion" => %{
+            "parent.data_source_id" => "data-source-http",
+            "title_property" => "Name"
+          }
+        },
+        "actor_id" => "operator-http",
+        "tenant_id" => "workspace-http"
+      })
 
     assert %{
-             "channel" => "notion",
-             "capability_id" => "notion.pages.create",
-             "compatible_targets" => [_ | _],
-             "draft" => %{"children" => notion_children}
-           } = Enum.find(publications, &(&1["channel"] == "notion"))
+             "data" => %{"room_id" => "room-http-1", "runs" => runs}
+           } = json_response(execute_conn, 200)
 
-    assert is_list(notion_children)
-    assert length(notion_children) >= 3
+    assert Enum.all?(runs, &(&1["status"] == "completed"))
+
+    history_conn = get(recycle(execute_conn), ~p"/api/rooms/room-http-1/publications")
+
+    assert %{"data" => history} = json_response(history_conn, 200)
+    assert length(history) == 2
   end
 
   defp wait_until(fun, attempts \\ 50)
