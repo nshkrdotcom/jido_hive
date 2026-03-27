@@ -12,7 +12,15 @@ defmodule JidoHiveClient.Executor.Session do
   @impl true
   def run(job, opts) when is_map(job) and is_list(opts) do
     provider = Keyword.get(opts, :provider, provider(job))
-    request = CollaborationPrompt.to_run_request(job, run_request_opts(job, opts))
+    model = Keyword.get(opts, :model) || default_model(provider)
+    reasoning_effort = Keyword.get(opts, :reasoning_effort, :low)
+
+    request =
+      CollaborationPrompt.to_run_request(
+        job,
+        run_request_opts(job, Keyword.put(opts, :model, model))
+      )
+
     session_id = Keyword.get(opts, :session_id, default_session_id(job))
     run_id = Keyword.get(opts, :run_id, default_run_id(job))
 
@@ -23,14 +31,17 @@ defmodule JidoHiveClient.Executor.Session do
       |> Keyword.put_new(:session_id, session_id)
       |> Keyword.put_new(:cwd, workspace_root(job, opts))
 
-    Status.execution_started(job, Keyword.merge(opts, provider: provider))
+    Status.execution_started(
+      job,
+      Keyword.merge(opts, provider: provider, model: model, reasoning_effort: reasoning_effort)
+    )
 
     with {:ok, session} <- Harness.start_session(@runtime_id, start_opts),
          {:ok, run, stream} <-
            Harness.stream_run(session, request,
              run_id: run_id,
              driver: Keyword.get(opts, :driver),
-             driver_opts: driver_opts(job, opts)
+             driver_opts: driver_opts(job, Keyword.put(opts, :reasoning_effort, reasoning_effort))
            ) do
       result =
         stream
@@ -271,7 +282,10 @@ defmodule JidoHiveClient.Executor.Session do
   end
 
   defp driver_opts(job, opts) do
-    Keyword.put_new(Keyword.get(opts, :driver_opts, []), :scenario, scenario_from_job(job))
+    opts
+    |> Keyword.get(:driver_opts, [])
+    |> Keyword.put_new(:scenario, scenario_from_job(job))
+    |> Keyword.put_new(:reasoning_effort, Keyword.get(opts, :reasoning_effort, :low))
   end
 
   defp scenario_from_job(job) do
@@ -281,6 +295,9 @@ defmodule JidoHiveClient.Executor.Session do
       _other -> :architect
     end
   end
+
+  defp default_model(:codex), do: "gpt-5.4"
+  defp default_model(_provider), do: nil
 
   defp append_execution_text(projection, _execution, ""), do: projection
 

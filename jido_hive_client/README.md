@@ -37,14 +37,20 @@ mix run --no-halt -e 'JidoHiveClient.CLI.main(System.argv())' -- \
   --target-id target-architect \
   --capability-id codex.exec.session \
   --workspace-root /path/to/repo \
-  --provider codex
+  --provider codex \
+  --model gpt-5.4 \
+  --reasoning-effort low
 ```
 
 Optional execution flags:
 
 - `--model`
+- `--reasoning-effort`
 - `--timeout-ms`
 - `--cli-path`
+
+The repo-level `bin/client` wrapper defaults to `gpt-5.4` with `low`
+reasoning for the Codex path unless you override those values explicitly.
 
 ## Dev
 

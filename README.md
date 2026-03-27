@@ -181,6 +181,7 @@ The repo-level `bin/client` wrapper accepts these useful env vars:
 - `CAPABILITY_ID`
 - `JIDO_HIVE_PROVIDER`
 - `JIDO_HIVE_MODEL`
+- `JIDO_HIVE_REASONING_EFFORT`
 - `JIDO_HIVE_TIMEOUT_MS`
 - `JIDO_HIVE_CLI_PATH`
 - `JIDO_HIVE_TURN_TIMEOUT_MS`
@@ -191,3 +192,5 @@ The repo-level `bin/client` wrapper accepts these useful env vars:
   depending on whether the model actually emits a `PUBLISH` action.
 - The client now performs one strict no-tool repair pass when a provider
   returns prose or malformed JSON instead of the room contract.
+- The default Codex runtime profile is now `gpt-5.4` with `low` reasoning
+  unless you override `JIDO_HIVE_MODEL` or `JIDO_HIVE_REASONING_EFFORT`.

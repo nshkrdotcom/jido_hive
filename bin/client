@@ -13,7 +13,8 @@ TARGET_ID="${TARGET_ID:-target-$PARTICIPANT_ROLE}"
 USER_ID="${USER_ID:-user-$PARTICIPANT_ROLE}"
 CAPABILITY_ID="${CAPABILITY_ID:-codex.exec.session}"
 JIDO_HIVE_PROVIDER="${JIDO_HIVE_PROVIDER:-codex}"
-JIDO_HIVE_MODEL="${JIDO_HIVE_MODEL:-}"
+JIDO_HIVE_MODEL="${JIDO_HIVE_MODEL:-gpt-5.4}"
+JIDO_HIVE_REASONING_EFFORT="${JIDO_HIVE_REASONING_EFFORT:-low}"
 JIDO_HIVE_TIMEOUT_MS="${JIDO_HIVE_TIMEOUT_MS:-}"
 JIDO_HIVE_CLI_PATH="${JIDO_HIVE_CLI_PATH:-}"
 
@@ -30,7 +31,8 @@ exec mix run --no-halt -e 'JidoHiveClient.CLI.main(System.argv())' -- \
   --capability-id "$CAPABILITY_ID" \
   --workspace-root "$WORKSPACE_ROOT" \
   --provider "$JIDO_HIVE_PROVIDER" \
-  ${JIDO_HIVE_MODEL:+--model "$JIDO_HIVE_MODEL"} \
+  --model "$JIDO_HIVE_MODEL" \
+  --reasoning-effort "$JIDO_HIVE_REASONING_EFFORT" \
   ${JIDO_HIVE_TIMEOUT_MS:+--timeout-ms "$JIDO_HIVE_TIMEOUT_MS"} \
   ${JIDO_HIVE_CLI_PATH:+--cli-path "$JIDO_HIVE_CLI_PATH"} \
   "$@"

@@ -27,7 +27,8 @@ defmodule JidoHiveClient.Status do
   def execution_started(job, opts) when is_map(job) and is_list(opts) do
     emit(
       "executing room=#{job["room_id"]} phase=#{phase(job)} provider=#{provider_label(opts[:provider])} " <>
-        "model=#{opts[:model] || "default"} runtime=asm path=jido.harness->asm"
+        "model=#{opts[:model] || "default"} reasoning=#{opts[:reasoning_effort] || "default"} " <>
+        "runtime=asm path=jido.harness->asm"
     )
   end
 

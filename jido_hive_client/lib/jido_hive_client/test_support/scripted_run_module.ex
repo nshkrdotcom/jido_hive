@@ -93,7 +93,7 @@ defmodule JidoHiveClient.TestSupport.ScriptedRunModule do
              "role" => "assistant",
              "content" => [encoded],
              "metadata" => %{},
-             "model" => "gpt-5-codex"
+             "model" => "gpt-5.4"
            }},
           {:result,
            %{
@@ -127,7 +127,7 @@ defmodule JidoHiveClient.TestSupport.ScriptedRunModule do
            "role" => "assistant",
            "content" => [encoded],
            "metadata" => %{},
-           "model" => "gpt-5-codex"
+           "model" => "gpt-5.4"
          }},
         {:result,
          %{
@@ -146,7 +146,7 @@ defmodule JidoHiveClient.TestSupport.ScriptedRunModule do
              "Submitted a claim, evidence, and publish recommendation for the shared packet."
            ],
            "metadata" => %{},
-           "model" => "gpt-5-codex"
+           "model" => "gpt-5.4"
          }},
         {:result,
          %{

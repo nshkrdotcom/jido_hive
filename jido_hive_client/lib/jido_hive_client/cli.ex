@@ -35,6 +35,7 @@ defmodule JidoHiveClient.CLI do
           workspace_root: :string,
           provider: :string,
           model: :string,
+          reasoning_effort: :string,
           timeout_ms: :integer,
           cli_path: :string
         ]
@@ -66,6 +67,7 @@ defmodule JidoHiveClient.CLI do
          [
            provider: parse_provider(Keyword.get(opts, :provider, "codex")),
            model: Keyword.get(opts, :model),
+           reasoning_effort: parse_reasoning_effort(Keyword.get(opts, :reasoning_effort, "low")),
            timeout_ms: Keyword.get(opts, :timeout_ms),
            cli_path: Keyword.get(opts, :cli_path)
          ]}
@@ -87,4 +89,17 @@ defmodule JidoHiveClient.CLI do
 
   defp parse_provider(provider) when is_binary(provider), do: String.to_atom(provider)
   defp parse_provider(provider) when is_atom(provider), do: provider
+
+  defp parse_reasoning_effort(nil), do: nil
+  defp parse_reasoning_effort(value) when is_atom(value), do: value
+
+  defp parse_reasoning_effort(value) when is_binary(value) do
+    value
+    |> String.trim()
+    |> String.downcase()
+    |> case do
+      "" -> nil
+      effort -> String.to_atom(effort)
+    end
+  end
 end
