@@ -5,7 +5,7 @@ defmodule JidoHiveClient.Executor.Session do
 
   alias Jido.Harness
   alias Jido.Harness.ExecutionEvent
-  alias JidoHiveClient.{CollaborationPrompt, ResultDecoder}
+  alias JidoHiveClient.{CollaborationPrompt, ResultDecoder, Status}
 
   @runtime_id :asm
 
@@ -23,6 +23,8 @@ defmodule JidoHiveClient.Executor.Session do
       |> Keyword.put_new(:session_id, session_id)
       |> Keyword.put_new(:cwd, workspace_root(job, opts))
 
+    Status.execution_started(job, Keyword.merge(opts, provider: provider))
+
     with {:ok, session} <- Harness.start_session(@runtime_id, start_opts),
          {:ok, run, stream} <-
            Harness.stream_run(session, request,
@@ -35,10 +37,12 @@ defmodule JidoHiveClient.Executor.Session do
         |> Enum.to_list()
         |> build_response(job, session, run, opts)
 
+      Status.execution_finished(job, result)
       :ok = Harness.stop_session(session)
       {:ok, result}
     else
       {:error, _} = error ->
+        Status.execution_failed(job, error)
         error
     end
   end
@@ -361,6 +365,8 @@ defmodule JidoHiveClient.Executor.Session do
   defp repair_response(_session, _job, _run, _opts, ""), do: :error
 
   defp repair_response(session, job, run, opts, text) do
+    Status.repair_started(job, :invalid_collaboration_json)
+
     request =
       CollaborationPrompt.to_repair_run_request(text, job,
         cwd: workspace_root(job, opts),

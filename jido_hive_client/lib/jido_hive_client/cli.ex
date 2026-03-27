@@ -1,15 +1,20 @@
 defmodule JidoHiveClient.CLI do
   @moduledoc false
 
-  alias JidoHiveClient.RelayWorker
+  require Logger
+
+  alias JidoHiveClient.{RelayWorker, Status}
 
   def main(args) do
-    {:ok, _apps} = Application.ensure_all_started(:jido_hive_client)
-
     opts =
       args
       |> parse_args()
       |> normalize_cli_opts()
+
+    configure_logger()
+
+    {:ok, _apps} = Application.ensure_all_started(:jido_hive_client)
+    Status.client_start(opts)
 
     {:ok, _pid} = RelayWorker.start_link(opts)
     Process.sleep(:infinity)
@@ -65,6 +70,19 @@ defmodule JidoHiveClient.CLI do
            cli_path: Keyword.get(opts, :cli_path)
          ]}
     ]
+  end
+
+  defp configure_logger do
+    level =
+      case System.get_env("JIDO_HIVE_CLIENT_LOG_LEVEL", "info") do
+        "debug" -> :debug
+        "info" -> :info
+        "warning" -> :warning
+        "error" -> :error
+        _other -> :info
+      end
+
+    Logger.configure(level: level)
   end
 
   defp parse_provider(provider) when is_binary(provider), do: String.to_atom(provider)

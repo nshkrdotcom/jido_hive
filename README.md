@@ -52,6 +52,16 @@ The server wrapper will:
 
 The room id is printed in the server terminal when it starts.
 
+The client terminals now announce when they:
+
+- connect and register their targets
+- receive a turn
+- start provider execution through `Jido.Harness -> asm -> ASM`
+- complete a turn and publish the result back to the server
+
+The live-demo server wrapper also defaults the Phoenix log level to `info` so
+you see room and dispatch progress instead of full dev query spam.
+
 If you want the older operator-only wrapper, `bin/demo-first-slice` now delegates
 to `setup/hive live-demo`.
 

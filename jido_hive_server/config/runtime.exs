@@ -20,6 +20,26 @@ if System.get_env("PHX_SERVER") do
   config :jido_hive_server, JidoHiveServerWeb.Endpoint, server: true
 end
 
+case System.get_env("JIDO_HIVE_LOG_LEVEL") do
+  nil ->
+    :ok
+
+  "debug" ->
+    config :logger, level: :debug
+
+  "info" ->
+    config :logger, level: :info
+
+  "warning" ->
+    config :logger, level: :warning
+
+  "error" ->
+    config :logger, level: :error
+
+  other ->
+    raise "unsupported JIDO_HIVE_LOG_LEVEL: #{inspect(other)}"
+end
+
 config :jido_hive_server, JidoHiveServerWeb.Endpoint,
   http: [port: String.to_integer(System.get_env("PORT", "4000"))]
 

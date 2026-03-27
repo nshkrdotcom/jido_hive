@@ -3,6 +3,8 @@ defmodule JidoHiveServer.RemoteExec do
 
   use GenServer
 
+  require Logger
+
   alias Jido.Integration.V2
   alias Jido.Integration.V2.TargetDescriptor
   alias JidoHiveServer.Persistence
@@ -74,6 +76,12 @@ defmodule JidoHiveServer.RemoteExec do
       }
 
     targets = Map.put(state.targets, target.target_id, target)
+
+    Logger.info(
+      "target online target=#{target.target_id} role=#{target.participant_role} " <>
+        "provider=#{target.provider} runtime=#{target.runtime_driver}"
+    )
+
     maybe_announce_target(target)
     {:ok, _snapshot} = Persistence.upsert_target(target)
     {:reply, {:ok, target}, %{state | targets: targets}}
@@ -112,6 +120,7 @@ defmodule JidoHiveServer.RemoteExec do
 
     Enum.each(state.targets, fn {_target_id, target} ->
       if target.channel_pid == channel_pid do
+        Logger.info("target offline target=#{target.target_id} role=#{target.participant_role}")
         :ok = Persistence.mark_target_offline(target.target_id)
       end
     end)

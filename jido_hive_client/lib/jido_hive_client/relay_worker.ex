@@ -5,6 +5,7 @@ defmodule JidoHiveClient.RelayWorker do
 
   alias Jido.Signal
   alias Jido.Signal.Bus
+  alias JidoHiveClient.Status
   alias PhoenixClient.{Channel, Message, Socket}
 
   @join_retry_ms 200
@@ -57,6 +58,8 @@ defmodule JidoHiveClient.RelayWorker do
           {:ok, _} = Channel.push(channel, "relay.hello", hello_payload(state))
           {:ok, _} = Channel.push(channel, "target.upsert", target_payload(state))
 
+          Status.relay_ready(state)
+
           publish_signal("client.relay.joined", %{
             target_id: state.target_id,
             topic: state.relay_topic
@@ -78,6 +81,8 @@ defmodule JidoHiveClient.RelayWorker do
 
   @impl true
   def handle_info(%Message{event: "job.start", payload: job}, %{channel: channel} = state) do
+    Status.job_received(job, state)
+
     publish_signal("client.job.received", %{
       job_id: job["job_id"],
       participant_id: state.participant_id,
@@ -112,6 +117,7 @@ defmodule JidoHiveClient.RelayWorker do
       |> Map.put_new("participant_role", state.participant_role)
 
     {:ok, _} = Channel.push(channel, "job.result", outbound)
+    Status.result_published(job, outbound)
 
     publish_signal("client.job.completed", %{
       job_id: job["job_id"],

@@ -39,7 +39,7 @@ printf '  bin/client-skeptic\n' >&2
 
 trap cleanup EXIT INT TERM
 
-"$ROOT/bin/server" &
+env JIDO_HIVE_LOG_LEVEL="${JIDO_HIVE_LOG_LEVEL:-info}" "$ROOT/bin/server" &
 SERVER_PID=$!
 
 "$ROOT/setup/hive" live-demo \

@@ -3,6 +3,8 @@ defmodule JidoHiveServerWeb.RelayChannel do
 
   use Phoenix.Channel
 
+  require Logger
+
   alias JidoHiveServer.{Collaboration, RemoteExec}
 
   @impl true
@@ -32,12 +34,22 @@ defmodule JidoHiveServerWeb.RelayChannel do
   end
 
   def handle_in("job.result", payload, socket) do
+    Logger.info(
+      "job result room=#{payload["room_id"]} participant=#{payload["participant_id"]} " <>
+        "status=#{payload["status"]} actions=#{action_summary(payload["actions"])}"
+    )
+
     {:ok, _snapshot} = Collaboration.receive_result(payload)
     {:reply, {:ok, %{"accepted" => true}}, socket}
   end
 
   @impl true
   def handle_info({:dispatch_job, job}, socket) do
+    Logger.info(
+      "dispatch room=#{job["room_id"]} phase=#{get_in(job, ["collaboration_envelope", "turn", "phase"])} " <>
+        "participant=#{job["participant_id"]} target=#{job["target_id"]}"
+    )
+
     push(socket, "job.start", job)
     {:noreply, socket}
   end
@@ -49,4 +61,16 @@ defmodule JidoHiveServerWeb.RelayChannel do
     RemoteExec.remove_channel(self())
     :ok
   end
+
+  defp action_summary(actions) when is_list(actions) do
+    actions
+    |> Enum.map(&(Map.get(&1, "op") || Map.get(&1, :op) || "unknown"))
+    |> Enum.uniq()
+    |> case do
+      [] -> "none"
+      ops -> Enum.join(ops, ",")
+    end
+  end
+
+  defp action_summary(_other), do: "none"
 end

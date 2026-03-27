@@ -5,6 +5,10 @@
 It connects outbound to the Phoenix relay, advertises a session target, and
 runs collaboration turns through `Jido.Harness` on the ASM runtime-driver path.
 
+When started through the repo-level wrappers, it also prints human-readable
+status lines for relay join, target readiness, turn execution, repair retries,
+and result publication.
+
 ## What It Does
 
 - joins a relay topic over websockets

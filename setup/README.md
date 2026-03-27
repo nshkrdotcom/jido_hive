@@ -48,6 +48,11 @@ That is enough for a developer to get a real collaborative run. The server
 wrapper waits for both clients, creates the room, runs the slice, and prints the
 room snapshot plus publication plan.
 
+The client terminals print a readable execution narrative as they move through
+relay join, target registration, turn receipt, provider execution, and result
+publication. The live-demo server wrapper also drops Phoenix logging to `info`
+by default so the operator output stays readable.
+
 If you already have live connection ids, set these before `bin/live-demo-server`
 to auto-publish as part of the same flow:
 
