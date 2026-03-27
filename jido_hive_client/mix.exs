@@ -1,5 +1,9 @@
+Code.require_file("../build_support/dependency_resolver.exs", __DIR__)
+
 defmodule JidoHiveClient.MixProject do
   use Mix.Project
+
+  alias JidoHive.Build.DependencyResolver
 
   def project do
     [
@@ -25,12 +29,11 @@ defmodule JidoHiveClient.MixProject do
     [
       {:jason, "~> 1.4"},
       {:phoenix_client, "~> 0.11.1"},
-      {:jido, path: "../../jido", override: true},
-      {:jido_action, path: "../../jido_action", override: true},
-      {:jido_signal, path: "../../jido_signal", override: true},
-      {:jido_harness, path: "../../jido_harness", override: true},
-      {:jido_integration_v2_runtime_asm_bridge,
-       path: "../../jido_integration/core/runtime_asm_bridge"}
+      DependencyResolver.jido(override: true),
+      DependencyResolver.jido_action(override: true),
+      DependencyResolver.jido_signal(override: true),
+      DependencyResolver.jido_harness(override: true),
+      DependencyResolver.jido_integration_runtime_asm_bridge()
     ]
   end
 

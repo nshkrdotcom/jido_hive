@@ -11,8 +11,11 @@ The first working slice is a distributed collaboration loop:
 2. multiple local clients connect outbound and register Jido execution targets
 3. the server opens a room, dispatches turns through the relay, and merges results into shared room state
 4. room state captures shared instructions, tool activity, claims, evidence, and objections
+5. the server derives GitHub and Notion publication drafts from that room state through registered `jido_integration` direct connectors
 
-This slice is intentionally narrow. It proves the client-server architecture, the Jido wiring, and the collaboration packet flow before GitHub and Notion publication workflows are layered on.
+This slice is intentionally narrow. It proves the client-server architecture,
+the Jido wiring, the collaboration packet flow, and a server-side publication
+planning seam before live credentialed publish execution is layered on.
 
 ## Repo Layout
 
@@ -33,12 +36,14 @@ Current working path:
 - target advertisement into `Jido.Integration.V2`
 - room creation and snapshot fetch over HTTP
 - first-slice orchestration across two clients
-- shared room state with claim, evidence, and objection entries
+- shared room state with claim, evidence, publish-intent, and objection entries
+- server-local GitHub and Notion direct target registration
+- publication-plan drafts at `GET /api/rooms/:id/publication_plan`
 
 Current deferred path:
 
 - real ASM-backed Codex or Claude execution in the client process
-- GitHub and Notion publication flows through `jido_integration`
+- credentialed GitHub and Notion publish execution through `jido_integration`
 - richer referee and dispute-resolution loops
 
 ## Quick Start
@@ -67,6 +72,22 @@ Inspect connected targets directly:
 ```bash
 curl -sS http://127.0.0.1:4000/api/targets
 ```
+
+Inspect the derived GitHub and Notion publication drafts after running the
+first slice:
+
+```bash
+curl -sS http://127.0.0.1:4000/api/rooms/<room-id>/publication_plan
+```
+
+## Dependency Model
+
+Both Mix apps now follow the same stable dependency policy as the cleaned
+upstream repos:
+
+- use sibling-relative `path:` dependencies when local checkouts exist
+- fall back to pinned git refs when they do not
+- do not vendor upstream repos under committed `deps/` trees
 
 ## Test
 

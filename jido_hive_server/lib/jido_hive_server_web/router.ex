@@ -11,6 +11,7 @@ defmodule JidoHiveServerWeb.Router do
     get "/targets", TargetController, :index
     post "/rooms", RoomController, :create
     get "/rooms/:id", RoomController, :show
+    get "/rooms/:id/publication_plan", RoomController, :publication_plan
     post "/rooms/:id/first_slice", RoomController, :run_first_slice
   end
 end

@@ -2,6 +2,7 @@ defmodule JidoHiveServer.Collaboration do
   @moduledoc false
 
   alias JidoHiveServer.Collaboration.RoomServer
+  alias JidoHiveServer.Publications
   alias JidoHiveServer.RemoteExec
   alias JidoHiveServer.Runtime
 
@@ -59,6 +60,12 @@ defmodule JidoHiveServer.Collaboration do
     else
       {:error, _} = error -> error
       _ -> {:error, :invalid_room_participants}
+    end
+  end
+
+  def publication_plan(room_id) when is_binary(room_id) do
+    with {:ok, snapshot} <- fetch_room(room_id) do
+      {:ok, Publications.build_plan(snapshot)}
     end
   end
 

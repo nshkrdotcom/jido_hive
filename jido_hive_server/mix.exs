@@ -1,5 +1,9 @@
+Code.require_file("../build_support/dependency_resolver.exs", __DIR__)
+
 defmodule JidoHiveServer.MixProject do
   use Mix.Project
+
+  alias JidoHive.Build.DependencyResolver
 
   def project do
     [
@@ -46,15 +50,16 @@ defmodule JidoHiveServer.MixProject do
       {:jason, "~> 1.2"},
       {:dns_cluster, "~> 0.2.0"},
       {:bandit, "~> 1.5"},
-      {:jido, path: "../../jido", override: true},
-      {:jido_action, path: "../../jido_action", override: true},
-      {:jido_signal, path: "../../jido_signal", override: true},
-      {:jido_harness, path: "../../jido_harness", override: true},
-      {:jido_os, path: "../../jido_os"},
-      {:jido_integration_v2, path: "../../jido_integration/core/platform"},
-      {:jido_integration_v2_runtime_asm_bridge,
-       path: "../../jido_integration/core/runtime_asm_bridge"},
-      {:jido_integration_v2_codex_cli, path: "../../jido_integration/connectors/codex_cli"},
+      DependencyResolver.jido(override: true),
+      DependencyResolver.jido_action(override: true),
+      DependencyResolver.jido_signal(override: true),
+      DependencyResolver.jido_harness(override: true),
+      DependencyResolver.jido_os(),
+      DependencyResolver.jido_integration_platform(),
+      DependencyResolver.jido_integration_runtime_asm_bridge(),
+      DependencyResolver.jido_integration_codex_cli(),
+      DependencyResolver.jido_integration_github(),
+      DependencyResolver.jido_integration_notion(),
       {:jido_hive_client, path: "../jido_hive_client", only: :test},
       {:phoenix_client, "~> 0.11.1", only: :test}
     ]

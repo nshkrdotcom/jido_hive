@@ -94,6 +94,7 @@ defmodule JidoHiveServer.Collaboration.RelaySliceTest do
     assert Enum.map(snapshot.context_entries, & &1.entry_type) == [
              "claim",
              "evidence",
+             "publish_request",
              "objection"
            ]
   end

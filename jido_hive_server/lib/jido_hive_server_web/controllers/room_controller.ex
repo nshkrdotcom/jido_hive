@@ -44,6 +44,19 @@ defmodule JidoHiveServerWeb.RoomController do
     end
   end
 
+  def publication_plan(conn, %{"id" => room_id}) do
+    case Collaboration.publication_plan(room_id) do
+      {:ok, plan} ->
+        json(conn, %{data: plan})
+
+      {:error, :room_not_found} ->
+        render_error(conn, :not_found, :room_not_found)
+
+      {:error, reason} ->
+        render_error(conn, :unprocessable_entity, reason)
+    end
+  end
+
   defp render_error(conn, status, reason) do
     conn
     |> put_status(status)

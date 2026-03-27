@@ -106,7 +106,13 @@ defmodule JidoHiveServerWeb.RoomControllerTest do
              }
            } = json_response(run_conn, 200)
 
-    assert Enum.map(entries, & &1["entry_type"]) == ["claim", "evidence", "objection"]
+    assert Enum.map(entries, & &1["entry_type"]) == [
+             "claim",
+             "evidence",
+             "publish_request",
+             "objection"
+           ]
+
     assert Enum.any?(disputes, &(&1["status"] == "open"))
 
     show_conn = get(recycle(run_conn), ~p"/api/rooms/room-http-1")
@@ -119,6 +125,36 @@ defmodule JidoHiveServerWeb.RoomControllerTest do
            } = json_response(show_conn, 200)
 
     assert get_in(json_response(show_conn, 200), ["data", "current_turn"]) == %{}
+
+    publication_conn = get(recycle(show_conn), ~p"/api/rooms/room-http-1/publication_plan")
+
+    assert %{
+             "data" => %{
+               "room_id" => "room-http-1",
+               "requested" => true,
+               "publications" => publications
+             }
+           } = json_response(publication_conn, 200)
+
+    assert %{
+             "channel" => "github",
+             "capability_id" => "github.issue.create",
+             "compatible_targets" => [_ | _],
+             "draft" => %{"body" => github_body}
+           } = Enum.find(publications, &(&1["channel"] == "github"))
+
+    assert github_body =~ "Shared packet"
+    assert github_body =~ "Conflict handling is underspecified"
+
+    assert %{
+             "channel" => "notion",
+             "capability_id" => "notion.pages.create",
+             "compatible_targets" => [_ | _],
+             "draft" => %{"children" => notion_children}
+           } = Enum.find(publications, &(&1["channel"] == "notion"))
+
+    assert is_list(notion_children)
+    assert length(notion_children) >= 3
   end
 
   defp wait_until(fun, attempts \\ 50)

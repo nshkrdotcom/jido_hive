@@ -1,14 +1,15 @@
-defmodule JidoHiveServer.Collaboration.RoomServerTest do
+defmodule JidoHiveServer.PublicationsTest do
   use ExUnit.Case, async: false
 
   alias JidoHiveServer.Collaboration.RoomServer
+  alias JidoHiveServer.Publications
 
-  test "records claim, evidence, and publish intent entries, then opens a dispute for an objection" do
+  test "builds GitHub and Notion publication drafts from the shared room state" do
     room =
       start_supervised!(
         {RoomServer,
-         room_id: "room-state-1",
-         session_id: "session-room-state-1",
+         room_id: "room-publications-1",
+         session_id: "session-room-publications-1",
          brief: "Design a client-server collaboration protocol for AI agents.",
          rules: ["Every objection must target a claim."],
          participants: [
@@ -27,9 +28,9 @@ defmodule JidoHiveServer.Collaboration.RoomServerTest do
          ]}
       )
 
-    assert {:ok, opened} =
+    assert {:ok, _opened} =
              RoomServer.open_turn(room, %{
-               "job_id" => "job-architect-1",
+               "job_id" => "job-architect-publications-1",
                "participant_id" => "architect",
                "round" => 1,
                "prompt_packet" => %{
@@ -39,19 +40,11 @@ defmodule JidoHiveServer.Collaboration.RoomServerTest do
                }
              })
 
-    assert opened.current_turn.participant_id == "architect"
-
-    assert {:ok, after_architect} = RoomServer.apply_result(room, architect_result())
-
-    assert Enum.map(after_architect.context_entries, & &1.entry_type) == [
-             "claim",
-             "evidence",
-             "publish_request"
-           ]
+    assert {:ok, _after_architect} = RoomServer.apply_result(room, architect_result())
 
     assert {:ok, _opened_again} =
              RoomServer.open_turn(room, %{
-               "job_id" => "job-skeptic-1",
+               "job_id" => "job-skeptic-publications-1",
                "participant_id" => "skeptic",
                "round" => 2,
                "prompt_packet" => %{
@@ -61,21 +54,28 @@ defmodule JidoHiveServer.Collaboration.RoomServerTest do
                }
              })
 
-    assert {:ok, after_skeptic} = RoomServer.apply_result(room, skeptic_result())
+    assert {:ok, snapshot} = RoomServer.apply_result(room, skeptic_result())
 
-    assert Enum.map(after_skeptic.context_entries, & &1.entry_type) == [
-             "claim",
-             "evidence",
-             "publish_request",
-             "objection"
-           ]
+    plan = Publications.build_plan(snapshot)
+    assert plan.room_id == "room-publications-1"
+    assert plan.requested
 
-    assert Enum.any?(after_skeptic.disputes, &(&1.status == :open))
+    github_plan = Enum.find(plan.publications, &(&1.channel == "github"))
+    assert github_plan.capability_id == "github.issue.create"
+    assert github_plan.draft.title =~ "client-server collaboration protocol"
+    assert github_plan.draft.body =~ "Shared packet"
+    assert github_plan.draft.body =~ "Conflict handling is underspecified"
+
+    notion_plan = Enum.find(plan.publications, &(&1.channel == "notion"))
+    assert notion_plan.capability_id == "notion.pages.create"
+    assert notion_plan.draft.title =~ "client-server collaboration protocol"
+    assert is_list(notion_plan.draft.children)
+    assert length(notion_plan.draft.children) >= 3
   end
 
   defp architect_result do
     %{
-      "job_id" => "job-architect-1",
+      "job_id" => "job-architect-publications-1",
       "participant_id" => "architect",
       "participant_role" => "architect",
       "summary" => "architect proposed a shared mutable packet",
@@ -110,7 +110,7 @@ defmodule JidoHiveServer.Collaboration.RoomServerTest do
 
   defp skeptic_result do
     %{
-      "job_id" => "job-skeptic-1",
+      "job_id" => "job-skeptic-publications-1",
       "participant_id" => "skeptic",
       "participant_role" => "skeptic",
       "summary" => "skeptic opened one concrete objection",

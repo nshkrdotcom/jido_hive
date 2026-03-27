@@ -18,11 +18,15 @@ The repo is intentionally not an umbrella app. The server and client are indepen
 `jido_hive_server` currently owns:
 
 - Phoenix websocket relay at `/socket`
-- HTTP API for `GET /api/targets`, `POST /api/rooms`, `GET /api/rooms/:id`, and `POST /api/rooms/:id/first_slice`
+- HTTP API for `GET /api/targets`, `POST /api/rooms`, `GET /api/rooms/:id`,
+  `GET /api/rooms/:id/publication_plan`, and `POST /api/rooms/:id/first_slice`
 - room lifecycle and room-state accumulation
 - `Jido.Signal.Bus`
 - `jido_os` bootstrap
-- `Jido.Integration.V2` connector registration for `codex.exec.session`
+- `Jido.Integration.V2` connector registration for `codex.exec.session`,
+  `github.issue.create`, and `notion.pages.create`
+- server-local direct target announcements for GitHub and Notion publication
+  capabilities
 - relay target advertisement into the control plane
 
 ### Client
@@ -59,9 +63,11 @@ The resulting room state captures:
 
 - claims
 - evidence
+- publish requests
 - objections
 - disputes
 - completed turn records
+- derived GitHub and Notion publication drafts
 
 ## Why This Shape
 
@@ -77,5 +83,6 @@ This keeps the trust boundary aligned with the Jido docs:
 1. Replace the scripted client executor with real ASM-backed session execution via `jido_harness` and `agent_session_manager`.
 2. Introduce a stable collaboration envelope for prompts, tool calls, partial results, approvals, and streamed artifacts.
 3. Add referee logic for objection targeting, turn admission, and dispute resolution.
-4. Re-enable GitHub and Notion publication flows through `jido_integration` connectors once the current connector compile path is stabilized in this environment.
+4. Promote the publication-plan seam into credentialed GitHub and Notion
+   execution flows through `jido_integration` installs and invokes.
 5. Persist room state and execution references instead of keeping them in memory.

@@ -41,6 +41,12 @@ defmodule JidoHiveClient.Executor.Scripted do
           "title" => "Lineage",
           "body" =>
             "Each client turn should preserve the prior structured actions and tool outcomes as reviewable artifacts."
+        },
+        %{
+          "op" => "PUBLISH",
+          "title" => "Publish the reviewed protocol",
+          "body" =>
+            "Prepare both a GitHub issue draft and a Notion page draft from the shared room state."
         }
       ],
       "tool_events" => [
