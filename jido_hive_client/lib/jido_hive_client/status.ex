@@ -96,12 +96,10 @@ defmodule JidoHiveClient.Status do
     input_tokens = Map.get(cost, "input_tokens")
     output_tokens = Map.get(cost, "output_tokens")
 
-    cond do
-      is_integer(input_tokens) and is_integer(output_tokens) ->
-        " tokens=#{input_tokens}/#{output_tokens}"
-
-      true ->
-        ""
+    if is_integer(input_tokens) and is_integer(output_tokens) do
+      " tokens=#{input_tokens}/#{output_tokens}"
+    else
+      ""
     end
   end
 end

@@ -69,7 +69,7 @@ defmodule JidoHiveServer.MixProject do
       DependencyResolver.jido_vfs(override: true),
       DependencyResolver.sprites(override: true),
       DependencyResolver.jido_integration_platform(),
-      DependencyResolver.jido_integration_runtime_asm_bridge(),
+      DependencyResolver.jido_integration_runtime_asm_bridge(override: true),
       DependencyResolver.jido_integration_codex_cli(),
       DependencyResolver.jido_integration_github(),
       DependencyResolver.jido_integration_notion(),
