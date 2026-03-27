@@ -9,7 +9,7 @@ defmodule JidoHiveServer.MixProject do
     [
       app: :jido_hive_server,
       version: "0.1.0",
-      elixir: "~> 1.18",
+      elixir: "~> 1.19",
       elixirc_paths: elixirc_paths(Mix.env()),
       start_permanent: Mix.env() == :prod,
       aliases: aliases(),
@@ -55,6 +55,9 @@ defmodule JidoHiveServer.MixProject do
       DependencyResolver.jido_signal(override: true),
       DependencyResolver.jido_harness(override: true),
       DependencyResolver.jido_os(),
+      DependencyResolver.jido_shell(override: true),
+      DependencyResolver.jido_vfs(override: true),
+      DependencyResolver.sprites(override: true),
       DependencyResolver.jido_integration_platform(),
       DependencyResolver.jido_integration_runtime_asm_bridge(),
       DependencyResolver.jido_integration_codex_cli(),

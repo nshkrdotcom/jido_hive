@@ -9,6 +9,9 @@ defmodule JidoHive.Build.DependencyResolver do
   @jido_harness_ref "70768e73681e2c34d15ddfa6dcb84343987524ea"
   @jido_os_ref "69034c84d9e593a4045241bd2095d7b66f0be1c8"
   @jido_integration_ref "5e11be43fe0964edc473849140cbe00a35dd48b7"
+  @jido_shell_ref "7a99ce9c1b32f305628fb0238dcf2de2fd2e89d7"
+  @jido_vfs_ref "0817e6cade2e34dacf6b2e648e86ea14f4a84c84"
+  @sprites_ref "07b225e8c1eeb35d1bfc9690e1f2fda5165b2a99"
 
   def jido(opts \\ []) do
     resolve(:jido, ["../jido"], [github: "nshkrdotcom/jido", ref: @jido_ref], opts)
@@ -43,6 +46,33 @@ defmodule JidoHive.Build.DependencyResolver do
 
   def jido_os(opts \\ []) do
     resolve(:jido_os, ["../jido_os"], [github: "epic-creative/jido_os", ref: @jido_os_ref], opts)
+  end
+
+  def jido_shell(opts \\ []) do
+    resolve(
+      :jido_shell,
+      ["../jido_shell"],
+      [github: "nshkrdotcom/jido_shell", ref: @jido_shell_ref],
+      opts
+    )
+  end
+
+  def jido_vfs(opts \\ []) do
+    resolve(
+      :jido_vfs,
+      ["../jido_vfs"],
+      [github: "nshkrdotcom/jido_vfs", ref: @jido_vfs_ref],
+      opts
+    )
+  end
+
+  def sprites(opts \\ []) do
+    resolve(
+      :sprites,
+      ["../sprites-ex", "../sprites_ex"],
+      [github: "mikehostetler/sprites-ex", ref: @sprites_ref],
+      opts
+    )
   end
 
   def jido_integration_platform(opts \\ []) do
