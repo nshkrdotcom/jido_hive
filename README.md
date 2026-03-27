@@ -59,119 +59,84 @@ That script will:
 For live AI runs, `bin/demo-first-slice` also accepts
 `JIDO_HIVE_TURN_TIMEOUT_MS` and defaults to `180000`.
 
-## Manual Flow
+## Setup Toolkit
 
-List targets:
+Use [setup/README.md](setup/README.md) for the guided local operator flow.
+
+The main entrypoint is:
 
 ```bash
-curl -sS http://127.0.0.1:4000/api/targets | jq
+setup/hive help
+```
+
+That wrapper turns the raw install / connection / publish API flow into a small
+set of shell commands with defaults, input validation, and JSON output.
+
+## Manual Flow
+
+Check the local server and list current targets:
+
+```bash
+setup/hive doctor
 ```
 
 Create a room:
 
 ```bash
-curl -sS -X POST http://127.0.0.1:4000/api/rooms \
-  -H 'content-type: application/json' \
-  -d '{
-    "room_id": "room-manual-1",
-    "brief": "Develop a distributed collaboration protocol for two AI clients.",
-    "rules": ["Every objection must target a claim or evidence entry."],
-    "participants": [
-      {
-        "participant_id": "architect",
-        "role": "architect",
-        "target_id": "target-architect",
-        "capability_id": "codex.exec.session"
-      },
-      {
-        "participant_id": "skeptic",
-        "role": "skeptic",
-        "target_id": "target-skeptic",
-        "capability_id": "codex.exec.session"
-      }
-    ]
-  }' | jq
+setup/hive create-room room-manual-1
 ```
 
 Run the room:
 
 ```bash
-curl -sS -X POST http://127.0.0.1:4000/api/rooms/room-manual-1/run \
-  -H 'content-type: application/json' \
-  -d '{"max_turns": 6, "turn_timeout_ms": 180000}' | jq
+setup/hive run-room room-manual-1 --turn-timeout-ms 180000
 ```
 
 Fetch the publication plan:
 
 ```bash
-curl -sS http://127.0.0.1:4000/api/rooms/room-manual-1/publication_plan | jq
+setup/hive publication-plan room-manual-1
 ```
 
 ## Live GitHub / Notion Path
 
-The server now exposes install and connection endpoints so you can obtain
-`connection_id` values inside `jido_hive` itself.
+The setup toolkit wraps the live connector flow. The full guide is in
+[setup/README.md](setup/README.md).
 
 Start a GitHub install:
 
 ```bash
-curl -sS -X POST http://127.0.0.1:4000/api/connectors/github/installs \
-  -H 'content-type: application/json' \
-  -d '{
-    "tenant_id": "workspace-local",
-    "actor_id": "operator-1",
-    "auth_type": "oauth2",
-    "subject": "octocat",
-    "requested_scopes": ["repo"]
-  }' | jq
+setup/hive start-install github --subject octocat --scope repo
 ```
 
 Complete that install after exchanging the provider code or token upstream:
 
 ```bash
-curl -sS -X POST http://127.0.0.1:4000/api/connectors/installs/<install-id>/complete \
-  -H 'content-type: application/json' \
-  -d '{
-    "subject": "octocat",
-    "granted_scopes": ["repo"],
-    "secret": {"access_token": "REDACTED"}
-  }' | jq
+setup/hive complete-install <install-id> --subject octocat --scope repo
 ```
 
 List current connector connections:
 
 ```bash
-curl -sS http://127.0.0.1:4000/api/connectors/github/connections?tenant_id=workspace-local | jq
-curl -sS http://127.0.0.1:4000/api/connectors/notion/connections?tenant_id=workspace-local | jq
+setup/hive connections github
+setup/hive connections notion
 ```
 
 Execute publication runs:
 
 ```bash
-curl -sS -X POST http://127.0.0.1:4000/api/rooms/room-manual-1/publications \
-  -H 'content-type: application/json' \
-  -d '{
-    "channels": ["github", "notion"],
-    "connections": {
-      "github": "connection-github-1",
-      "notion": "connection-notion-1"
-    },
-    "bindings": {
-      "github": {"repo": "owner/repo"},
-      "notion": {
-        "parent.data_source_id": "data-source-id",
-        "title_property": "Name"
-      }
-    },
-    "actor_id": "operator-1",
-    "tenant_id": "workspace-local"
-  }' | jq
+setup/hive publish room-manual-1 \
+  --github-connection connection-github-1 \
+  --github-repo owner/repo \
+  --notion-connection connection-notion-1 \
+  --notion-data-source-id data-source-id \
+  --notion-title-property Name
 ```
 
 Then inspect the durable publication history:
 
 ```bash
-curl -sS http://127.0.0.1:4000/api/rooms/room-manual-1/publications | jq
+setup/hive publication-runs room-manual-1
 ```
 
 ## Client Env

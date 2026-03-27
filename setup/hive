@@ -1,0 +1,585 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+# shellcheck source=setup/lib.sh
+source "$ROOT/setup/lib.sh"
+
+usage() {
+  cat <<'EOF'
+Usage:
+  setup/hive help
+  setup/hive doctor
+  setup/hive targets
+  setup/hive room ROOM_ID
+  setup/hive create-room [ROOM_ID] [--brief TEXT] [--rule TEXT]
+  setup/hive run-room ROOM_ID [--max-turns N] [--turn-timeout-ms N]
+  setup/hive publication-plan ROOM_ID
+  setup/hive publication-runs ROOM_ID
+  setup/hive start-install github|notion [--subject VALUE] [--scope VALUE]
+  setup/hive show-install INSTALL_ID
+  setup/hive complete-install INSTALL_ID [--subject VALUE]
+      [--scope VALUE] [--access-token VALUE]
+  setup/hive connections github|notion [--subject VALUE]
+  setup/hive publish ROOM_ID
+      [--github-connection ID --github-repo OWNER/REPO]
+      [--notion-connection ID --notion-data-source-id ID]
+      [--notion-title-property NAME]
+
+Environment defaults:
+  JIDO_HIVE_API_BASE    default: http://127.0.0.1:4000/api
+  JIDO_HIVE_TENANT_ID   default: workspace-local
+  JIDO_HIVE_ACTOR_ID    default: operator-1
+  JIDO_HIVE_GITHUB_SUBJECT
+  JIDO_HIVE_NOTION_SUBJECT
+
+Examples:
+  setup/hive doctor
+  setup/hive create-room room-manual-1
+  setup/hive run-room room-manual-1 --turn-timeout-ms 180000
+  setup/hive publication-plan room-manual-1
+  setup/hive start-install github --subject octocat --scope repo
+  setup/hive complete-install install-123 --subject octocat
+  setup/hive connections github
+  setup/hive publish room-manual-1 \
+    --github-connection connection-github-1 \
+    --github-repo owner/repo
+EOF
+}
+
+require_room_id() {
+  local room_id="${1:-}"
+  [[ -n "$room_id" ]] || die "room id is required"
+}
+
+cmd_doctor() {
+  require_base_tools
+
+  log "API base: $JIDO_HIVE_API_BASE"
+  log "tenant id: $JIDO_HIVE_TENANT_ID"
+  log "actor id: $JIDO_HIVE_ACTOR_ID"
+
+  api_get "/targets"
+}
+
+cmd_targets() {
+  require_base_tools
+  api_get "/targets"
+}
+
+cmd_room() {
+  require_base_tools
+
+  local room_id="${1:-}"
+  require_room_id "$room_id"
+
+  api_get "/rooms/$room_id"
+}
+
+cmd_create_room() {
+  require_base_tools
+
+  local room_id="${1:-room-$(date +%s)}"
+  if [[ "${room_id#--}" != "$room_id" ]]; then
+    room_id="room-$(date +%s)"
+  else
+    shift || true
+  fi
+
+  local brief='Develop a distributed collaboration protocol for two AI clients.'
+  local -a rules=('Every objection must target a claim.')
+  local using_default_rules=1
+
+  while (($# > 0)); do
+    case "$1" in
+      --brief)
+        shift
+        [[ $# -gt 0 ]] || die "--brief requires a value"
+        brief="$1"
+        ;;
+
+      --rule)
+        shift
+        [[ $# -gt 0 ]] || die "--rule requires a value"
+        if (( using_default_rules )); then
+          rules=()
+          using_default_rules=0
+        fi
+        rules+=("$1")
+        ;;
+
+      *)
+        die "unknown option for create-room: $1"
+        ;;
+    esac
+
+    shift || true
+  done
+
+  local rules_json
+  rules_json="$(printf '%s\n' "${rules[@]}" | jq -R . | jq -s .)"
+
+  local payload
+  payload="$(
+    jq -n \
+      --arg room_id "$room_id" \
+      --arg brief "$brief" \
+      --argjson rules "$rules_json" \
+      '{
+        room_id: $room_id,
+        brief: $brief,
+        rules: $rules,
+        participants: [
+          {
+            participant_id: "architect",
+            role: "architect",
+            target_id: "target-architect",
+            capability_id: "codex.exec.session"
+          },
+          {
+            participant_id: "skeptic",
+            role: "skeptic",
+            target_id: "target-skeptic",
+            capability_id: "codex.exec.session"
+          }
+        ]
+      }'
+  )"
+
+  log "creating room: $room_id"
+  api_post "/rooms" "$payload"
+}
+
+cmd_run_room() {
+  require_base_tools
+
+  local room_id="${1:-}"
+  require_room_id "$room_id"
+  shift || true
+
+  local max_turns='6'
+  local turn_timeout_ms='180000'
+
+  while (($# > 0)); do
+    case "$1" in
+      --max-turns)
+        shift
+        [[ $# -gt 0 ]] || die "--max-turns requires a value"
+        max_turns="$1"
+        ;;
+
+      --turn-timeout-ms)
+        shift
+        [[ $# -gt 0 ]] || die "--turn-timeout-ms requires a value"
+        turn_timeout_ms="$1"
+        ;;
+
+      *)
+        die "unknown option for run-room: $1"
+        ;;
+    esac
+
+    shift || true
+  done
+
+  local payload
+  payload="$(
+    jq -n \
+      --argjson max_turns "$max_turns" \
+      --argjson turn_timeout_ms "$turn_timeout_ms" \
+      '{
+        max_turns: $max_turns,
+        turn_timeout_ms: $turn_timeout_ms
+      }'
+  )"
+
+  api_post "/rooms/$room_id/run" "$payload"
+}
+
+cmd_publication_plan() {
+  require_base_tools
+
+  local room_id="${1:-}"
+  require_room_id "$room_id"
+
+  api_get "/rooms/$room_id/publication_plan"
+}
+
+cmd_publication_runs() {
+  require_base_tools
+
+  local room_id="${1:-}"
+  require_room_id "$room_id"
+
+  api_get "/rooms/$room_id/publications"
+}
+
+cmd_start_install() {
+  require_base_tools
+
+  local connector_id="${1:-}"
+  [[ -n "$connector_id" ]] || die "connector id is required"
+  shift || true
+
+  local subject
+  subject="$(default_subject_for_connector "$connector_id")"
+  local auth_type='oauth2'
+  local environment=''
+  local -a scopes=()
+
+  while (($# > 0)); do
+    case "$1" in
+      --subject)
+        shift
+        [[ $# -gt 0 ]] || die "--subject requires a value"
+        subject="$1"
+        ;;
+
+      --scope)
+        shift
+        [[ $# -gt 0 ]] || die "--scope requires a value"
+        scopes+=("$1")
+        ;;
+
+      --auth-type)
+        shift
+        [[ $# -gt 0 ]] || die "--auth-type requires a value"
+        auth_type="$1"
+        ;;
+
+      --environment)
+        shift
+        [[ $# -gt 0 ]] || die "--environment requires a value"
+        environment="$1"
+        ;;
+
+      *)
+        die "unknown option for start-install: $1"
+        ;;
+    esac
+
+    shift || true
+  done
+
+  local scopes_json='[]'
+  if ((${#scopes[@]} > 0)); then
+    scopes_json="$(printf '%s\n' "${scopes[@]}" | jq -R . | jq -s .)"
+  fi
+
+  local payload
+  payload="$(
+    jq -n \
+      --arg tenant_id "$JIDO_HIVE_TENANT_ID" \
+      --arg actor_id "$JIDO_HIVE_ACTOR_ID" \
+      --arg auth_type "$auth_type" \
+      --arg subject "$subject" \
+      --arg environment "$environment" \
+      --argjson requested_scopes "$scopes_json" \
+      '{
+        tenant_id: $tenant_id,
+        actor_id: $actor_id,
+        auth_type: $auth_type,
+        subject: $subject
+      }
+      + (if ($requested_scopes | length) > 0 then {requested_scopes: $requested_scopes} else {} end)
+      + (if $environment == "" then {} else {environment: $environment} end)'
+  )"
+
+  api_post "/connectors/$connector_id/installs" "$payload"
+}
+
+cmd_show_install() {
+  require_base_tools
+
+  local install_id="${1:-}"
+  [[ -n "$install_id" ]] || die "install id is required"
+
+  api_get "/connectors/installs/$install_id"
+}
+
+cmd_complete_install() {
+  require_base_tools
+
+  local install_id="${1:-}"
+  [[ -n "$install_id" ]] || die "install id is required"
+  shift || true
+
+  local subject=''
+  local access_token="${JIDO_HIVE_ACCESS_TOKEN:-}"
+  local -a scopes=()
+
+  while (($# > 0)); do
+    case "$1" in
+      --subject)
+        shift
+        [[ $# -gt 0 ]] || die "--subject requires a value"
+        subject="$1"
+        ;;
+
+      --scope)
+        shift
+        [[ $# -gt 0 ]] || die "--scope requires a value"
+        scopes+=("$1")
+        ;;
+
+      --access-token)
+        shift
+        [[ $# -gt 0 ]] || die "--access-token requires a value"
+        access_token="$1"
+        ;;
+
+      *)
+        die "unknown option for complete-install: $1"
+        ;;
+    esac
+
+    shift || true
+  done
+
+  [[ -n "$subject" ]] || die "--subject is required for complete-install"
+  [[ -n "$access_token" ]] || access_token="$(prompt_secret 'Access token: ')"
+
+  local scopes_json='[]'
+  if ((${#scopes[@]} > 0)); then
+    scopes_json="$(printf '%s\n' "${scopes[@]}" | jq -R . | jq -s .)"
+  fi
+
+  local payload
+  payload="$(
+    jq -n \
+      --arg subject "$subject" \
+      --arg access_token "$access_token" \
+      --argjson granted_scopes "$scopes_json" \
+      '{
+        subject: $subject,
+        secret: {access_token: $access_token}
+      }
+      + (if ($granted_scopes | length) > 0 then {granted_scopes: $granted_scopes} else {} end)'
+  )"
+
+  api_post "/connectors/installs/$install_id/complete" "$payload"
+}
+
+cmd_connections() {
+  require_base_tools
+
+  local connector_id="${1:-}"
+  [[ -n "$connector_id" ]] || die "connector id is required"
+  shift || true
+
+  local subject=''
+
+  while (($# > 0)); do
+    case "$1" in
+      --subject)
+        shift
+        [[ $# -gt 0 ]] || die "--subject requires a value"
+        subject="$1"
+        ;;
+
+      *)
+        die "unknown option for connections: $1"
+        ;;
+    esac
+
+    shift || true
+  done
+
+  local -a query_args=(
+    --get
+    --data-urlencode "tenant_id=$JIDO_HIVE_TENANT_ID"
+  )
+
+  if [[ -n "$subject" ]]; then
+    query_args+=(--data-urlencode "subject=$subject")
+  fi
+
+  request_json \
+    GET \
+    "${JIDO_HIVE_API_BASE}/connectors/$connector_id/connections" \
+    "" \
+    "${query_args[@]}"
+}
+
+cmd_publish() {
+  require_base_tools
+
+  local room_id="${1:-}"
+  require_room_id "$room_id"
+  shift || true
+
+  local github_connection=''
+  local github_repo=''
+  local notion_connection=''
+  local notion_data_source_id=''
+  local notion_title_property='Name'
+
+  while (($# > 0)); do
+    case "$1" in
+      --github-connection)
+        shift
+        [[ $# -gt 0 ]] || die "--github-connection requires a value"
+        github_connection="$1"
+        ;;
+
+      --github-repo)
+        shift
+        [[ $# -gt 0 ]] || die "--github-repo requires a value"
+        github_repo="$1"
+        ;;
+
+      --notion-connection)
+        shift
+        [[ $# -gt 0 ]] || die "--notion-connection requires a value"
+        notion_connection="$1"
+        ;;
+
+      --notion-data-source-id)
+        shift
+        [[ $# -gt 0 ]] || die "--notion-data-source-id requires a value"
+        notion_data_source_id="$1"
+        ;;
+
+      --notion-title-property)
+        shift
+        [[ $# -gt 0 ]] || die "--notion-title-property requires a value"
+        notion_title_property="$1"
+        ;;
+
+      *)
+        die "unknown option for publish: $1"
+        ;;
+    esac
+
+    shift || true
+  done
+
+  local -a channels=()
+
+  if [[ -n "$github_connection" || -n "$github_repo" ]]; then
+    [[ -n "$github_connection" ]] || die "publish requires --github-connection when GitHub is selected"
+    [[ -n "$github_repo" ]] || die "publish requires --github-repo when GitHub is selected"
+    channels+=("github")
+  fi
+
+  if [[ -n "$notion_connection" || -n "$notion_data_source_id" ]]; then
+    [[ -n "$notion_connection" ]] || die "publish requires --notion-connection when Notion is selected"
+    [[ -n "$notion_data_source_id" ]] || die "publish requires --notion-data-source-id when Notion is selected"
+    channels+=("notion")
+  fi
+
+  ((${#channels[@]} > 0)) || die "publish requires at least one channel"
+
+  local channels_json
+  channels_json="$(printf '%s\n' "${channels[@]}" | jq -R . | jq -s .)"
+
+  local payload
+  payload="$(
+    jq -n \
+      --arg tenant_id "$JIDO_HIVE_TENANT_ID" \
+      --arg actor_id "$JIDO_HIVE_ACTOR_ID" \
+      --arg github_connection "$github_connection" \
+      --arg github_repo "$github_repo" \
+      --arg notion_connection "$notion_connection" \
+      --arg notion_data_source_id "$notion_data_source_id" \
+      --arg notion_title_property "$notion_title_property" \
+      --argjson channels "$channels_json" \
+      '{
+        channels: $channels,
+        actor_id: $actor_id,
+        tenant_id: $tenant_id,
+        connections: {},
+        bindings: {}
+      }
+      | if $github_connection == "" then . else
+          .connections.github = $github_connection
+          | .bindings.github = {repo: $github_repo}
+        end
+      | if $notion_connection == "" then . else
+          .connections.notion = $notion_connection
+          | .bindings.notion = {
+              "parent.data_source_id": $notion_data_source_id,
+              title_property: $notion_title_property
+            }
+        end'
+  )"
+
+  api_post "/rooms/$room_id/publications" "$payload"
+}
+
+main() {
+  local command="${1:-help}"
+
+  case "$command" in
+    help|-h|--help)
+      usage
+      ;;
+
+    doctor)
+      shift || true
+      cmd_doctor "$@"
+      ;;
+
+    targets)
+      shift || true
+      cmd_targets "$@"
+      ;;
+
+    room)
+      shift || true
+      cmd_room "$@"
+      ;;
+
+    create-room)
+      shift || true
+      cmd_create_room "$@"
+      ;;
+
+    run-room)
+      shift || true
+      cmd_run_room "$@"
+      ;;
+
+    publication-plan)
+      shift || true
+      cmd_publication_plan "$@"
+      ;;
+
+    publication-runs)
+      shift || true
+      cmd_publication_runs "$@"
+      ;;
+
+    start-install)
+      shift || true
+      cmd_start_install "$@"
+      ;;
+
+    show-install)
+      shift || true
+      cmd_show_install "$@"
+      ;;
+
+    complete-install)
+      shift || true
+      cmd_complete_install "$@"
+      ;;
+
+    connections)
+      shift || true
+      cmd_connections "$@"
+      ;;
+
+    publish)
+      shift || true
+      cmd_publish "$@"
+      ;;
+
+    *)
+      die "unknown command: $command"
+      ;;
+  esac
+}
+
+main "$@"
