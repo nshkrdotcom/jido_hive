@@ -378,7 +378,7 @@ defmodule JidoHiveServerWeb.HomeController do
 
             <section>
               <h2>Run Against Prod</h2>
-              <p>The same helpers now support an explicit production mode.</p>
+              <p>The same helpers also support an explicit production mode.</p>
               <pre>#{html_escape(prod_commands)}</pre>
             </section>
           </div>

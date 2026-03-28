@@ -37,7 +37,8 @@ defmodule JidoHiveServer.Collaboration do
       next_dispute_seq: 1
     }
 
-    with {:ok, _snapshot} <- Persistence.persist_room_snapshot(snapshot),
+    with :ok <- replace_room_server(room_id),
+         {:ok, _snapshot} <- Persistence.persist_room_snapshot(snapshot),
          {:ok, _pid} <- ensure_room_server(snapshot) do
       fetch_room(room_id)
     end
@@ -218,6 +219,21 @@ defmodule JidoHiveServer.Collaboration do
       {:error, {:already_started, pid}} -> {:ok, pid}
       {:error, {:already_present, _}} -> {:ok, RoomServer.via(snapshot.room_id)}
       other -> other
+    end
+  end
+
+  defp replace_room_server(room_id) do
+    case Registry.lookup(JidoHiveServer.Collaboration.Registry, room_id) do
+      [{pid, _value}] ->
+        case DynamicSupervisor.terminate_child(JidoHiveServer.Collaboration.RoomSupervisor, pid) do
+          :ok -> :ok
+          {:error, :not_found} -> :ok
+          {:error, :simple_one_for_one} -> :ok
+          other -> other
+        end
+
+      [] ->
+        :ok
     end
   end
 

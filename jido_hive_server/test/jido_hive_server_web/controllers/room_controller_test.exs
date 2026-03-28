@@ -70,7 +70,8 @@ defmodule JidoHiveServerWeb.RoomControllerTest do
     assert wait_until(fn ->
              case V2.compatible_targets_for("codex.exec.session", %{}) do
                {:ok, matches} ->
-                 length(RemoteExec.list_targets()) >= 2 and
+                 length(RemoteExec.list_targets()) == 2 and
+                   length(matches) == 2 and
                    Enum.any?(matches, &(&1.target.target_id == "target-architect-http")) and
                    Enum.any?(matches, &(&1.target.target_id == "target-skeptic-http"))
 

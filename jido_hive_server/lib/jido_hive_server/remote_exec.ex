@@ -5,8 +5,6 @@ defmodule JidoHiveServer.RemoteExec do
 
   require Logger
 
-  alias Jido.Integration.V2
-  alias Jido.Integration.V2.TargetDescriptor
   alias JidoHiveServer.Persistence
 
   def start_link(opts \\ []) do
@@ -26,7 +24,7 @@ defmodule JidoHiveServer.RemoteExec do
   end
 
   def remove_channel(channel_pid) when is_pid(channel_pid) do
-    GenServer.cast(__MODULE__, {:remove_channel, channel_pid})
+    GenServer.call(__MODULE__, {:remove_channel, channel_pid})
   end
 
   def fetch_target(target_id) when is_binary(target_id) do
@@ -82,8 +80,8 @@ defmodule JidoHiveServer.RemoteExec do
         "provider=#{target.provider} runtime=#{target.runtime_driver}"
     )
 
-    maybe_announce_target(target)
     {:ok, _snapshot} = Persistence.upsert_target(target)
+    :ok = JidoHiveServer.IntegrationsBootstrap.sync_target_projection!(Map.values(targets))
     {:reply, {:ok, target}, %{state | targets: targets}}
   end
 
@@ -109,8 +107,7 @@ defmodule JidoHiveServer.RemoteExec do
     {:reply, Persistence.list_targets(status: "online"), state}
   end
 
-  @impl true
-  def handle_cast({:remove_channel, channel_pid}, state) do
+  def handle_call({:remove_channel, channel_pid}, _from, state) do
     connections = Map.delete(state.connections, channel_pid)
 
     targets =
@@ -125,41 +122,9 @@ defmodule JidoHiveServer.RemoteExec do
       end
     end)
 
-    {:noreply, %{state | connections: connections, targets: targets}}
+    :ok = JidoHiveServer.IntegrationsBootstrap.sync_target_projection!(Map.values(targets))
+    {:reply, :ok, %{state | connections: connections, targets: targets}}
   end
-
-  defp maybe_announce_target(%{capability_id: "codex.exec.session"} = target) do
-    descriptor =
-      TargetDescriptor.new!(%{
-        target_id: target.target_id,
-        capability_id: target.capability_id,
-        runtime_class: :session,
-        version: "1.0.0",
-        features: %{
-          feature_ids: ["asm", target.capability_id],
-          runspec_versions: ["1.0.0"],
-          event_schema_versions: ["1.0.0"]
-        },
-        constraints: %{workspace_root: target.workspace_root},
-        health: :healthy,
-        location: %{
-          mode: :beam,
-          region: "local",
-          workspace_root: target.workspace_root
-        },
-        extensions: %{
-          "runtime" => %{
-            "driver" => target.runtime_driver,
-            "provider" => target.provider
-          }
-        }
-      })
-
-    _ = V2.announce_target(descriptor)
-    :ok
-  end
-
-  defp maybe_announce_target(_target), do: :ok
 
   defp unique_id(prefix) do
     "#{prefix}-#{System.unique_integer([:positive, :monotonic])}"

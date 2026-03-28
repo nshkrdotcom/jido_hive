@@ -76,7 +76,7 @@ The server wrapper will:
 
 The room id is printed in the server terminal when it starts.
 
-The client terminals now announce when they:
+The client terminals announce when they:
 
 - connect and register their targets
 - receive a turn
@@ -89,7 +89,7 @@ you see room and dispatch progress instead of full dev query spam.
 If this is your first run on a new machine, do `bin/setup` once before starting
 the three-terminal flow above.
 
-If you want the older operator-only wrapper, `bin/demo-first-slice` now delegates
+If you want the older operator-only wrapper, `bin/demo-first-slice` delegates
 to `setup/hive live-demo`.
 
 For live AI runs, `bin/live-demo-server` and `bin/demo-first-slice` honor:
@@ -125,6 +125,24 @@ output.
 For the fastest local run, prefer the three-command path above with
 `bin/live-demo-server`.
 
+## Public App
+
+The deployed public server is:
+
+- HTTPS: `https://jido-hive-server-test.app.nsai.online`
+- WebSocket relay: `wss://jido-hive-server-test.app.nsai.online/socket/websocket`
+- API base: `https://jido-hive-server-test.app.nsai.online/api`
+
+Repo helpers stay local by default and opt into the deployed server with
+explicit `--prod` flags:
+
+```bash
+bin/client-architect --prod
+bin/client-skeptic --prod
+setup/hive --prod doctor
+setup/hive --prod targets
+```
+
 ## Manual Flow
 
 Wait for the local server and both targets:
@@ -154,7 +172,7 @@ setup/hive publication-plan room-manual-1
 
 ## Deploy
 
-Deployments now go through `coolify_ex` from inside `jido_hive_server`, with a
+Deployments use `coolify_ex` from inside `jido_hive_server`, with a
 repo-root manifest at [.coolify_ex.exs](/home/home/p/g/n/jido_hive/.coolify_ex.exs).
 
 From this repo root:
@@ -185,7 +203,7 @@ scripts/deploy_coolify.sh --force --instant
 scripts/deploy_coolify.sh --skip-verify
 ```
 
-`coolify_ex` now discovers `.coolify_ex.exs` by walking up parent directories,
+`coolify_ex` discovers `.coolify_ex.exs` by walking up parent directories,
 so the nested `jido_hive_server` Mix project can use the repo-root manifest
 without an explicit `--config` path.
 
@@ -254,7 +272,7 @@ The repo-level `bin/client` wrapper accepts these useful env vars:
 
 - Live provider turns can finish as `publication_ready` or `in_review`
   depending on whether the model actually emits a `PUBLISH` action.
-- The client now performs one strict no-tool repair pass when a provider
+- The client performs one strict no-tool repair pass when a provider
   returns prose or malformed JSON instead of the room contract.
-- The default Codex runtime profile is now `gpt-5.4` with `low` reasoning
+- The default Codex runtime profile is `gpt-5.4` with `low` reasoning
   unless you override `JIDO_HIVE_MODEL` or `JIDO_HIVE_REASONING_EFFORT`.
