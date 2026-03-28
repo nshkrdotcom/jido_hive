@@ -105,6 +105,28 @@ setup/hive --prod doctor
 setup/hive --prod targets
 ```
 
+What those commands do:
+
+- `bin/client-architect --prod` and `bin/client-skeptic --prod` connect to the
+  production websocket, register their targets, and then wait for relay work
+- on a healthy connection the client prints the actual `url=...` and then a
+  `ready ... waiting_for=job.start` line
+- those client commands alone do not create any LLM traffic; they only bring
+  the remote participants online
+
+To make the prod clients actually do work, start a room or live demo:
+
+```bash
+setup/hive --prod live-demo
+```
+
+Or drive it manually:
+
+```bash
+setup/hive --prod create-room room-prod-1
+setup/hive --prod run-room room-prod-1 --turn-timeout-ms 180000
+```
+
 If you are integrating outside the repo helpers, use these URLs directly:
 
 - API base: `https://jido-hive-server-test.app.nsai.online/api`

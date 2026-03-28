@@ -53,6 +53,13 @@ defmodule JidoHiveServer.RemoteExec do
     }
 
     connections = Map.put(state.connections, channel_pid, connection)
+
+    Logger.info(
+      "relay online workspace=#{connection.workspace_id} user=#{connection.user_id} " <>
+        "participant=#{connection.participant_id} role=#{connection.participant_role} " <>
+        "connection_id=#{connection.connection_id}"
+    )
+
     {:reply, {:ok, connection}, %{state | connections: connections}}
   end
 
@@ -76,8 +83,10 @@ defmodule JidoHiveServer.RemoteExec do
     targets = Map.put(state.targets, target.target_id, target)
 
     Logger.info(
-      "target online target=#{target.target_id} role=#{target.participant_role} " <>
-        "provider=#{target.provider} runtime=#{target.runtime_driver}"
+      "target online workspace=#{target.workspace_id} participant=#{target.participant_id} " <>
+        "role=#{target.participant_role} target=#{target.target_id} " <>
+        "capability=#{target.capability_id} provider=#{target.provider} " <>
+        "runtime=#{target.runtime_driver}"
     )
 
     {:ok, _snapshot} = Persistence.upsert_target(target)

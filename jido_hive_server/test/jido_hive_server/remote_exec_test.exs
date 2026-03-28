@@ -5,6 +5,49 @@ defmodule JidoHiveServer.RemoteExecTest do
   alias Jido.Integration.V2
   alias JidoHiveServer.RemoteExec
 
+  test "registers relay connection and target metadata for observability" do
+    channel_pid = self()
+    on_exit(fn -> :ok = RemoteExec.remove_channel(channel_pid) end)
+
+    assert {:ok, connection} =
+             RemoteExec.register_connection(channel_pid, %{
+               "workspace_id" => "workspace-observable",
+               "user_id" => "user-observable",
+               "participant_id" => "architect",
+               "participant_role" => "architect"
+             })
+
+    assert connection.workspace_id == "workspace-observable"
+    assert connection.user_id == "user-observable"
+    assert connection.participant_id == "architect"
+    assert connection.participant_role == "architect"
+    assert String.starts_with?(connection.connection_id, "conn-")
+
+    assert {:ok, target} =
+             RemoteExec.upsert_target(channel_pid, %{
+               "workspace_id" => "workspace-observable",
+               "user_id" => "user-observable",
+               "participant_id" => "architect",
+               "participant_role" => "architect",
+               "target_id" => "target-observable",
+               "capability_id" => "codex.exec.session",
+               "runtime_driver" => "asm",
+               "provider" => "codex",
+               "workspace_root" => "/tmp/jido_hive_observable"
+             })
+
+    assert target.workspace_id == "workspace-observable"
+    assert target.participant_id == "architect"
+    assert target.participant_role == "architect"
+    assert target.target_id == "target-observable"
+    assert target.capability_id == "codex.exec.session"
+    assert target.provider == "codex"
+
+    assert {:ok, fetched_target} = RemoteExec.fetch_target("target-observable")
+    assert fetched_target.participant_id == "architect"
+    assert fetched_target.capability_id == "codex.exec.session"
+  end
+
   test "removing a channel retracts its session target from the V2 projection" do
     channel_pid = self()
 

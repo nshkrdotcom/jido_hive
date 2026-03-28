@@ -5,7 +5,8 @@ defmodule JidoHiveClient.Status do
     emit(
       "starting participant=#{opts[:participant_id]} role=#{opts[:participant_role]} " <>
         "target=#{opts[:target_id]} provider=#{provider_label(opts[:executor])} " <>
-        "relay=#{opts[:relay_topic]}"
+        "relay=#{opts[:relay_topic]} workspace=#{opts[:workspace_id]} " <>
+        "url=#{opts[:url]}"
     )
   end
 
@@ -13,7 +14,38 @@ defmodule JidoHiveClient.Status do
     emit(
       "ready participant=#{state.participant_id} role=#{state.participant_role} " <>
         "target=#{state.target_id} capability=#{state.capability_id} " <>
+        "relay=#{state.relay_topic} workspace=#{state.workspace_id} " <>
+        "url=#{state.socket_url} waiting_for=job.start " <>
         "services=phoenix-relay+jido-harness+asm+#{provider_label(state.executor)}"
+    )
+  end
+
+  def relay_connecting(state) when is_map(state) do
+    emit(
+      "connecting participant=#{state.participant_id} role=#{state.participant_role} " <>
+        "target=#{state.target_id} relay=#{state.relay_topic} " <>
+        "workspace=#{state.workspace_id} url=#{state.socket_url}"
+    )
+  end
+
+  def relay_waiting(state) when is_map(state) do
+    emit(
+      "waiting for websocket participant=#{state.participant_id} target=#{state.target_id} " <>
+        "url=#{state.socket_url}"
+    )
+  end
+
+  def relay_join_retry(state, reason) when is_map(state) do
+    emit(
+      "join retry participant=#{state.participant_id} target=#{state.target_id} " <>
+        "topic=#{state.relay_topic} url=#{state.socket_url} reason=#{inspect(reason)}"
+    )
+  end
+
+  def relay_disconnected(state, event) when is_map(state) do
+    emit(
+      "relay disconnected participant=#{state.participant_id} target=#{state.target_id} " <>
+        "event=#{event} url=#{state.socket_url}"
     )
   end
 

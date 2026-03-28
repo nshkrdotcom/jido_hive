@@ -34,6 +34,8 @@ defmodule JidoHiveClient.RelayWorker do
     state = %{
       socket: socket,
       channel: nil,
+      socket_url: Keyword.fetch!(opts, :url),
+      connection_state: :starting,
       relay_topic: Keyword.fetch!(opts, :relay_topic),
       workspace_id: Keyword.fetch!(opts, :workspace_id),
       user_id: Keyword.fetch!(opts, :user_id),
@@ -46,6 +48,7 @@ defmodule JidoHiveClient.RelayWorker do
       opts: opts
     }
 
+    Status.relay_connecting(state)
     send(self(), :ensure_joined)
     {:ok, state}
   end
@@ -65,13 +68,15 @@ defmodule JidoHiveClient.RelayWorker do
             topic: state.relay_topic
           })
 
-          {:noreply, %{state | channel: channel}}
+          {:noreply, %{state | channel: channel, connection_state: :joined}}
 
-        {:error, _reason} ->
+        {:error, reason} ->
+          state = maybe_transition(state, :join_retry, fn -> Status.relay_join_retry(state, reason) end)
           Process.send_after(self(), :ensure_joined, @join_retry_ms)
           {:noreply, state}
       end
     else
+      state = maybe_transition(state, :waiting_socket, fn -> Status.relay_waiting(state) end)
       Process.send_after(self(), :ensure_joined, @join_retry_ms)
       {:noreply, state}
     end
@@ -129,8 +134,9 @@ defmodule JidoHiveClient.RelayWorker do
   end
 
   def handle_info(%Message{event: event}, state) when event in ["phx_close", "phx_error"] do
+    Status.relay_disconnected(state, event)
     Process.send_after(self(), :ensure_joined, @join_retry_ms)
-    {:noreply, %{state | channel: nil}}
+    {:noreply, %{state | channel: nil, connection_state: :waiting_socket}}
   end
 
   def handle_info(_message, state), do: {:noreply, state}
@@ -183,5 +189,12 @@ defmodule JidoHiveClient.RelayWorker do
     signal = Signal.new!(type, data, source: "/jido_hive_client/relay_worker")
     _ = Bus.publish(JidoHiveClient.SignalBus, [signal])
     :ok
+  end
+
+  defp maybe_transition(%{connection_state: new_state} = state, new_state, _emit), do: state
+
+  defp maybe_transition(state, new_state, emit) when is_function(emit, 0) do
+    emit.()
+    %{state | connection_state: new_state}
   end
 end
