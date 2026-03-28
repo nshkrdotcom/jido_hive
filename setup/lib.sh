@@ -34,6 +34,18 @@ require_base_tools() {
   require_command jq
 }
 
+root_base_url() {
+  case "$JIDO_HIVE_API_BASE" in
+    */api)
+      printf '%s\n' "${JIDO_HIVE_API_BASE%/api}"
+      ;;
+
+    *)
+      printf '%s\n' "$JIDO_HIVE_API_BASE"
+      ;;
+  esac
+}
+
 json_print_file() {
   local file="$1"
   jq . "$file"
@@ -244,6 +256,12 @@ wait_for_targets() {
 
 fetch_targets_json() {
   curl -fsS "${JIDO_HIVE_API_BASE}/targets" 2>/dev/null
+}
+
+fetch_server_info_json() {
+  local root_url=''
+  root_url="$(root_base_url)"
+  curl -fsS -H 'accept: application/json' "$root_url" 2>/dev/null
 }
 
 wait_for_target_count() {

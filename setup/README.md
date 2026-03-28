@@ -83,6 +83,12 @@ Wait for the server:
 setup/hive wait-server
 ```
 
+Inspect the server root metadata:
+
+```bash
+setup/hive server-info
+```
+
 Wait for workers:
 
 ```bash
@@ -133,6 +139,10 @@ compatible workers.
 
 ## Important Behavior
 
+- `doctor` now verifies both API reachability and the deployed root demo contract
+  before printing targets
+- `server-info` returns the root JSON payload that backs the homepage/API status
+  contract
 - `create-room` and `live-demo` discover connected relay targets from
   `GET /api/targets`
 - the room locks the selected worker set at room creation time

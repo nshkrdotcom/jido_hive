@@ -137,8 +137,12 @@ Useful prod checks:
 
 ```bash
 setup/hive --prod doctor
+setup/hive --prod server-info
 setup/hive --prod targets
 ```
+
+`doctor` now verifies both API reachability and the deployed root demo contract
+before printing targets.
 
 ## Coolify
 

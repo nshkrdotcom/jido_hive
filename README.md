@@ -168,6 +168,7 @@ Useful production checks:
 ```bash
 setup/hive --prod doctor
 setup/hive --prod targets
+setup/hive --prod server-info
 ```
 
 ## Manual Room Control
@@ -185,6 +186,10 @@ setup/hive publication-runs room-manual-1
 
 Important behavior:
 
+- `doctor` verifies the deployed root demo contract in addition to API
+  reachability
+- `server-info` is the scripted replacement for ad hoc `curl` checks against the
+  root JSON status payload
 - `create-room` locks either all currently connected compatible workers or the
   requested `--participant-count` subset
 - `run-room` uses the locked execution plan by default when `--max-turns` is

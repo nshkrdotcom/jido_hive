@@ -34,6 +34,7 @@ usage() {
 Usage:
   setup/hive [--local|--prod] help
   setup/hive [--local|--prod] doctor
+  setup/hive [--local|--prod] server-info
   setup/hive [--local|--prod] wait-server
   setup/hive [--local|--prod] wait-targets [--count N] [--target TARGET_ID ...]
   setup/hive [--local|--prod] targets
@@ -66,6 +67,7 @@ Environment defaults:
 
 Examples:
   setup/hive doctor
+  setup/hive server-info
   setup/hive --prod doctor
   setup/hive wait-targets --count 2
   setup/hive create-room room-manual-1 --participant-count 2
@@ -260,11 +262,54 @@ cmd_doctor() {
   require_base_tools
 
   log "API base: $JIDO_HIVE_API_BASE"
+  log "root base: $(root_base_url)"
   log "tenant id: $JIDO_HIVE_TENANT_ID"
   log "actor id: $JIDO_HIVE_ACTOR_ID"
 
   cmd_wait_server --timeout-ms 3000 --interval-ms 250 >/dev/null
+  verify_server_contract
   cmd_targets
+}
+
+cmd_server_info() {
+  require_base_tools
+
+  local server_info_json=''
+  server_info_json="$(fetch_server_info_json)" ||
+    die "cannot reach $(root_base_url); start the server with bin/server or set JIDO_HIVE_API_BASE"
+
+  jq . <<<"$server_info_json"
+}
+
+verify_server_contract() {
+  local server_info_json=''
+  server_info_json="$(fetch_server_info_json)" ||
+    die "cannot reach $(root_base_url); start the server with bin/server or set JIDO_HIVE_API_BASE"
+
+  local summary=''
+  summary="$(
+    jq -r '
+      if .demo.strategy != "round_robin" then
+        "expected demo.strategy=round_robin but got \(.demo.strategy // "null")"
+      elif .demo.max_clients != 39 then
+        "expected demo.max_clients=39 but got \(.demo.max_clients // "null")"
+      elif .demo.planned_turn_formula != "participant_count * 3" then
+        "expected demo.planned_turn_formula=participant_count * 3 but got \(.demo.planned_turn_formula // "null")"
+      else
+        "ok strategy=\(.demo.strategy) max_clients=\(.demo.max_clients) planned_turn_formula=\(.demo.planned_turn_formula)"
+      end
+    ' <<<"$server_info_json"
+  )"
+
+  case "$summary" in
+    ok\ *)
+      log "server contract verified: ${summary#ok }"
+      ;;
+
+    *)
+      die "server contract check failed: $summary"
+      ;;
+  esac
 }
 
 cmd_targets() {
@@ -914,6 +959,11 @@ main() {
     doctor)
       shift || true
       cmd_doctor "$@"
+      ;;
+
+    server-info)
+      shift || true
+      cmd_server_info "$@"
       ;;
 
     wait-server)
