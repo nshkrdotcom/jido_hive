@@ -55,6 +55,24 @@ defmodule JidoHiveClient.Executor.SessionTest do
     assert Enum.count(result["events"], &(&1["type"] == "assistant_message")) == 2
   end
 
+  test "returns a failed turn with raw execution text when repair still cannot produce json" do
+    assert {:ok, result} =
+             Session.run(sample_job(),
+               provider: :codex,
+               driver: ScriptedRunModule,
+               driver_opts: [scenario: :unrepairable]
+             )
+
+    assert result["status"] == "failed"
+    assert result["execution"]["status"] == "failed"
+    assert result["execution"]["text"] =~ "shared packet"
+    assert get_in(result, ["execution", "error", "reason"]) =~ "json_not_found"
+
+    assert Enum.any?(result["artifacts"], fn artifact ->
+             artifact["title"] == "invalid_json"
+           end)
+  end
+
   defp sample_job do
     %{
       "job_id" => "job-client-1",

@@ -15,7 +15,7 @@ defmodule JidoHiveClient.CollaborationPrompt do
       model: Keyword.get(opts, :model),
       timeout_ms: Keyword.get(opts, :timeout_ms),
       system_prompt: render_system_prompt(envelope),
-      allowed_tools: Keyword.get(opts, :allowed_tools),
+      allowed_tools: Keyword.get(opts, :allowed_tools, []),
       metadata: %{
         "schema_version" => @schema_version,
         "room_id" => Map.get(job, "room_id"),
@@ -55,6 +55,7 @@ defmodule JidoHiveClient.CollaborationPrompt do
     turn = Map.fetch!(envelope, "turn")
     referee = Map.fetch!(envelope, "referee")
     room = Map.fetch!(envelope, "room")
+    allowed_ops = allowed_ops_from_envelope(envelope)
 
     """
     You are #{turn["participant_role"]} in Jido Hive room #{room["room_id"]}.
@@ -91,8 +92,13 @@ defmodule JidoHiveClient.CollaborationPrompt do
       ]
     }
 
-    Do not inspect local files or run shell commands unless the objective
-    cannot be completed from the shared envelope alone.
+    Allowed action ops for this turn: #{allowed_ops}
+
+    Return exactly one JSON object that starts with { and ends with }.
+    Use [] for empty actions or artifacts.
+    Do not inspect local files, run shell commands, or call tools unless tools
+    were explicitly enabled for this turn and the shared envelope is
+    insufficient.
 
     Do not add markdown fences, prose, or commentary outside that JSON object.
     """
@@ -103,6 +109,7 @@ defmodule JidoHiveClient.CollaborationPrompt do
   def render_prompt(envelope) when is_map(envelope) do
     """
     Execute the current collaboration turn using this shared envelope.
+    Return the JSON object only.
 
     #{Jason.encode!(envelope, pretty: true)}
     """
@@ -168,6 +175,15 @@ defmodule JidoHiveClient.CollaborationPrompt do
     |> case do
       ops when is_list(ops) -> Enum.join(ops, "|")
       _other -> "CLAIM|EVIDENCE|OBJECT|REVISE|DECIDE|PUBLISH"
+    end
+  end
+
+  defp allowed_ops_from_envelope(envelope) do
+    envelope
+    |> get_in(["turn", "response_contract", "allowed_ops"])
+    |> case do
+      ops when is_list(ops) -> Enum.join(ops, ", ")
+      _other -> "CLAIM, EVIDENCE, OBJECT, REVISE, DECIDE, PUBLISH"
     end
   end
 end

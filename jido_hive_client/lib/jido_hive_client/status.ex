@@ -1,6 +1,10 @@
 defmodule JidoHiveClient.Status do
   @moduledoc false
 
+  @system_prompt_preview_limit 700
+  @prompt_preview_limit 1_600
+  @response_preview_limit 1_600
+
   def client_start(opts) when is_list(opts) do
     emit(
       "starting participant=#{opts[:participant_id]} role=#{opts[:participant_role]} " <>
@@ -56,22 +60,47 @@ defmodule JidoHiveClient.Status do
     )
   end
 
-  def execution_started(job, opts) when is_map(job) and is_list(opts) do
+  def execution_started(job, opts, request)
+      when is_map(job) and is_list(opts) and is_map(request) do
     emit(
       "executing room=#{job["room_id"]} phase=#{phase(job)} provider=#{provider_label(opts[:provider])} " <>
         "model=#{opts[:model] || "default"} reasoning=#{opts[:reasoning_effort] || "default"} " <>
         "runtime=asm path=jido.harness->asm"
     )
+
+    emit_preview(
+      "system prompt",
+      job,
+      Map.get(request, :system_prompt),
+      @system_prompt_preview_limit
+    )
+
+    emit_preview("user prompt", job, Map.get(request, :prompt), @prompt_preview_limit)
   end
 
-  def repair_started(job, reason) when is_map(job) do
+  def repair_started(job, reason, invalid_text) when is_map(job) do
     emit(
       "repair pass room=#{job["room_id"]} phase=#{phase(job)} " <>
+        "reason=#{inspect(reason)}"
+    )
+
+    emit_preview("invalid response", job, invalid_text, @response_preview_limit)
+  end
+
+  def repair_finished(job, repair_text) when is_map(job) do
+    emit_preview("repair response", job, repair_text, @response_preview_limit)
+  end
+
+  def repair_failed(job, reason) when is_map(job) do
+    emit(
+      "repair failed room=#{job["room_id"]} phase=#{phase(job)} " <>
         "reason=#{inspect(reason)}"
     )
   end
 
   def execution_finished(job, result) when is_map(job) and is_map(result) do
+    emit_preview("response", job, get_in(result, ["execution", "text"]), @response_preview_limit)
+
     emit(
       "completed room=#{job["room_id"]} phase=#{phase(job)} status=#{result["status"]} " <>
         "actions=#{action_summary(result["actions"])}#{usage_summary(result)}"
@@ -93,12 +122,44 @@ defmodule JidoHiveClient.Status do
     IO.puts("[jido_hive client] #{message}")
   end
 
+  defp emit_preview(_label, _job, nil, _limit), do: :ok
+
+  defp emit_preview(label, job, text, limit) when is_binary(text) do
+    preview = preview_text(text, limit)
+
+    emit(
+      "#{label} preview room=#{job["room_id"]} phase=#{phase(job)} " <>
+        "bytes=#{byte_size(text)}"
+    )
+
+    preview
+    |> String.split("\n")
+    |> Enum.each(&emit("  #{&1}"))
+  end
+
+  defp emit_preview(_label, _job, _text, _limit), do: :ok
+
   defp phase(job) do
     get_in(job, ["collaboration_envelope", "turn", "phase"]) || "unknown"
   end
 
   defp objective(job) do
     get_in(job, ["collaboration_envelope", "turn", "objective"]) || "unknown"
+  end
+
+  defp preview_text(text, limit) do
+    trimmed = String.trim(text)
+
+    cond do
+      trimmed == "" ->
+        "(empty)"
+
+      String.length(trimmed) <= limit ->
+        trimmed
+
+      true ->
+        String.slice(trimmed, 0, limit) <> "\n...[truncated]"
+    end
   end
 
   defp truncate(nil, _limit), do: "unknown"

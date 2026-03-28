@@ -18,6 +18,49 @@ bin/client-skeptic
 
 That is the fastest way to see the current collaboration loop working.
 
+## Two-Terminal Menus
+
+If you want a simpler operator flow, use these two menu scripts:
+
+Terminal 1:
+
+```bash
+bin/hive-control
+```
+
+Terminal 2:
+
+```bash
+bin/hive-clients
+```
+
+For production, use:
+
+Terminal 1:
+
+```bash
+bin/hive-control --prod
+```
+
+Terminal 2:
+
+```bash
+bin/hive-clients --prod
+```
+
+`bin/hive-control` is the control/menu side for server checks, room runs,
+Coolify deploys, and prod log tails. `bin/hive-clients` is the client/menu side
+for architect, skeptic, or both clients in one terminal.
+
+Fastest two-terminal loop:
+
+1. In terminal 2, run `bin/hive-clients` or `bin/hive-clients --prod`, then
+   choose `3`.
+2. In terminal 1, run `bin/hive-control` or `bin/hive-control --prod`, then
+   choose `3`.
+3. Watch terminal 2 for `system prompt preview`, `user prompt preview`,
+   `response preview`, `completed`, and `result published` lines.
+
 ## What This Does
 
 The current slice is a real client-server collaboration loop:
@@ -120,6 +163,12 @@ To make the prod clients actually do work, start a room or live demo:
 setup/hive --prod live-demo
 ```
 
+Or use the two-menu flow:
+
+1. Terminal 2: `bin/hive-clients --prod`, then choose `3`
+2. Terminal 1: `bin/hive-control --prod`, then choose `3`
+3. Watch terminal 2 for the per-turn prompt and response previews
+
 Or drive it manually:
 
 ```bash
@@ -134,6 +183,9 @@ If you are integrating outside the repo helpers, use these URLs directly:
 - `GET /api/targets` lists connected relay targets
 - `POST /api/rooms` creates a collaboration room
 - `GET /api/rooms/:id` fetches room state
+- `POST /api/rooms/:id/run` now returns the room snapshot even when a turn
+  fails, so the failure details stay visible instead of collapsing to a blind
+  `422 turn_failed`
 
 ## Common Local Commands
 

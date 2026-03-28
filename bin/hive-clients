@@ -1,0 +1,142 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+LOCAL_URL="ws://127.0.0.1:4000/socket/websocket"
+PROD_URL="wss://jido-hive-server-test.app.nsai.online/socket/websocket"
+
+mode="local"
+
+usage() {
+  cat <<'EOF'
+Usage:
+  bin/hive-clients [--local|--prod]
+
+Interactive client menu for:
+- architect
+- skeptic
+- both clients in one terminal
+EOF
+}
+
+while (($# > 0)); do
+  case "$1" in
+    --local)
+      mode="local"
+      shift
+      ;;
+    --prod)
+      mode="prod"
+      shift
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    *)
+      printf 'unknown option: %s\n' "$1" >&2
+      usage >&2
+      exit 1
+      ;;
+  esac
+done
+
+case "$mode" in
+  local)
+    websocket_url="$LOCAL_URL"
+    mode_flag=(--local)
+    ;;
+  prod)
+    websocket_url="$PROD_URL"
+    mode_flag=(--prod)
+    ;;
+esac
+
+cleanup_children() {
+  local pid=''
+
+  for pid in "$@"; do
+    if [[ -n "$pid" ]] && kill -0 "$pid" >/dev/null 2>&1; then
+      kill "$pid" >/dev/null 2>&1 || true
+      wait "$pid" >/dev/null 2>&1 || true
+    fi
+  done
+}
+
+run_action() {
+  "$@" || true
+}
+
+run_single() {
+  local role="$1"
+
+  case "$role" in
+    architect) exec "$ROOT/bin/client-architect" "${mode_flag[@]}" ;;
+    skeptic) exec "$ROOT/bin/client-skeptic" "${mode_flag[@]}" ;;
+  esac
+}
+
+start_prefixed() {
+  local label="$1"
+  shift
+
+  (
+    "$@" 2>&1 | sed -u "s/^/[$label] /"
+  ) &
+
+  STARTED_PID="$!"
+}
+
+run_both() {
+  local architect_pid='' skeptic_pid='' status=0
+
+  printf '[jido_hive clients] starting architect and skeptic in %s mode\n' "$mode"
+  printf '[jido_hive clients] press Ctrl-C to stop both clients\n'
+  printf '[jido_hive clients] watch here for system prompt preview, user prompt preview,\n'
+  printf '[jido_hive clients] response preview, completed, and result published lines\n'
+
+  start_prefixed architect "$ROOT/bin/client-architect" "${mode_flag[@]}"
+  architect_pid="$STARTED_PID"
+
+  start_prefixed skeptic "$ROOT/bin/client-skeptic" "${mode_flag[@]}"
+  skeptic_pid="$STARTED_PID"
+
+  trap 'cleanup_children "$architect_pid" "$skeptic_pid"; exit 130' INT TERM
+
+  if wait -n "$architect_pid" "$skeptic_pid"; then
+    status=0
+  else
+    status=$?
+  fi
+
+  cleanup_children "$architect_pid" "$skeptic_pid"
+  trap - INT TERM
+  return "$status"
+}
+
+print_menu() {
+  cat <<EOF
+
+jido_hive clients
+mode:      $mode
+websocket: $websocket_url
+
+1. run architect
+2. run skeptic
+3. run both in this terminal
+q. quit
+EOF
+}
+
+while true; do
+  print_menu
+  read -r -p 'choice: ' choice
+
+  case "$choice" in
+    1) run_single architect ;;
+    2) run_single skeptic ;;
+    3) run_action run_both ;;
+    q|Q) exit 0 ;;
+    *) printf 'unknown choice: %s\n' "$choice" >&2 ;;
+  esac
+done

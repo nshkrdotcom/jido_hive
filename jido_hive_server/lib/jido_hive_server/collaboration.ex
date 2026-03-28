@@ -115,8 +115,13 @@ defmodule JidoHiveServer.Collaboration do
     end
   end
 
-  defp continue_room(_room_id, %{status: "failed"}, _remaining_turns, _turn_timeout_ms),
-    do: {:error, :turn_failed}
+  defp continue_room(
+         _room_id,
+         %{status: "failed"} = snapshot,
+         _remaining_turns,
+         _turn_timeout_ms
+       ),
+       do: {:ok, snapshot}
 
   defp continue_room(room_id, snapshot, remaining_turns, turn_timeout_ms) do
     case Referee.next_assignment(snapshot) do
@@ -159,7 +164,7 @@ defmodule JidoHiveServer.Collaboration do
          {:ok, turn} <- wait_for_turn(room_id, job_id, turn_timeout_ms) do
       case turn.status do
         :completed -> {:ok, :completed}
-        :failed -> {:error, :turn_failed}
+        :failed -> {:ok, :failed}
       end
     end
   end

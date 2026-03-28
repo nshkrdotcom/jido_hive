@@ -33,7 +33,8 @@ defmodule JidoHiveClient.Executor.Session do
 
     Status.execution_started(
       job,
-      Keyword.merge(opts, provider: provider, model: model, reasoning_effort: reasoning_effort)
+      Keyword.merge(opts, provider: provider, model: model, reasoning_effort: reasoning_effort),
+      request
     )
 
     with {:ok, session} <- Harness.start_session(@runtime_id, start_opts),
@@ -382,7 +383,7 @@ defmodule JidoHiveClient.Executor.Session do
   defp repair_response(_session, _job, _run, _opts, ""), do: :error
 
   defp repair_response(session, job, run, opts, text) do
-    Status.repair_started(job, :invalid_collaboration_json)
+    Status.repair_started(job, :invalid_collaboration_json, text)
 
     request =
       CollaborationPrompt.to_repair_run_request(text, job,
@@ -396,13 +397,24 @@ defmodule JidoHiveClient.Executor.Session do
              run_id: "#{run.run_id}-repair",
              driver: Keyword.get(opts, :driver),
              driver_opts: driver_opts(job, opts)
-           ),
-         repair_events <- Enum.to_list(repair_stream),
-         repair_projection <- project(repair_events, repair_run, session),
-         {:ok, decoded_payload} <- ResultDecoder.decode(repair_projection.execution["text"]) do
-      {:ok, repair_events, repair_projection, decoded_payload}
+           ) do
+      repair_events = Enum.to_list(repair_stream)
+      repair_projection = project(repair_events, repair_run, session)
+
+      Status.repair_finished(job, repair_projection.execution["text"])
+
+      case ResultDecoder.decode(repair_projection.execution["text"]) do
+        {:ok, decoded_payload} ->
+          {:ok, repair_events, repair_projection, decoded_payload}
+
+        {:error, reason} ->
+          Status.repair_failed(job, reason)
+          :error
+      end
     else
-      _other -> :error
+      {:error, _} = error ->
+        Status.repair_failed(job, error)
+        :error
     end
   end
 

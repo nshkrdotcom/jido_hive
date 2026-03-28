@@ -54,6 +54,9 @@ defmodule JidoHiveClient.TestSupport.ScriptedRunModule do
       :repairable ->
         repairable_script(context, encoded)
 
+      :unrepairable ->
+        unrepairable_script(context)
+
       :codex_like ->
         [
           {:raw,
@@ -159,6 +162,32 @@ defmodule JidoHiveClient.TestSupport.ScriptedRunModule do
     end
   end
 
+  defp unrepairable_script(context) do
+    content =
+      if String.ends_with?(to_string(context.run_id), "-repair") do
+        "Architect summary: claim shared packet, evidence tool lineage, publish after review."
+      else
+        "I propose a shared packet with a claim, supporting evidence, and a publish request."
+      end
+
+    [
+      {:assistant_message,
+       %{
+         "role" => "assistant",
+         "content" => [content],
+         "metadata" => %{},
+         "model" => "gpt-5.4"
+       }},
+      {:result,
+       %{
+         "status" => "completed",
+         "stop_reason" => "end_turn",
+         "output" => %{"usage" => %{"input_tokens" => 5, "output_tokens" => 10}},
+         "metadata" => %{}
+       }}
+    ]
+  end
+
   defp response_for(:architect) do
     %{
       "summary" => "architect proposed a shared packet and requested publication",
@@ -188,6 +217,7 @@ defmodule JidoHiveClient.TestSupport.ScriptedRunModule do
 
   defp response_for(:codex_like), do: response_for(:architect)
   defp response_for(:repairable), do: response_for(:architect)
+  defp response_for(:unrepairable), do: response_for(:architect)
 
   defp response_for(:skeptic) do
     %{

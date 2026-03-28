@@ -1,0 +1,202 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+LOCAL_API_BASE="http://127.0.0.1:4000/api"
+PROD_API_BASE="https://jido-hive-server-test.app.nsai.online/api"
+
+mode="local"
+
+usage() {
+  cat <<'EOF'
+Usage:
+  bin/hive-control [--local|--prod]
+
+Interactive control menu for:
+- server reachability
+- target checks
+- live demo runs
+- room create/run/show
+- local server start
+- Coolify deploy and prod log tail
+EOF
+}
+
+while (($# > 0)); do
+  case "$1" in
+    --local)
+      mode="local"
+      shift
+      ;;
+    --prod)
+      mode="prod"
+      shift
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    *)
+      printf 'unknown option: %s\n' "$1" >&2
+      usage >&2
+      exit 1
+      ;;
+  esac
+done
+
+case "$mode" in
+  local)
+    api_base="$LOCAL_API_BASE"
+    mode_flag=(--local)
+    ;;
+  prod)
+    api_base="$PROD_API_BASE"
+    mode_flag=(--prod)
+    ;;
+esac
+
+run_setup() {
+  "$ROOT/setup/hive" "${mode_flag[@]}" "$@"
+}
+
+run_action() {
+  "$@" || true
+}
+
+prompt_value() {
+  local label="$1"
+  local default_value="${2:-}"
+  local value=''
+
+  if [[ -n "$default_value" ]]; then
+    read -r -p "$label [$default_value]: " value
+    printf '%s' "${value:-$default_value}"
+  else
+    read -r -p "$label: " value
+    printf '%s' "$value"
+  fi
+}
+
+cmd_live_demo() {
+  local room_id turn_timeout_ms wait_timeout_ms
+  local -a args=()
+
+  printf '[jido_hive control] start bin/hive-clients %s and choose 3 before running this\n' "$(
+    [[ "$mode" == "prod" ]] && printf -- '--prod' || printf -- '--local'
+  )"
+  printf '[jido_hive control] the client terminal will show prompt/response previews for each turn\n'
+
+  room_id="$(prompt_value 'room id' "room-$(date +%s)")"
+  turn_timeout_ms="$(prompt_value 'turn timeout ms' '180000')"
+  wait_timeout_ms="$(prompt_value 'wait timeout ms' '120000')"
+
+  args+=(--room-id "$room_id")
+  args+=(--turn-timeout-ms "$turn_timeout_ms")
+  args+=(--wait-timeout-ms "$wait_timeout_ms")
+
+  run_setup live-demo "${args[@]}"
+}
+
+cmd_create_room() {
+  local room_id brief
+  local -a args=()
+
+  room_id="$(prompt_value 'room id' "room-$(date +%s)")"
+  brief="$(prompt_value 'brief' 'Develop a distributed collaboration protocol for two AI clients.')"
+
+  args+=("$room_id" --if-missing --brief "$brief")
+  run_setup create-room "${args[@]}"
+}
+
+cmd_run_room() {
+  local room_id turn_timeout_ms
+
+  room_id="$(prompt_value 'room id' '')"
+  [[ -n "$room_id" ]] || {
+    printf 'room id is required\n' >&2
+    return 1
+  }
+
+  turn_timeout_ms="$(prompt_value 'turn timeout ms' '180000')"
+  run_setup run-room "$room_id" --turn-timeout-ms "$turn_timeout_ms"
+}
+
+cmd_show_room() {
+  local room_id
+
+  room_id="$(prompt_value 'room id' '')"
+  [[ -n "$room_id" ]] || {
+    printf 'room id is required\n' >&2
+    return 1
+  }
+
+  run_setup room "$room_id"
+}
+
+cmd_start_local_server() {
+  if [[ "$mode" != "local" ]]; then
+    printf 'local server start is only available in --local mode\n' >&2
+    return 1
+  fi
+
+  exec "$ROOT/bin/server"
+}
+
+cmd_start_local_live_demo_server() {
+  if [[ "$mode" != "local" ]]; then
+    printf 'local live-demo server is only available in --local mode\n' >&2
+    return 1
+  fi
+
+  exec "$ROOT/bin/live-demo-server"
+}
+
+cmd_deploy_coolify() {
+  exec "$ROOT/scripts/deploy_coolify.sh"
+}
+
+cmd_tail_prod_logs() {
+  cd "$ROOT/jido_hive_server"
+  exec env MIX_ENV=dev mix coolify.app_logs --project server --lines 200 --follow
+}
+
+print_menu() {
+  cat <<EOF
+
+jido_hive control
+mode: $mode
+api:  $api_base
+
+1. doctor
+2. targets
+3. live demo
+4. create room
+5. run room
+6. show room
+7. start local Phoenix server
+8. start local live-demo server
+9. deploy via Coolify
+10. tail prod app logs
+q. quit
+EOF
+}
+
+while true; do
+  print_menu
+  read -r -p 'choice: ' choice
+
+  case "$choice" in
+    1) run_action run_setup doctor ;;
+    2) run_action run_setup targets ;;
+    3) run_action cmd_live_demo ;;
+    4) run_action cmd_create_room ;;
+    5) run_action cmd_run_room ;;
+    6) run_action cmd_show_room ;;
+    7) run_action cmd_start_local_server ;;
+    8) run_action cmd_start_local_live_demo_server ;;
+    9) run_action cmd_deploy_coolify ;;
+    10) run_action cmd_tail_prod_logs ;;
+    q|Q) exit 0 ;;
+    *) printf 'unknown choice: %s\n' "$choice" >&2 ;;
+  esac
+done

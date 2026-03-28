@@ -215,6 +215,109 @@ defmodule JidoHiveServerWeb.RoomControllerTest do
     assert length(history) == 2
   end
 
+  test "returns the failed room snapshot instead of a blind 422 when a turn fails", %{conn: conn} do
+    port =
+      Application.fetch_env!(:jido_hive_server, JidoHiveServerWeb.Endpoint)
+      |> Keyword.fetch!(:http)
+      |> Keyword.fetch!(:port)
+
+    url = "ws://127.0.0.1:#{port}/socket/websocket"
+
+    start_supervised!(
+      {RelayWorker,
+       name: :architect_http_fail_client,
+       url: url,
+       relay_topic: "relay:local",
+       workspace_id: "workspace-http-fail",
+       user_id: "user-architect-fail",
+       participant_id: "architect",
+       participant_role: "architect",
+       target_id: "target-architect-http-fail",
+       capability_id: "codex.exec.session",
+       executor:
+         {Session,
+          [
+            provider: :codex,
+            driver: ScriptedRunModule,
+            driver_opts: [scenario: :unrepairable]
+          ]}}
+    )
+
+    start_supervised!(
+      {RelayWorker,
+       name: :skeptic_http_fail_client,
+       url: url,
+       relay_topic: "relay:local",
+       workspace_id: "workspace-http-fail",
+       user_id: "user-skeptic-fail",
+       participant_id: "skeptic",
+       participant_role: "skeptic",
+       target_id: "target-skeptic-http-fail",
+       capability_id: "codex.exec.session",
+       executor: {Session, [provider: :claude, driver: ScriptedRunModule]}}
+    )
+
+    assert wait_until(fn ->
+             case V2.compatible_targets_for("codex.exec.session", %{}) do
+               {:ok, matches} ->
+                 Enum.any?(matches, &(&1.target.target_id == "target-architect-http-fail")) and
+                   Enum.any?(matches, &(&1.target.target_id == "target-skeptic-http-fail"))
+
+               _ ->
+                 false
+             end
+           end)
+
+    create_conn =
+      post(conn, ~p"/api/rooms", %{
+        "room_id" => "room-http-fail-1",
+        "brief" => "Design a distributed collaboration protocol for two local AI clients.",
+        "rules" => ["Every objection must point to a claim or evidence entry."],
+        "participants" => [
+          %{
+            "participant_id" => "architect",
+            "role" => "architect",
+            "target_id" => "target-architect-http-fail",
+            "capability_id" => "codex.exec.session"
+          },
+          %{
+            "participant_id" => "skeptic",
+            "role" => "skeptic",
+            "target_id" => "target-skeptic-http-fail",
+            "capability_id" => "codex.exec.session"
+          }
+        ]
+      })
+
+    assert %{"data" => %{"room_id" => "room-http-fail-1"}} = json_response(create_conn, 201)
+
+    run_conn =
+      post(recycle(create_conn), ~p"/api/rooms/room-http-fail-1/run", %{
+        "max_turns" => 6,
+        "turn_timeout_ms" => 5_000
+      })
+
+    assert %{
+             "data" => %{
+               "room_id" => "room-http-fail-1",
+               "status" => "failed",
+               "turns" => [
+                 %{
+                   "status" => "failed",
+                   "execution" => %{
+                     "status" => "failed",
+                     "text" => execution_text,
+                     "error" => %{"reason" => error_reason}
+                   }
+                 }
+               ]
+             }
+           } = json_response(run_conn, 200)
+
+    assert execution_text =~ "shared packet"
+    assert error_reason =~ "json_not_found"
+  end
+
   defp wait_until(fun, attempts \\ 50)
   defp wait_until(_fun, 0), do: false
 
