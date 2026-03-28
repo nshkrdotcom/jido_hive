@@ -26,7 +26,17 @@ WORKDIR /workspace/jido_hive_server
 COPY jido_hive_server/config config
 
 RUN mix deps.get --only ${MIX_ENV}
-RUN mix deps.compile
+RUN mix deps.compile --skip-local-deps
+RUN mix deps.compile jido jido_action jido_signal jido_shell jido_vfs --include-children
+RUN mix deps.compile jido_os --include-children
+RUN mix deps.compile \
+  jido_harness \
+  jido_integration_v2 \
+  jido_integration_v2_runtime_asm_bridge \
+  jido_integration_v2_codex_cli \
+  jido_integration_v2_github \
+  jido_integration_v2_notion \
+  --include-children
 
 COPY jido_hive_server/lib lib
 COPY jido_hive_server/priv priv
