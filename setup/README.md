@@ -2,6 +2,9 @@
 
 `setup/hive` is the user-facing shell wrapper for the live operator flow.
 
+On a fresh machine, run `bin/setup` once from the repo root before using this
+toolkit.
+
 It removes the raw `curl`/JSON payload boilerplate for:
 
 - checking the local server state

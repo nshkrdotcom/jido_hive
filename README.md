@@ -19,6 +19,30 @@ The current slice is a real client-server collaboration loop:
 - Erlang/OTP 28
 - Elixir `~> 1.19`
 - a working local AI CLI for live runs, such as Codex CLI
+- `curl` and `jq` for the setup toolkit
+
+## Fresh Machine
+
+From a fresh clone, start at the repo root:
+
+```bash
+git clone <repo>
+cd jido_hive
+bin/setup
+```
+
+That bootstrap does the first-run work for both nested Mix apps:
+
+- installs Hex and Rebar if needed
+- runs `mix setup` in `jido_hive_server`
+- runs `mix setup` in `jido_hive_client`
+- prints the next local run commands
+
+If you only want to check the local toolchain first:
+
+```bash
+bin/setup --check
+```
 
 ## Quick Start
 
@@ -61,6 +85,9 @@ The client terminals now announce when they:
 
 The live-demo server wrapper also defaults the Phoenix log level to `info` so
 you see room and dispatch progress instead of full dev query spam.
+
+If this is your first run on a new machine, do `bin/setup` once before starting
+the three-terminal flow above.
 
 If you want the older operator-only wrapper, `bin/demo-first-slice` now delegates
 to `setup/hive live-demo`.

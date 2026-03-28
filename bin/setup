@@ -1,0 +1,111 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+usage() {
+  cat <<'EOF'
+Usage:
+  bin/setup [--check]
+
+What it does:
+  - installs Hex and Rebar if needed
+  - runs mix setup in jido_hive_server
+  - runs mix setup in jido_hive_client
+  - prints the next local run commands
+
+Options:
+  --check   Print local tool status only
+  -h, --help
+EOF
+}
+
+need_tool() {
+  local tool="$1"
+
+  if ! command -v "$tool" >/dev/null 2>&1; then
+    printf 'Missing required tool: %s\n' "$tool" >&2
+    exit 1
+  fi
+}
+
+tool_status() {
+  local tool="$1"
+
+  if command -v "$tool" >/dev/null 2>&1; then
+    printf '  %-8s %s\n' "$tool" "ok"
+  else
+    printf '  %-8s %s\n' "$tool" "missing"
+  fi
+}
+
+print_status() {
+  printf 'Local tool status:\n'
+  tool_status git
+  tool_status mix
+  tool_status elixir
+  tool_status curl
+  tool_status jq
+  printf '\n'
+
+  if command -v elixir >/dev/null 2>&1; then
+    elixir --version | sed -n '1,2p'
+    printf '\n'
+  fi
+}
+
+run_setup() {
+  local app_dir="$1"
+
+  printf '[jido_hive setup] %s\n' "$app_dir"
+  (
+    cd "$ROOT/$app_dir"
+    mix setup
+  )
+}
+
+check_only=false
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --check)
+      check_only=true
+      shift
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    *)
+      usage >&2
+      exit 1
+      ;;
+  esac
+done
+
+need_tool git
+need_tool mix
+need_tool elixir
+
+print_status
+
+if [[ "$check_only" == true ]]; then
+  exit 0
+fi
+
+mix local.hex --force
+mix local.rebar --force
+
+run_setup jido_hive_server
+run_setup jido_hive_client
+
+printf '\n'
+printf 'Setup complete.\n'
+printf '\n'
+printf 'Next steps:\n'
+printf '  1. bin/live-demo-server\n'
+printf '  2. bin/client-architect\n'
+printf '  3. bin/client-skeptic\n'
+printf '\n'
+printf 'If you want the API toolkit instead, run:\n'
+printf '  setup/hive help\n'
