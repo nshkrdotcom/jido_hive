@@ -73,6 +73,7 @@ defmodule JidoHiveServer.MixProject do
       DependencyResolver.jido_integration_codex_cli(),
       DependencyResolver.jido_integration_github(),
       DependencyResolver.jido_integration_notion(),
+      {:coolify_ex, github: "nshkrdotcom/coolify_ex", branch: "main", only: :dev, runtime: false},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
       {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false},
       {:ex_doc, "~> 0.40", only: [:dev, :test], runtime: false},

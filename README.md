@@ -125,6 +125,40 @@ Fetch the publication plan:
 setup/hive publication-plan room-manual-1
 ```
 
+## Deploy
+
+Deployments now go through `coolify_ex` from inside `jido_hive_server`, with a
+repo-root manifest at [.coolify_ex.exs](/home/home/p/g/n/jido_hive/.coolify_ex.exs).
+
+From this repo root:
+
+```bash
+export COOLIFY_BASE_URL="https://coolify.example.com"
+export COOLIFY_TOKEN="..."
+export COOLIFY_APP_UUID="..."
+scripts/deploy_coolify.sh
+```
+
+The wrapper installs the dev-only deployment dependency if needed, then runs:
+
+```bash
+cd jido_hive_server
+MIX_ENV=dev mix coolify.deploy
+```
+
+Useful variants:
+
+```bash
+scripts/deploy_coolify.sh --no-push
+scripts/deploy_coolify.sh --project server
+scripts/deploy_coolify.sh --force --instant
+scripts/deploy_coolify.sh --skip-verify
+```
+
+`coolify_ex` now discovers `.coolify_ex.exs` by walking up parent directories,
+so the nested `jido_hive_server` Mix project can use the repo-root manifest
+without an explicit `--config` path.
+
 ## Live GitHub / Notion Path
 
 The setup toolkit wraps the live connector flow. The full guide is in
