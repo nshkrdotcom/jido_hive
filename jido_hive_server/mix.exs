@@ -55,7 +55,7 @@ defmodule JidoHiveServer.MixProject do
       {:telemetry_metrics, "~> 1.0"},
       {:telemetry_poller, "~> 1.0"},
       {:gettext, "~> 1.0"},
-      {:jason, "~> 1.2"},
+      {:jason, "~> 1.4"},
       {:dns_cluster, "~> 0.2.0"},
       {:bandit, "~> 1.5"},
       {:ecto_sql, "~> 3.13"},
@@ -75,7 +75,7 @@ defmodule JidoHiveServer.MixProject do
       DependencyResolver.jido_integration_notion(),
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
       {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false},
-      {:ex_doc, "~> 0.34", only: [:dev, :test], runtime: false},
+      {:ex_doc, "~> 0.40", only: [:dev, :test], runtime: false},
       {:jido_hive_client, path: "../jido_hive_client", only: :test},
       {:phoenix_client, "~> 0.11.1", only: :test}
     ]
