@@ -1,0 +1,14 @@
+.git
+**/.git
+.github
+**/.github
+**/.DS_Store
+**/_build
+**/deps
+**/doc
+**/tmp
+**/.elixir_ls
+**/cover
+**/*.ez
+**/*.tar
+**/*erl_crash.dump
