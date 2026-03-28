@@ -5,6 +5,8 @@ defmodule JidoHiveServer.MixProject do
 
   alias JidoHive.Build.DependencyResolver
 
+  @source_url "https://github.com/nshkrdotcom/jido_hive"
+
   def project do
     [
       app: :jido_hive_server,
@@ -13,6 +15,8 @@ defmodule JidoHiveServer.MixProject do
       elixirc_options: [warnings_as_errors: true],
       elixirc_paths: elixirc_paths(Mix.env()),
       start_permanent: Mix.env() == :prod,
+      source_url: @source_url,
+      docs: docs(),
       aliases: aliases(),
       deps: deps(),
       listeners: [Phoenix.CodeReloader],
@@ -97,10 +101,29 @@ defmodule JidoHiveServer.MixProject do
         "test",
         "credo --strict",
         "dialyzer",
-        "docs"
+        "cmd env MIX_ENV=dev mix docs --warnings-as-errors"
       ],
       test_all: ["test"],
       precommit: ["compile --warnings-as-errors", "deps.unlock --unused", "format", "test"]
+    ]
+  end
+
+  defp docs do
+    [
+      extras: [
+        "../README.md": [title: "Overview"],
+        "../docs/architecture.md": [title: "Architecture"],
+        "../setup/README.md": [title: "Setup Toolkit"],
+        "../docs/developer/multi_agent_round_robin.md": [
+          title: "Developer Guide: Multi-Agent Round Robin"
+        ]
+      ],
+      groups_for_extras: [
+        "Project Overview": ["../README.md"],
+        "User Guides": ["../docs/architecture.md", "../setup/README.md"],
+        "Developer Guides": ["../docs/developer/multi_agent_round_robin.md"]
+      ],
+      source_url: @source_url
     ]
   end
 end

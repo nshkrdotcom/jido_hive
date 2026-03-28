@@ -12,7 +12,7 @@ defmodule JidoHiveClient.Executor.SessionTest do
                driver_opts: [scenario: :architect]
              )
 
-    assert result["summary"] =~ "architect proposed"
+    assert result["summary"] =~ "proposal pass added claim and evidence"
     assert Enum.map(result["actions"], & &1["op"]) == ["CLAIM", "EVIDENCE", "PUBLISH"]
     assert result["execution"]["status"] == "completed"
     assert result["execution"]["provider"] == "claude"
@@ -28,7 +28,7 @@ defmodule JidoHiveClient.Executor.SessionTest do
                driver_opts: [scenario: :codex_like]
              )
 
-    assert result["summary"] =~ "architect proposed"
+    assert result["summary"] =~ "proposal pass added claim and evidence"
     assert Enum.map(result["actions"], & &1["op"]) == ["CLAIM", "EVIDENCE", "PUBLISH"]
     assert result["execution"]["status"] == "completed"
     assert result["execution"]["provider"] == "codex"
@@ -47,7 +47,7 @@ defmodule JidoHiveClient.Executor.SessionTest do
                driver_opts: [scenario: :repairable]
              )
 
-    assert result["summary"] =~ "architect proposed"
+    assert result["summary"] =~ "proposal pass added claim and evidence"
     assert Enum.map(result["actions"], & &1["op"]) == ["CLAIM", "EVIDENCE", "PUBLISH"]
     assert result["execution"]["status"] == "completed"
     assert result["execution"]["metadata"]["repair_attempted"] == true
@@ -95,7 +95,9 @@ defmodule JidoHiveClient.Executor.SessionTest do
           "directives" => ["Propose one concrete collaboration envelope and one publish path."]
         },
         "turn" => %{
+          "phase" => "proposal",
           "round" => 1,
+          "participant_id" => "architect",
           "participant_role" => "architect",
           "objective" => "Produce the first proposal."
         },

@@ -184,6 +184,7 @@ defmodule JidoHiveServer.Persistence do
       context_entries: snapshot_list(snapshot, "context_entries", &rehydrate_context_entry/1),
       disputes: snapshot_list(snapshot, "disputes", &rehydrate_dispute/1),
       current_turn: snapshot_map(snapshot, "current_turn", &rehydrate_turn_map/1),
+      execution_plan: snapshot_map(snapshot, "execution_plan", &rehydrate_execution_plan/1),
       status: snapshot_value(snapshot, "status", "idle"),
       phase: snapshot_value(snapshot, "phase", "idle"),
       round: snapshot_value(snapshot, "round", 0),
@@ -236,6 +237,7 @@ defmodule JidoHiveServer.Persistence do
   defp rehydrate_turn_map(turn) do
     %{
       job_id: turn["job_id"],
+      plan_slot_index: turn["plan_slot_index"],
       participant_id: turn["participant_id"],
       participant_role: turn["participant_role"],
       target_id: turn["target_id"],
@@ -247,6 +249,23 @@ defmodule JidoHiveServer.Persistence do
       started_at: turn["started_at"],
       completed_at: turn["completed_at"],
       result_summary: turn["result_summary"]
+    }
+  end
+
+  defp rehydrate_execution_plan(plan) when map_size(plan) == 0, do: %{}
+
+  defp rehydrate_execution_plan(plan) do
+    %{
+      strategy: plan["strategy"],
+      max_participants: plan["max_participants"],
+      stage_count: plan["stage_count"],
+      participant_count: plan["participant_count"],
+      planned_turn_count: plan["planned_turn_count"],
+      completed_turn_count: plan["completed_turn_count"],
+      round_robin_index: plan["round_robin_index"],
+      excluded_target_ids: plan["excluded_target_ids"] || [],
+      started_at: plan["started_at"],
+      locked_participants: snapshot_list(plan, "locked_participants", &rehydrate_participant/1)
     }
   end
 

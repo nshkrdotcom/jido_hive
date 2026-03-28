@@ -26,6 +26,8 @@ defmodule JidoHiveClient.TestSupport.ScriptedRunModule do
   end
 
   defp emit(context) do
+    maybe_delay(context)
+
     notify_subscriber(
       context,
       :run_started,
@@ -47,7 +49,7 @@ defmodule JidoHiveClient.TestSupport.ScriptedRunModule do
       |> scripted_opts()
       |> Keyword.get(:scenario, :architect)
 
-    response = response_for(scenario)
+    response = response_for(scenario, context)
     encoded = Jason.encode!(response)
 
     case scenario do
@@ -188,20 +190,24 @@ defmodule JidoHiveClient.TestSupport.ScriptedRunModule do
     ]
   end
 
-  defp response_for(:architect) do
+  defp response_for(:architect, context) do
+    participant_id = prompt_value(context, ["turn", "participant_id"]) || "worker"
+
     %{
-      "summary" => "architect proposed a shared packet and requested publication",
+      "summary" => "proposal pass added claim and evidence from #{participant_id}",
       "actions" => [
         %{
           "op" => "CLAIM",
-          "title" => "Shared packet envelope",
-          "body" => "The server should carry a shared turn envelope across clients.",
+          "title" => "Shared packet envelope #{participant_id}",
+          "body" =>
+            "The server should carry a shared turn envelope across clients and keep the distributed turn budget explicit.",
           "targets" => []
         },
         %{
           "op" => "EVIDENCE",
-          "title" => "Tool lineage",
-          "body" => "Each turn should forward prompt, tool, and artifact lineage.",
+          "title" => "Tool lineage #{participant_id}",
+          "body" =>
+            "Each turn should forward prompt, tool, and artifact lineage so later workers can continue the shared build-up.",
           "targets" => []
         },
         %{
@@ -215,42 +221,48 @@ defmodule JidoHiveClient.TestSupport.ScriptedRunModule do
     }
   end
 
-  defp response_for(:codex_like), do: response_for(:architect)
-  defp response_for(:repairable), do: response_for(:architect)
-  defp response_for(:unrepairable), do: response_for(:architect)
+  defp response_for(:codex_like, context), do: response_for(:architect, context)
+  defp response_for(:repairable, context), do: response_for(:architect, context)
+  defp response_for(:unrepairable, context), do: response_for(:architect, context)
 
-  defp response_for(:skeptic) do
+  defp response_for(:skeptic, context) do
+    participant_id = prompt_value(context, ["turn", "participant_id"]) || "worker"
+    target_entry_ref = first_entry_ref(context) || "claim:1"
+
     %{
-      "summary" => "skeptic raised one objection against the shared packet",
+      "summary" => "critique pass opened one objection from #{participant_id}",
       "actions" => [
         %{
           "op" => "OBJECT",
-          "title" => "Conflict retention is underspecified",
-          "body" => "The shared packet must preserve contradictory tool output explicitly.",
+          "title" => "Conflict retention needs more structure",
+          "body" =>
+            "The shared packet should preserve contradictory tool output and distributed turn ownership explicitly.",
           "severity" => "high",
-          "targets" => [%{"entry_ref" => "claim:1"}]
+          "targets" => [%{"entry_ref" => target_entry_ref}]
         }
       ],
       "artifacts" => []
     }
   end
 
-  defp response_for(:resolver) do
+  defp response_for(:resolver, context) do
+    dispute_id = first_open_dispute_id(context) || "dispute:1"
+
     %{
-      "summary" => "architect resolved the open dispute and marked the room publishable",
+      "summary" => "resolution pass resolved #{dispute_id}",
       "actions" => [
         %{
           "op" => "REVISE",
           "title" => "Conflict ledger",
           "body" =>
             "Keep a contradiction ledger in the shared envelope and cite it in each turn.",
-          "targets" => [%{"dispute_id" => "dispute:1"}]
+          "targets" => [%{"dispute_id" => dispute_id}]
         },
         %{
           "op" => "DECIDE",
           "title" => "Publishable",
           "body" => "The room is ready for publication after the contradiction ledger revision.",
-          "targets" => [%{"dispute_id" => "dispute:1"}]
+          "targets" => [%{"dispute_id" => dispute_id}]
         }
       ],
       "artifacts" => []
@@ -261,10 +273,68 @@ defmodule JidoHiveClient.TestSupport.ScriptedRunModule do
   defp scenario_tool(:skeptic), do: "critique.scan"
   defp scenario_tool(:resolver), do: "revision.apply"
 
+  defp first_open_dispute_id(context) do
+    prompt_values(context, ["referee", "open_disputes"])
+    |> List.wrap()
+    |> Enum.find_value(fn dispute ->
+      Map.get(dispute, "dispute_id") || Map.get(dispute, :dispute_id)
+    end)
+  end
+
+  defp first_entry_ref(context) do
+    prompt_values(context, ["shared", "entries"])
+    |> List.wrap()
+    |> Enum.find_value(fn entry ->
+      case Map.get(entry, "entry_type") || Map.get(entry, :entry_type) do
+        "claim" ->
+          Map.get(entry, "entry_ref") || Map.get(entry, :entry_ref)
+
+        _other ->
+          nil
+      end
+    end)
+  end
+
+  defp prompt_value(context, path) do
+    context
+    |> prompt_values(path)
+    |> case do
+      value when is_binary(value) -> value
+      _other -> nil
+    end
+  end
+
+  defp prompt_values(context, path) when is_list(path) do
+    with prompt when is_binary(prompt) <- Map.get(context, :prompt),
+         {:ok, envelope} <- decode_envelope(prompt) do
+      get_in(envelope, Enum.map(path, &to_string/1))
+    else
+      _other -> nil
+    end
+  end
+
+  defp decode_envelope(prompt) when is_binary(prompt) do
+    case Regex.run(~r/Shared envelope JSON:\s*(\{.*\})\s*\z/s, prompt, capture: :all_but_first) do
+      [json] -> Jason.decode(json)
+      _other -> {:error, :envelope_not_found}
+    end
+  end
+
   defp scripted_opts(context) do
     case Map.get(context, :scenario) do
       nil -> Map.get(context, :driver_opts) || Map.get(context, :run_module_opts) || []
       scenario -> [scenario: scenario]
+    end
+  end
+
+  defp maybe_delay(context) do
+    delay_ms =
+      context
+      |> scripted_opts()
+      |> Keyword.get(:delay_ms, 0)
+
+    if is_integer(delay_ms) and delay_ms > 0 do
+      Process.sleep(delay_ms)
     end
   end
 

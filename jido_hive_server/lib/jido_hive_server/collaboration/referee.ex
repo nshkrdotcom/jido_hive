@@ -1,62 +1,54 @@
 defmodule JidoHiveServer.Collaboration.Referee do
   @moduledoc false
 
-  @spec next_assignment(map()) :: {:ok, map()} | :halt
-  def next_assignment(%{current_turn: current_turn}) when map_size(current_turn) > 0, do: :halt
+  alias JidoHiveServer.Collaboration.ExecutionPlan
 
-  def next_assignment(snapshot) when is_map(snapshot) do
-    turns = Map.get(snapshot, :turns, [])
-    open_disputes = open_disputes(snapshot)
+  @spec next_assignment(map(), [String.t()] | nil) :: {:ok, map()} | {:error, atom()} | :halt
+  def next_assignment(snapshot, available_target_ids \\ nil)
 
-    cond do
-      turns == [] ->
-        build_assignment(
-          snapshot,
-          primary_participant(snapshot),
-          "proposal",
-          current_round(snapshot) + 1
-        )
+  def next_assignment(%{current_turn: current_turn}, _available_target_ids)
+      when map_size(current_turn) > 0,
+      do: :halt
 
-      length(turns) == 1 ->
-        build_assignment(
-          snapshot,
-          skeptic_participant(snapshot),
-          "critique",
-          current_round(snapshot) + 1
-        )
+  def next_assignment(snapshot, available_target_ids) when is_map(snapshot) do
+    with {:ok, %{execution_plan: plan} = snapshot} <- ExecutionPlan.ensure(snapshot),
+         false <- ExecutionPlan.done?(plan) do
+      available_target_ids =
+        available_target_ids || Enum.map(plan.locked_participants, & &1.target_id)
 
-      open_disputes != [] ->
-        build_assignment(
-          snapshot,
-          primary_participant(snapshot),
-          "resolution",
-          current_round(snapshot) + 1,
-          open_disputes: open_disputes
-        )
+      case ExecutionPlan.select_next_participant(plan, available_target_ids) do
+        {:ok, participant, slot_index} ->
+          build_assignment(snapshot, plan, participant, slot_index)
 
-      publish_requested?(snapshot) ->
-        :halt
-
+        :none ->
+          {:error, :no_available_participants}
+      end
+    else
       true ->
         :halt
+
+      {:error, _} = error ->
+        error
     end
   end
 
   @spec room_status(map()) :: String.t()
   def room_status(snapshot) when is_map(snapshot) do
-    turns = Map.get(snapshot, :turns, [])
-
     cond do
       current_turn_running?(snapshot) ->
         "running"
 
+      pending_turns?(snapshot) ->
+        "in_progress"
+
       open_disputes(snapshot) != [] ->
         "needs_resolution"
 
-      publish_requested?(snapshot) and length(turns) >= 2 ->
+      publish_requested?(snapshot) and
+          Map.get(snapshot.execution_plan || %{}, :completed_turn_count, 0) > 0 ->
         "publication_ready"
 
-      turns != [] ->
+      Map.get(snapshot, :turns, []) != [] ->
         "in_review"
 
       true ->
@@ -69,6 +61,12 @@ defmodule JidoHiveServer.Collaboration.Referee do
     case next_assignment(snapshot) do
       {:ok, assignment} ->
         assignment.phase
+
+      {:error, :no_available_participants} ->
+        snapshot
+        |> Map.get(:execution_plan, %{})
+        |> ExecutionPlan.stage_for_turn()
+        |> Map.get(:phase, "idle")
 
       :halt ->
         if room_status(snapshot) == "publication_ready", do: "publication_ready", else: "idle"
@@ -92,17 +90,17 @@ defmodule JidoHiveServer.Collaboration.Referee do
   @spec directives(String.t(), map(), keyword()) :: [String.t()]
   def directives("proposal", snapshot, _opts) do
     [
-      "Emit at least one CLAIM and one EVIDENCE action grounded in the shared brief.",
+      "Add at least one CLAIM and one EVIDENCE action grounded in the brief and the current shared state.",
       "If the room should be published after review, emit one PUBLISH action.",
-      "Carry forward only durable shared facts from prior turns."
+      "Build on prior claims instead of restating the room from scratch."
     ] ++ room_rule_directives(snapshot)
   end
 
   def directives("critique", snapshot, _opts) do
     [
-      "Critique the current claims and evidence against the brief and rules.",
-      "Use OBJECT actions with targeted entry_ref values when a claim or evidence item is weak.",
-      "If no objection is needed, emit one DECIDE action that states the proposal is acceptable."
+      "Critique the current shared claims and evidence against the brief and rules.",
+      "Use OBJECT actions with targeted entry_ref values when a claim or evidence item is weak, redundant, or missing support.",
+      "If no objection is needed, emit one DECIDE action that records what remains sound."
     ] ++ room_rule_directives(snapshot)
   end
 
@@ -114,55 +112,47 @@ defmodule JidoHiveServer.Collaboration.Referee do
 
     [
       "Resolve every open dispute by targeting its dispute_id with REVISE or DECIDE actions.",
-      "Preserve the original objection in the room history and answer it explicitly.",
-      "Only mark the room publishable if the dispute resolution is concrete."
+      "If there are no open disputes, consolidate the best current direction with DECIDE actions.",
+      "Only mark the room publishable if the synthesis is concrete and actionable."
       | if(dispute_ids == "", do: [], else: ["Open disputes: #{dispute_ids}"])
     ] ++ room_rule_directives(snapshot)
   end
 
   def directives(_phase, snapshot, _opts), do: room_rule_directives(snapshot)
 
-  defp build_assignment(snapshot, participant, phase, round),
-    do: build_assignment(snapshot, participant, phase, round, [])
+  defp build_assignment(snapshot, plan, participant, slot_index) do
+    stage = ExecutionPlan.stage_for_turn(plan)
+    round = Map.get(plan, :completed_turn_count, 0) + 1
+    opts = [open_disputes: open_disputes(snapshot)]
 
-  defp build_assignment(_snapshot, nil, _phase, _round, _opts), do: :halt
-
-  defp build_assignment(snapshot, participant, phase, round, opts) do
     {:ok,
      %{
-       phase: phase,
+       phase: stage.phase,
        round: round,
+       plan_slot_index: slot_index,
        participant_id: participant.participant_id,
-       participant_role: participant.role,
+       participant_role: stage.participant_role,
        target_id: participant.target_id,
        capability_id: participant.capability_id,
-       objective: objective(phase, snapshot),
-       directives: directives(phase, snapshot, opts),
+       objective: objective(stage.phase, snapshot, round, plan),
+       directives: directives(stage.phase, snapshot, opts),
        open_disputes: Keyword.get(opts, :open_disputes, [])
      }}
   end
 
-  defp objective("proposal", snapshot),
-    do: "Propose a concrete collaboration design for: #{snapshot.brief}"
+  defp objective("proposal", snapshot, round, plan),
+    do:
+      "Proposal pass #{round}/#{plan.planned_turn_count}: add concrete claims and evidence for: #{snapshot.brief}"
 
-  defp objective("critique", snapshot),
-    do: "Critique the current proposal for: #{snapshot.brief}"
+  defp objective("critique", snapshot, round, plan),
+    do:
+      "Critique pass #{round}/#{plan.planned_turn_count}: review the accumulated proposal state for: #{snapshot.brief}"
 
-  defp objective("resolution", _snapshot),
-    do: "Resolve the currently open disputes and prepare the room for publication."
+  defp objective("resolution", snapshot, round, plan),
+    do:
+      "Resolution pass #{round}/#{plan.planned_turn_count}: resolve disputes or consolidate the final plan for: #{snapshot.brief}"
 
-  defp objective(_phase, snapshot), do: snapshot.brief
-
-  defp primary_participant(snapshot) do
-    Enum.find(Map.get(snapshot, :participants, []), &(&1.role == "architect")) ||
-      List.first(Map.get(snapshot, :participants, []))
-  end
-
-  defp skeptic_participant(snapshot) do
-    Enum.find(Map.get(snapshot, :participants, []), &(&1.role == "skeptic")) ||
-      Map.get(snapshot, :participants, []) |> Enum.at(1) ||
-      primary_participant(snapshot)
-  end
+  defp objective(_phase, snapshot, _round, _plan), do: snapshot.brief
 
   defp current_turn_running?(snapshot) do
     snapshot
@@ -177,5 +167,10 @@ defmodule JidoHiveServer.Collaboration.Referee do
     |> Enum.map(&"Rule: #{&1}")
   end
 
-  defp current_round(snapshot), do: Map.get(snapshot, :round, 0)
+  defp pending_turns?(snapshot) do
+    case ExecutionPlan.ensure(snapshot) do
+      {:ok, %{execution_plan: plan}} -> not ExecutionPlan.done?(plan)
+      {:error, _} -> false
+    end
+  end
 end

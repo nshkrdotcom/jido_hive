@@ -54,18 +54,24 @@ defmodule JidoHiveClient.Status do
   end
 
   def job_received(job, state) when is_map(job) and is_map(state) do
+    assigned_role = Map.get(job, "participant_role", state.participant_role)
+
     emit(
-      "job received room=#{job["room_id"]} phase=#{phase(job)} role=#{state.participant_role} " <>
+      "job received room=#{job["room_id"]} phase=#{phase(job)} client=#{state.participant_id} " <>
+        "assigned_role=#{assigned_role} " <>
         "objective=\"#{truncate(objective(job), 120)}\""
     )
   end
 
   def execution_started(job, opts, request)
       when is_map(job) and is_list(opts) and is_map(request) do
+    assigned_role =
+      Map.get(job, "participant_role", Keyword.get(opts, :participant_role, "worker"))
+
     emit(
       "executing room=#{job["room_id"]} phase=#{phase(job)} provider=#{provider_label(opts[:provider])} " <>
-        "model=#{opts[:model] || "default"} reasoning=#{opts[:reasoning_effort] || "default"} " <>
-        "runtime=asm path=jido.harness->asm"
+        "assigned_role=#{assigned_role} model=#{opts[:model] || "default"} " <>
+        "reasoning=#{opts[:reasoning_effort] || "default"} runtime=asm path=jido.harness->asm"
     )
 
     emit_preview(

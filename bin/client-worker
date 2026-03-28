@@ -1,0 +1,83 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+usage() {
+  cat <<'EOF'
+Usage:
+  bin/client-worker [--local|--prod] [--worker-index N | --worker-id ID] [client options...]
+
+Examples:
+  bin/client-worker
+  bin/client-worker --worker-index 2
+  bin/client-worker --prod --worker-index 4
+  bin/client-worker --worker-id reviewer-a
+EOF
+}
+
+mode_args=()
+forward_args=()
+worker_index='1'
+worker_id=''
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --local|--prod)
+      mode_args+=("$1")
+      shift
+      ;;
+    --worker-index)
+      shift
+      [[ $# -gt 0 ]] || {
+        printf '%s\n' '--worker-index requires a value' >&2
+        exit 1
+      }
+      worker_index="$1"
+      shift
+      ;;
+    --worker-id)
+      shift
+      [[ $# -gt 0 ]] || {
+        printf '%s\n' '--worker-id requires a value' >&2
+        exit 1
+      }
+      worker_id="$1"
+      shift
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    --)
+      shift
+      forward_args+=("$@")
+      break
+      ;;
+    *)
+      forward_args+=("$1")
+      shift
+      ;;
+  esac
+done
+
+if [[ -z "$worker_id" ]]; then
+  [[ "$worker_index" =~ ^[0-9]+$ ]] || {
+    printf 'worker index must be an integer between 1 and 39\n' >&2
+    exit 1
+  }
+
+  if (( worker_index < 1 || worker_index > 39 )); then
+    printf 'worker index must be between 1 and 39\n' >&2
+    exit 1
+  fi
+
+  printf -v worker_id 'worker-%02d' "$worker_index"
+fi
+
+exec env \
+  PARTICIPANT_ROLE=worker \
+  PARTICIPANT_ID="$worker_id" \
+  TARGET_ID="target-$worker_id" \
+  USER_ID="user-$worker_id" \
+  "$ROOT/bin/client" "${mode_args[@]}" "${forward_args[@]}"

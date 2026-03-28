@@ -8,7 +8,8 @@ defmodule JidoHiveServerWeb.HomeControllerTest do
 
     assert body =~ "Jido Hive Server"
     assert body =~ "Production browser visits land here instead of a raw JSON 404."
-    assert body =~ "bin/client-architect --prod"
+    assert body =~ "bin/client-worker --prod --worker-index 1"
+    assert body =~ "participant_count * 3"
     assert body =~ "/api/targets"
   end
 
@@ -21,7 +22,8 @@ defmodule JidoHiveServerWeb.HomeControllerTest do
     assert %{
              "name" => "Jido Hive Server",
              "status" => "ok",
-             "helpers" => %{"prod" => %{"client" => "bin/client-architect --prod"}},
+             "helpers" => %{"prod" => %{"worker" => "bin/client-worker --prod --worker-index 1"}},
+             "demo" => %{"strategy" => "round_robin", "max_clients" => 39},
              "endpoints" => %{"api_base" => api_base, "websocket" => websocket}
            } = json_response(conn, 200)
 

@@ -5,7 +5,7 @@ defmodule JidoHiveServer.Collaboration.RoomServerTest do
   alias JidoHiveServer.Collaboration.RoomServer
   alias JidoHiveServer.Persistence
 
-  test "persists turns, opens disputes from objections, and resolves them into a publishable room" do
+  test "persists round-robin turns across proposal, critique, and resolution stages" do
     room =
       start_supervised!(
         {RoomServer,
@@ -15,106 +15,185 @@ defmodule JidoHiveServer.Collaboration.RoomServerTest do
          rules: ["Every objection must target a claim."],
          participants: [
            %{
-             participant_id: "architect",
-             role: "architect",
-             target_id: "target-architect",
+             participant_id: "worker-01",
+             role: "worker",
+             target_id: "target-worker-01",
              capability_id: "codex.exec.session"
            },
            %{
-             participant_id: "skeptic",
-             role: "skeptic",
-             target_id: "target-skeptic",
+             participant_id: "worker-02",
+             role: "worker",
+             target_id: "target-worker-02",
              capability_id: "codex.exec.session"
            }
          ]}
       )
 
-    assert {:ok, opened} =
+    assert {:ok, initial} = RoomServer.snapshot(room)
+    assert initial.execution_plan.participant_count == 2
+    assert initial.execution_plan.planned_turn_count == 6
+
+    assert {:ok, opened_1} =
              RoomServer.open_turn(room, %{
-               "job_id" => "job-architect-1",
-               "participant_id" => "architect",
-               "participant_role" => "architect",
-               "target_id" => "target-architect",
+               "job_id" => "job-worker-01-proposal",
+               "plan_slot_index" => 0,
+               "participant_id" => "worker-01",
+               "participant_role" => "proposer",
+               "target_id" => "target-worker-01",
                "capability_id" => "codex.exec.session",
                "phase" => "proposal",
-               "objective" => "Produce the first proposal.",
+               "objective" => "Produce proposal pass one.",
                "round" => 1,
                "session" => %{"provider" => "claude", "workspace_root" => "/tmp/hive"},
                "collaboration_envelope" => %{"turn" => %{"phase" => "proposal"}}
              })
 
-    assert opened.current_turn.phase == "proposal"
+    assert opened_1.phase == "proposal"
+    assert opened_1.execution_plan.round_robin_index == 1
 
-    assert {:ok, after_architect} = RoomServer.apply_result(room, architect_result())
+    assert {:ok, after_proposal_1} =
+             RoomServer.apply_result(room, proposal_result("job-worker-01-proposal"))
 
-    assert Enum.map(after_architect.context_entries, & &1.entry_type) == [
-             "claim",
-             "evidence",
-             "publish_request"
-           ]
+    assert after_proposal_1.status == "in_progress"
+    assert after_proposal_1.phase == "proposal"
+    assert after_proposal_1.execution_plan.completed_turn_count == 1
 
-    assert after_architect.status == "in_review"
-    assert after_architect.phase == "critique"
-
-    assert {:ok, _opened_again} =
+    assert {:ok, _opened_2} =
              RoomServer.open_turn(room, %{
-               "job_id" => "job-skeptic-1",
-               "participant_id" => "skeptic",
-               "participant_role" => "skeptic",
-               "target_id" => "target-skeptic",
+               "job_id" => "job-worker-02-proposal",
+               "plan_slot_index" => 1,
+               "participant_id" => "worker-02",
+               "participant_role" => "proposer",
+               "target_id" => "target-worker-02",
+               "capability_id" => "codex.exec.session",
+               "phase" => "proposal",
+               "objective" => "Produce proposal pass two.",
+               "round" => 2,
+               "session" => %{"provider" => "claude", "workspace_root" => "/tmp/hive"},
+               "collaboration_envelope" => %{"turn" => %{"phase" => "proposal"}}
+             })
+
+    assert {:ok, after_proposal_2} =
+             RoomServer.apply_result(room, proposal_result("job-worker-02-proposal"))
+
+    assert after_proposal_2.phase == "critique"
+    assert after_proposal_2.execution_plan.completed_turn_count == 2
+
+    assert {:ok, _opened_3} =
+             RoomServer.open_turn(room, %{
+               "job_id" => "job-worker-01-critique",
+               "plan_slot_index" => 0,
+               "participant_id" => "worker-01",
+               "participant_role" => "critic",
+               "target_id" => "target-worker-01",
                "capability_id" => "codex.exec.session",
                "phase" => "critique",
-               "objective" => "Critique the proposal.",
-               "round" => 2,
+               "objective" => "Critique pass one.",
+               "round" => 3,
                "session" => %{"provider" => "claude", "workspace_root" => "/tmp/hive"},
                "collaboration_envelope" => %{"turn" => %{"phase" => "critique"}}
              })
 
-    assert {:ok, after_skeptic} = RoomServer.apply_result(room, skeptic_result())
-    assert after_skeptic.status == "needs_resolution"
-    assert Enum.any?(after_skeptic.disputes, &(&1.status == :open))
+    assert {:ok, after_critique_1} =
+             RoomServer.apply_result(room, critique_result("job-worker-01-critique", "claim:1"))
 
-    assert {:ok, _opened_resolution} =
+    assert after_critique_1.status == "in_progress"
+    assert after_critique_1.phase == "critique"
+    assert Enum.count(after_critique_1.disputes, &(&1.status == :open)) == 1
+
+    assert {:ok, _opened_4} =
              RoomServer.open_turn(room, %{
-               "job_id" => "job-architect-2",
-               "participant_id" => "architect",
-               "participant_role" => "architect",
-               "target_id" => "target-architect",
+               "job_id" => "job-worker-02-critique",
+               "plan_slot_index" => 1,
+               "participant_id" => "worker-02",
+               "participant_role" => "critic",
+               "target_id" => "target-worker-02",
+               "capability_id" => "codex.exec.session",
+               "phase" => "critique",
+               "objective" => "Critique pass two.",
+               "round" => 4,
+               "session" => %{"provider" => "claude", "workspace_root" => "/tmp/hive"},
+               "collaboration_envelope" => %{"turn" => %{"phase" => "critique"}}
+             })
+
+    assert {:ok, after_critique_2} =
+             RoomServer.apply_result(room, critique_result("job-worker-02-critique", "claim:3"))
+
+    assert after_critique_2.phase == "resolution"
+    assert Enum.count(after_critique_2.disputes, &(&1.status == :open)) == 2
+
+    assert {:ok, _opened_5} =
+             RoomServer.open_turn(room, %{
+               "job_id" => "job-worker-01-resolution",
+               "plan_slot_index" => 0,
+               "participant_id" => "worker-01",
+               "participant_role" => "resolver",
+               "target_id" => "target-worker-01",
                "capability_id" => "codex.exec.session",
                "phase" => "resolution",
-               "objective" => "Resolve the open dispute.",
-               "round" => 3,
+               "objective" => "Resolution pass one.",
+               "round" => 5,
                "session" => %{"provider" => "claude", "workspace_root" => "/tmp/hive"},
                "collaboration_envelope" => %{"turn" => %{"phase" => "resolution"}}
              })
 
-    assert {:ok, resolved} = RoomServer.apply_result(room, resolver_result())
+    assert {:ok, after_resolution_1} =
+             RoomServer.apply_result(
+               room,
+               resolution_result("job-worker-01-resolution", "dispute:1")
+             )
 
-    assert Enum.map(resolved.context_entries, & &1.entry_type) == [
-             "claim",
-             "evidence",
-             "publish_request",
-             "objection",
-             "revision",
-             "decision"
-           ]
+    assert after_resolution_1.status == "in_progress"
+    assert after_resolution_1.phase == "resolution"
+    assert Enum.count(after_resolution_1.disputes, &(&1.status == :resolved)) == 1
 
-    assert Enum.all?(resolved.disputes, &(&1.status == :resolved))
+    assert {:ok, _opened_6} =
+             RoomServer.open_turn(room, %{
+               "job_id" => "job-worker-02-resolution",
+               "plan_slot_index" => 1,
+               "participant_id" => "worker-02",
+               "participant_role" => "resolver",
+               "target_id" => "target-worker-02",
+               "capability_id" => "codex.exec.session",
+               "phase" => "resolution",
+               "objective" => "Resolution pass two.",
+               "round" => 6,
+               "session" => %{"provider" => "claude", "workspace_root" => "/tmp/hive"},
+               "collaboration_envelope" => %{"turn" => %{"phase" => "resolution"}}
+             })
+
+    assert {:ok, resolved} =
+             RoomServer.apply_result(
+               room,
+               resolution_result("job-worker-02-resolution", "dispute:2")
+             )
+
     assert resolved.status == "publication_ready"
     assert resolved.phase == "publication_ready"
+    assert resolved.execution_plan.completed_turn_count == 6
+    assert Enum.all?(resolved.disputes, &(&1.status == :resolved))
+
+    assert Enum.map(resolved.turns, & &1.phase) == [
+             "proposal",
+             "proposal",
+             "critique",
+             "critique",
+             "resolution",
+             "resolution"
+           ]
 
     assert {:ok, persisted} = Persistence.fetch_room_snapshot("room-state-1")
     assert persisted.status == "publication_ready"
-    assert length(persisted.turns) == 3
+    assert length(persisted.turns) == 6
   end
 
-  defp architect_result do
+  defp proposal_result(job_id) do
     %{
-      "job_id" => "job-architect-1",
-      "participant_id" => "architect",
-      "participant_role" => "architect",
+      "job_id" => job_id,
+      "participant_id" => "worker",
+      "participant_role" => "proposer",
       "status" => "completed",
-      "summary" => "architect proposed a shared mutable packet",
+      "summary" => "proposal pass added shared packet structure",
       "actions" => [
         %{
           "op" => "CLAIM",
@@ -134,10 +213,7 @@ defmodule JidoHiveServer.Collaboration.RoomServerTest do
         }
       ],
       "tool_events" => [
-        %{
-          "event_type" => "tool_call",
-          "payload" => %{"tool_name" => "context.read", "status" => "ok"}
-        }
+        %{"event_type" => "tool_call", "payload" => %{"tool_name" => "context.read"}}
       ],
       "events" => [%{"type" => "assistant_delta"}],
       "approvals" => [],
@@ -146,27 +222,24 @@ defmodule JidoHiveServer.Collaboration.RoomServerTest do
     }
   end
 
-  defp skeptic_result do
+  defp critique_result(job_id, entry_ref) do
     %{
-      "job_id" => "job-skeptic-1",
-      "participant_id" => "skeptic",
-      "participant_role" => "skeptic",
+      "job_id" => job_id,
+      "participant_id" => "worker",
+      "participant_role" => "critic",
       "status" => "completed",
-      "summary" => "skeptic opened one concrete objection",
+      "summary" => "critique pass opened one objection",
       "actions" => [
         %{
           "op" => "OBJECT",
           "title" => "Conflict handling is underspecified",
           "body" => "The packet flow does not define how contradictory tool output is preserved.",
-          "targets" => [%{"entry_ref" => "claim:1"}],
+          "targets" => [%{"entry_ref" => entry_ref}],
           "severity" => "high"
         }
       ],
       "tool_events" => [
-        %{
-          "event_type" => "tool_call",
-          "payload" => %{"tool_name" => "critique.scan", "status" => "ok"}
-        }
+        %{"event_type" => "tool_call", "payload" => %{"tool_name" => "critique.scan"}}
       ],
       "events" => [%{"type" => "assistant_delta"}],
       "approvals" => [],
@@ -175,32 +248,29 @@ defmodule JidoHiveServer.Collaboration.RoomServerTest do
     }
   end
 
-  defp resolver_result do
+  defp resolution_result(job_id, dispute_id) do
     %{
-      "job_id" => "job-architect-2",
-      "participant_id" => "architect",
-      "participant_role" => "architect",
+      "job_id" => job_id,
+      "participant_id" => "worker",
+      "participant_role" => "resolver",
       "status" => "completed",
-      "summary" => "architect resolved the objection",
+      "summary" => "resolution pass resolved #{dispute_id}",
       "actions" => [
         %{
           "op" => "REVISE",
           "title" => "Contradiction ledger",
           "body" => "Keep a contradiction ledger in the shared envelope.",
-          "targets" => [%{"dispute_id" => "dispute:1"}]
+          "targets" => [%{"dispute_id" => dispute_id}]
         },
         %{
           "op" => "DECIDE",
           "title" => "Ready to publish",
           "body" => "The room is publishable after the contradiction ledger revision.",
-          "targets" => [%{"dispute_id" => "dispute:1"}]
+          "targets" => [%{"dispute_id" => dispute_id}]
         }
       ],
       "tool_events" => [
-        %{
-          "event_type" => "tool_call",
-          "payload" => %{"tool_name" => "revision.apply", "status" => "ok"}
-        }
+        %{"event_type" => "tool_call", "payload" => %{"tool_name" => "revision.apply"}}
       ],
       "events" => [%{"type" => "assistant_delta"}],
       "approvals" => [],

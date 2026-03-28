@@ -10,14 +10,16 @@ mode="local"
 usage() {
   cat <<'EOF'
 Usage:
-  bin/hive-clients [--local|--prod]
+  bin/hive-clients [--local|--prod] [--count N]
 
 Interactive client menu for:
-- architect
-- skeptic
-- both clients in one terminal
+- one generic worker
+- two generic workers
+- a custom 1..39 worker fan-out in one terminal
 EOF
 }
+
+requested_count=''
 
 while (($# > 0)); do
   case "$1" in
@@ -27,6 +29,15 @@ while (($# > 0)); do
       ;;
     --prod)
       mode="prod"
+      shift
+      ;;
+    --count)
+      shift
+      [[ $# -gt 0 ]] || {
+        printf '--count requires a value\n' >&2
+        exit 1
+      }
+      requested_count="$1"
       shift
       ;;
     -h|--help)
@@ -67,13 +78,23 @@ run_action() {
   "$@" || true
 }
 
-run_single() {
-  local role="$1"
+worker_label() {
+  local index="$1"
+  printf 'worker-%02d' "$index"
+}
 
-  case "$role" in
-    architect) exec "$ROOT/bin/client-architect" "${mode_flag[@]}" ;;
-    skeptic) exec "$ROOT/bin/client-skeptic" "${mode_flag[@]}" ;;
-  esac
+validate_count() {
+  local count="$1"
+
+  [[ "$count" =~ ^[0-9]+$ ]] || {
+    printf 'worker count must be an integer between 1 and 39\n' >&2
+    return 1
+  }
+
+  if (( count < 1 || count > 39 )); then
+    printf 'worker count must be between 1 and 39\n' >&2
+    return 1
+  fi
 }
 
 start_prefixed() {
@@ -87,31 +108,45 @@ start_prefixed() {
   STARTED_PID="$!"
 }
 
-run_both() {
-  local architect_pid='' skeptic_pid='' status=0
+run_many() {
+  local count="$1"
+  local status=0
+  local index='' label=''
+  local -a worker_pids=()
 
-  printf '[jido_hive clients] starting architect and skeptic in %s mode\n' "$mode"
-  printf '[jido_hive clients] press Ctrl-C to stop both clients\n'
+  validate_count "$count" || return 1
+
+  printf '[jido_hive clients] starting %s worker(s) in %s mode\n' "$count" "$mode"
+  printf '[jido_hive clients] locked demo budget will default to %s turns when the room uses all connected workers\n' "$(( count * 3 ))"
+  printf '[jido_hive clients] press Ctrl-C to stop all workers\n'
   printf '[jido_hive clients] watch here for system prompt preview, user prompt preview,\n'
   printf '[jido_hive clients] response preview, completed, and result published lines\n'
 
-  start_prefixed architect "$ROOT/bin/client-architect" "${mode_flag[@]}"
-  architect_pid="$STARTED_PID"
+  for ((index = 1; index <= count; index += 1)); do
+    label="$(worker_label "$index")"
+    start_prefixed "$label" "$ROOT/bin/client-worker" "${mode_flag[@]}" --worker-index "$index"
+    worker_pids+=("$STARTED_PID")
+  done
 
-  start_prefixed skeptic "$ROOT/bin/client-skeptic" "${mode_flag[@]}"
-  skeptic_pid="$STARTED_PID"
+  trap 'cleanup_children "${worker_pids[@]}"; exit 130' INT TERM
 
-  trap 'cleanup_children "$architect_pid" "$skeptic_pid"; exit 130' INT TERM
-
-  if wait -n "$architect_pid" "$skeptic_pid"; then
+  if wait -n "${worker_pids[@]}"; then
     status=0
   else
     status=$?
   fi
 
-  cleanup_children "$architect_pid" "$skeptic_pid"
+  cleanup_children "${worker_pids[@]}"
   trap - INT TERM
   return "$status"
+}
+
+prompt_count() {
+  local default_value="$1"
+  local value=''
+
+  read -r -p "worker count [$default_value]: " value
+  printf '%s' "${value:-$default_value}"
 }
 
 print_menu() {
@@ -121,21 +156,26 @@ jido_hive clients
 mode:      $mode
 websocket: $websocket_url
 
-1. run architect
-2. run skeptic
-3. run both in this terminal
+1. run one worker
+2. run two workers in this terminal
+3. run a custom worker count in this terminal
 q. quit
 EOF
 }
+
+if [[ -n "$requested_count" ]]; then
+  run_action run_many "$requested_count"
+  exit $?
+fi
 
 while true; do
   print_menu
   read -r -p 'choice: ' choice
 
   case "$choice" in
-    1) run_single architect ;;
-    2) run_single skeptic ;;
-    3) run_action run_both ;;
+    1) run_action run_many 1 ;;
+    2) run_action run_many 2 ;;
+    3) run_action run_many "$(prompt_count 3)" ;;
     q|Q) exit 0 ;;
     *) printf 'unknown choice: %s\n' "$choice" >&2 ;;
   esac

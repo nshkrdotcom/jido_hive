@@ -77,20 +77,33 @@ prompt_value() {
   fi
 }
 
+prompt_optional_value() {
+  local label="$1"
+  local value=''
+
+  read -r -p "$label: " value
+  printf '%s' "$value"
+}
+
 cmd_live_demo() {
-  local room_id turn_timeout_ms wait_timeout_ms
+  local room_id participant_count max_turns turn_timeout_ms wait_timeout_ms
   local -a args=()
 
-  printf '[jido_hive control] start bin/hive-clients %s and choose 3 before running this\n' "$(
+  printf '[jido_hive control] start bin/hive-clients %s and launch at least one worker before running this\n' "$(
     [[ "$mode" == "prod" ]] && printf -- '--prod' || printf -- '--local'
   )"
+  printf '[jido_hive control] two workers are the best quick demo because you can see the round-robin distribution clearly\n'
   printf '[jido_hive control] the client terminal will show prompt/response previews for each turn\n'
 
   room_id="$(prompt_value 'room id' "room-$(date +%s)")"
+  participant_count="$(prompt_optional_value 'participant count (blank = all connected workers)')"
+  max_turns="$(prompt_optional_value 'max turns override (blank = locked plan default)')"
   turn_timeout_ms="$(prompt_value 'turn timeout ms' '180000')"
   wait_timeout_ms="$(prompt_value 'wait timeout ms' '120000')"
 
   args+=(--room-id "$room_id")
+  [[ -n "$participant_count" ]] && args+=(--participant-count "$participant_count")
+  [[ -n "$max_turns" ]] && args+=(--max-turns "$max_turns")
   args+=(--turn-timeout-ms "$turn_timeout_ms")
   args+=(--wait-timeout-ms "$wait_timeout_ms")
 
@@ -98,18 +111,20 @@ cmd_live_demo() {
 }
 
 cmd_create_room() {
-  local room_id brief
+  local room_id brief participant_count
   local -a args=()
 
   room_id="$(prompt_value 'room id' "room-$(date +%s)")"
-  brief="$(prompt_value 'brief' 'Develop a distributed collaboration protocol for two AI clients.')"
+  brief="$(prompt_value 'brief' 'Develop a distributed collaboration protocol for one or more AI workers.')"
+  participant_count="$(prompt_optional_value 'participant count (blank = all connected workers)')"
 
   args+=("$room_id" --if-missing --brief "$brief")
+  [[ -n "$participant_count" ]] && args+=(--participant-count "$participant_count")
   run_setup create-room "${args[@]}"
 }
 
 cmd_run_room() {
-  local room_id turn_timeout_ms
+  local room_id max_turns turn_timeout_ms
 
   room_id="$(prompt_value 'room id' '')"
   [[ -n "$room_id" ]] || {
@@ -117,8 +132,14 @@ cmd_run_room() {
     return 1
   }
 
+  max_turns="$(prompt_optional_value 'max turns override (blank = planned count)')"
   turn_timeout_ms="$(prompt_value 'turn timeout ms' '180000')"
-  run_setup run-room "$room_id" --turn-timeout-ms "$turn_timeout_ms"
+
+  if [[ -n "$max_turns" ]]; then
+    run_setup run-room "$room_id" --max-turns "$max_turns" --turn-timeout-ms "$turn_timeout_ms"
+  else
+    run_setup run-room "$room_id" --turn-timeout-ms "$turn_timeout_ms"
+  fi
 }
 
 cmd_show_room() {

@@ -1,7 +1,7 @@
 defmodule JidoHiveServer.Collaboration do
   @moduledoc false
 
-  alias JidoHiveServer.Collaboration.{Envelope, Referee}
+  alias JidoHiveServer.Collaboration.{Envelope, ExecutionPlan, Referee}
   alias JidoHiveServer.Collaboration.RoomServer
   alias JidoHiveServer.Persistence
   alias JidoHiveServer.Publications
@@ -20,24 +20,25 @@ defmodule JidoHiveServer.Collaboration do
       |> Map.get(:participants, Map.get(attrs, "participants", []))
       |> Enum.map(&normalize_map_keys/1)
 
-    snapshot = %{
-      room_id: room_id,
-      session_id: Map.get(attrs, :session_id, "room-session-#{room_id}"),
-      brief: brief,
-      rules: rules,
-      participants: participants,
-      turns: [],
-      context_entries: [],
-      disputes: [],
-      current_turn: %{},
-      status: "idle",
-      phase: "idle",
-      round: 0,
-      next_entry_seq: 1,
-      next_dispute_seq: 1
-    }
-
-    with :ok <- replace_room_server(room_id),
+    with {:ok, execution_plan} <- ExecutionPlan.new(participants),
+         snapshot <- %{
+           room_id: room_id,
+           session_id: Map.get(attrs, :session_id, "room-session-#{room_id}"),
+           brief: brief,
+           rules: rules,
+           participants: participants,
+           turns: [],
+           context_entries: [],
+           disputes: [],
+           current_turn: %{},
+           execution_plan: execution_plan,
+           status: "idle",
+           phase: "idle",
+           round: 0,
+           next_entry_seq: 1,
+           next_dispute_seq: 1
+         },
+         :ok <- replace_room_server(room_id),
          {:ok, _snapshot} <- Persistence.persist_room_snapshot(snapshot),
          {:ok, _pid} <- ensure_room_server(snapshot) do
       fetch_room(room_id)
@@ -73,11 +74,24 @@ defmodule JidoHiveServer.Collaboration do
   end
 
   def run_room(room_id, opts \\ []) when is_binary(room_id) and is_list(opts) do
-    max_turns = Keyword.get(opts, :max_turns, 6)
     turn_timeout_ms = Keyword.get(opts, :turn_timeout_ms, turn_wait_timeout_ms())
 
     with {:ok, snapshot} <- fetch_room(room_id) do
-      do_run_room(room_id, snapshot, max_turns, turn_timeout_ms)
+      max_turns =
+        opts
+        |> Keyword.get_lazy(:max_turns, fn ->
+          snapshot.execution_plan
+          |> Map.get(:planned_turn_count, 3)
+        end)
+
+      target_completed_turn_count =
+        max_turns
+        |> then(&min(&1, snapshot.execution_plan.planned_turn_count))
+        |> then(&max(&1, 0))
+        |> Kernel.+(snapshot.execution_plan.completed_turn_count)
+        |> min(snapshot.execution_plan.planned_turn_count)
+
+      do_run_room(room_id, snapshot, target_completed_turn_count, turn_timeout_ms)
     end
   end
 
@@ -99,18 +113,29 @@ defmodule JidoHiveServer.Collaboration do
     end
   end
 
-  defp do_run_room(room_id, snapshot, remaining_turns, turn_timeout_ms)
-  defp do_run_room(room_id, _snapshot, 0, _turn_timeout_ms), do: fetch_room(room_id)
+  defp do_run_room(room_id, snapshot, target_completed_turn_count, turn_timeout_ms)
 
-  defp do_run_room(room_id, snapshot, remaining_turns, turn_timeout_ms) do
-    case Referee.next_assignment(snapshot) do
+  defp do_run_room(
+         room_id,
+         %{execution_plan: %{completed_turn_count: completed_turn_count}},
+         target_completed_turn_count,
+         _turn_timeout_ms
+       )
+       when completed_turn_count >= target_completed_turn_count,
+       do: fetch_room(room_id)
+
+  defp do_run_room(room_id, snapshot, target_completed_turn_count, turn_timeout_ms) do
+    case Referee.next_assignment(snapshot, available_target_ids()) do
       :halt ->
         fetch_room(room_id)
+
+      {:error, :no_available_participants} ->
+        block_room(room_id, snapshot)
 
       {:ok, assignment} ->
         with {:ok, _} <- run_turn(room_id, snapshot, assignment, turn_timeout_ms),
              {:ok, refreshed} <- fetch_room(room_id) do
-          continue_room(room_id, refreshed, remaining_turns, turn_timeout_ms)
+          continue_room(room_id, refreshed, target_completed_turn_count, turn_timeout_ms)
         end
     end
   end
@@ -118,15 +143,33 @@ defmodule JidoHiveServer.Collaboration do
   defp continue_room(
          _room_id,
          %{status: "failed"} = snapshot,
-         _remaining_turns,
+         _target_completed_turn_count,
          _turn_timeout_ms
        ),
        do: {:ok, snapshot}
 
-  defp continue_room(room_id, snapshot, remaining_turns, turn_timeout_ms) do
-    case Referee.next_assignment(snapshot) do
+  defp continue_room(
+         _room_id,
+         %{status: "blocked"} = snapshot,
+         _target_completed_turn_count,
+         _turn_timeout_ms
+       ),
+       do: {:ok, snapshot}
+
+  defp continue_room(
+         _room_id,
+         %{execution_plan: %{completed_turn_count: completed_turn_count}} = snapshot,
+         target_completed_turn_count,
+         _turn_timeout_ms
+       )
+       when completed_turn_count >= target_completed_turn_count,
+       do: {:ok, snapshot}
+
+  defp continue_room(room_id, snapshot, target_completed_turn_count, turn_timeout_ms) do
+    case Referee.next_assignment(snapshot, available_target_ids()) do
       :halt -> {:ok, snapshot}
-      {:ok, _next} -> do_run_room(room_id, snapshot, remaining_turns - 1, turn_timeout_ms)
+      {:error, :no_available_participants} -> block_room(room_id, snapshot)
+      {:ok, _next} -> do_run_room(room_id, snapshot, target_completed_turn_count, turn_timeout_ms)
     end
   end
 
@@ -135,11 +178,13 @@ defmodule JidoHiveServer.Collaboration do
     server = RoomServer.via(room_id)
 
     with {:ok, target} <- RemoteExec.fetch_target(assignment.target_id),
+         true <- target_online?(target),
          envelope <- Envelope.build(snapshot, Map.put(assignment, :job_id, job_id)),
          session <- session_request(target),
          {:ok, _opened} <-
            RoomServer.open_turn(server, %{
              "job_id" => job_id,
+             "plan_slot_index" => assignment.plan_slot_index,
              "participant_id" => assignment.participant_id,
              "participant_role" => assignment.participant_role,
              "target_id" => assignment.target_id,
@@ -149,23 +194,98 @@ defmodule JidoHiveServer.Collaboration do
              "round" => assignment.round,
              "session" => session,
              "collaboration_envelope" => envelope
-           }),
-         :ok <-
-           RemoteExec.dispatch_job(assignment.target_id, %{
-             "job_id" => job_id,
-             "room_id" => room_id,
-             "participant_id" => assignment.participant_id,
-             "participant_role" => assignment.participant_role,
-             "capability_id" => assignment.capability_id,
-             "target_id" => assignment.target_id,
-             "session" => session,
-             "collaboration_envelope" => envelope
-           }),
+           }) do
+      dispatch_and_wait_for_turn(
+        room_id,
+        assignment,
+        job_id,
+        session,
+        envelope,
+        turn_timeout_ms,
+        server
+      )
+    else
+      false ->
+        {:ok, :abandoned}
+
+      {:error, _} = error ->
+        error
+    end
+  end
+
+  defp block_room(room_id, snapshot) do
+    with {:ok, _snapshot} <-
+           RoomServer.set_runtime_state(RoomServer.via(room_id), %{
+             "status" => "blocked",
+             "phase" => Referee.phase(snapshot)
+           }) do
+      fetch_room(room_id)
+    end
+  end
+
+  defp dispatch_and_wait_for_turn(
+         room_id,
+         assignment,
+         job_id,
+         session,
+         envelope,
+         turn_timeout_ms,
+         server
+       ) do
+    with :ok <- dispatch_turn(room_id, assignment, job_id, session, envelope),
          {:ok, turn} <- wait_for_turn(room_id, job_id, turn_timeout_ms) do
-      case turn.status do
-        :completed -> {:ok, :completed}
-        :failed -> {:ok, :failed}
-      end
+      turn_result(turn)
+    else
+      {:error, reason} -> abandon_turn(server, job_id, reason)
+    end
+  end
+
+  defp dispatch_turn(room_id, assignment, job_id, session, envelope) do
+    RemoteExec.dispatch_job(assignment.target_id, %{
+      "job_id" => job_id,
+      "room_id" => room_id,
+      "participant_id" => assignment.participant_id,
+      "participant_role" => assignment.participant_role,
+      "capability_id" => assignment.capability_id,
+      "target_id" => assignment.target_id,
+      "session" => session,
+      "collaboration_envelope" => envelope
+    })
+  end
+
+  defp turn_result(%{status: :completed}), do: {:ok, :completed}
+  defp turn_result(%{status: :failed}), do: {:ok, :failed}
+
+  defp abandon_turn(server, job_id, :turn_timeout) do
+    {:ok, _snapshot} =
+      RoomServer.abandon_turn(server, %{
+        "job_id" => job_id,
+        "reason" => "turn timed out before a client result was received"
+      })
+
+    {:ok, :abandoned}
+  end
+
+  defp abandon_turn(server, job_id, :unknown_target) do
+    {:ok, _snapshot} =
+      RoomServer.abandon_turn(server, %{
+        "job_id" => job_id,
+        "reason" => "target went offline before dispatch completed"
+      })
+
+    {:ok, :abandoned}
+  end
+
+  defp available_target_ids do
+    RemoteExec.list_targets()
+    |> Enum.map(& &1.target_id)
+  end
+
+  defp target_online?(target) do
+    case Map.get(target, :status) do
+      nil -> true
+      "online" -> true
+      _other -> false
     end
   end
 
@@ -199,10 +319,12 @@ defmodule JidoHiveServer.Collaboration do
   end
 
   defp wait_or_timeout(nil, room_id, job_id, deadline_ms) do
-    if System.monotonic_time(:millisecond) >= deadline_ms do
+    remaining_ms = deadline_ms - System.monotonic_time(:millisecond)
+
+    if remaining_ms <= 0 do
       {:error, :turn_timeout}
     else
-      Process.sleep(turn_wait_poll_ms())
+      Process.sleep(min(turn_wait_poll_ms(), remaining_ms))
       do_wait_for_turn(room_id, job_id, deadline_ms)
     end
   end
@@ -233,8 +355,6 @@ defmodule JidoHiveServer.Collaboration do
         case DynamicSupervisor.terminate_child(JidoHiveServer.Collaboration.RoomSupervisor, pid) do
           :ok -> :ok
           {:error, :not_found} -> :ok
-          {:error, :simple_one_for_one} -> :ok
-          other -> other
         end
 
       [] ->

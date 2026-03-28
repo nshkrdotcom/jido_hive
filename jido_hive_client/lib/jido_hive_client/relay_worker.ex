@@ -55,30 +55,9 @@ defmodule JidoHiveClient.RelayWorker do
 
   @impl true
   def handle_info(:ensure_joined, %{socket: socket, channel: nil} = state) do
-    if Socket.connected?(socket) do
-      case Channel.join(socket, state.relay_topic, %{"workspace_id" => state.workspace_id}) do
-        {:ok, _response, channel} ->
-          {:ok, _} = Channel.push(channel, "relay.hello", hello_payload(state))
-          {:ok, _} = Channel.push(channel, "target.upsert", target_payload(state))
-
-          Status.relay_ready(state)
-
-          publish_signal("client.relay.joined", %{
-            target_id: state.target_id,
-            topic: state.relay_topic
-          })
-
-          {:noreply, %{state | channel: channel, connection_state: :joined}}
-
-        {:error, reason} ->
-          state = maybe_transition(state, :join_retry, fn -> Status.relay_join_retry(state, reason) end)
-          Process.send_after(self(), :ensure_joined, @join_retry_ms)
-          {:noreply, state}
-      end
-    else
-      state = maybe_transition(state, :waiting_socket, fn -> Status.relay_waiting(state) end)
-      Process.send_after(self(), :ensure_joined, @join_retry_ms)
-      {:noreply, state}
+    case Socket.connected?(socket) do
+      true -> join_relay_channel(state)
+      false -> {:noreply, waiting_for_socket(state)}
     end
   end
 
@@ -118,8 +97,8 @@ defmodule JidoHiveClient.RelayWorker do
       |> Map.put_new("room_id", job["room_id"])
       |> Map.put_new("target_id", state.target_id)
       |> Map.put_new("capability_id", state.capability_id)
-      |> Map.put_new("participant_id", state.participant_id)
-      |> Map.put_new("participant_role", state.participant_role)
+      |> Map.put_new("participant_id", job["participant_id"] || state.participant_id)
+      |> Map.put_new("participant_role", job["participant_role"] || state.participant_role)
 
     {:ok, _} = Channel.push(channel, "job.result", outbound)
     Status.result_published(job, outbound)
@@ -189,6 +168,37 @@ defmodule JidoHiveClient.RelayWorker do
     signal = Signal.new!(type, data, source: "/jido_hive_client/relay_worker")
     _ = Bus.publish(JidoHiveClient.SignalBus, [signal])
     :ok
+  end
+
+  defp join_relay_channel(state) do
+    case Channel.join(state.socket, state.relay_topic, %{"workspace_id" => state.workspace_id}) do
+      {:ok, _response, channel} ->
+        {:ok, _} = Channel.push(channel, "relay.hello", hello_payload(state))
+        {:ok, _} = Channel.push(channel, "target.upsert", target_payload(state))
+
+        Status.relay_ready(state)
+
+        publish_signal("client.relay.joined", %{
+          target_id: state.target_id,
+          topic: state.relay_topic
+        })
+
+        {:noreply, %{state | channel: channel, connection_state: :joined}}
+
+      {:error, reason} ->
+        {:noreply,
+         schedule_join_retry(state, :join_retry, fn -> Status.relay_join_retry(state, reason) end)}
+    end
+  end
+
+  defp waiting_for_socket(state) do
+    schedule_join_retry(state, :waiting_socket, fn -> Status.relay_waiting(state) end)
+  end
+
+  defp schedule_join_retry(state, connection_state, emit) when is_function(emit, 0) do
+    state = maybe_transition(state, connection_state, emit)
+    Process.send_after(self(), :ensure_joined, @join_retry_ms)
+    state
   end
 
   defp maybe_transition(%{connection_state: new_state} = state, new_state, _emit), do: state

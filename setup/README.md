@@ -1,24 +1,22 @@
 # Setup Toolkit
 
-`setup/hive` is the user-facing shell wrapper for the live operator flow.
+`setup/hive` is the user-facing shell wrapper for the operator flow.
 
-On a fresh machine, run `bin/setup` once from the repo root before using this
-toolkit.
+It now assumes a generalized worker model:
 
-It removes the raw `curl`/JSON payload boilerplate for:
+- generic relay workers instead of fixed role wrappers
+- room creation from the currently connected worker set
+- optional `--participant-count` locking
+- default turn budgets derived from the room execution plan
 
-- checking the local server state
-- creating and running rooms
-- inspecting publication plans and publication history
-- starting and completing GitHub / Notion connector installs
-- listing live connector connections
-- executing publication runs
+Run `bin/setup` once from the repo root before using the toolkit.
 
 ## Requirements
 
 - `curl`
 - `jq`
-- a running `jido_hive` server, usually through `bin/server`
+- a running `jido_hive` server, usually through `bin/server` or
+  `bin/live-demo-server`
 
 By default the toolkit talks to `http://127.0.0.1:4000/api`.
 
@@ -28,144 +26,50 @@ You can override that with:
 export JIDO_HIVE_API_BASE=http://127.0.0.1:4100/api
 ```
 
-These defaults are also configurable:
+Useful defaults:
 
 ```bash
 export JIDO_HIVE_TENANT_ID=workspace-local
 export JIDO_HIVE_ACTOR_ID=operator-1
-export JIDO_HIVE_GITHUB_SUBJECT=octocat
-export JIDO_HIVE_NOTION_SUBJECT=notion-workspace
+export JIDO_HIVE_EXEC_CAPABILITY_ID=codex.exec.session
 ```
 
-## Quick Flow
+## Recommended Demo Flow
 
-The fast path is three commands in three terminals:
+Two terminals:
+
+Terminal 1:
+
+```bash
+bin/hive-control
+```
+
+Terminal 2:
+
+```bash
+bin/hive-clients
+```
+
+Recommended sequence:
+
+1. In terminal 2, launch two workers from `bin/hive-clients`
+2. In terminal 1, choose the live demo option from `bin/hive-control`
+3. Watch the client terminal for the per-turn prompt and response previews
+
+## Three-Terminal Local Flow
+
+If you want the direct local flow:
 
 ```bash
 bin/live-demo-server
-bin/client-architect
-bin/client-skeptic
+bin/client-worker --worker-index 1
+bin/client-worker --worker-index 2
 ```
 
-That is enough for a developer to get a real collaborative run. The server
-wrapper waits for both clients, creates the room, runs the slice, and prints the
-room snapshot plus publication plan.
+`bin/live-demo-server` waits for workers, creates or reuses the room, runs the
+demo, and prints the room snapshot plus publication plan.
 
-The client terminals print a readable execution narrative as they move through
-relay join, target registration, turn receipt, provider execution, and result
-publication. The live-demo server wrapper also drops Phoenix logging to `info`
-by default so the operator output stays readable.
-
-If you already have live connection ids, set these before `bin/live-demo-server`
-to auto-publish as part of the same flow:
-
-```bash
-export JIDO_HIVE_GITHUB_CONNECTION=connection-github-1
-export JIDO_HIVE_GITHUB_REPO=owner/repo
-export JIDO_HIVE_NOTION_CONNECTION=connection-notion-1
-export JIDO_HIVE_NOTION_DATA_SOURCE_ID=data-source-id
-export JIDO_HIVE_NOTION_TITLE_PROPERTY=Name
-export JIDO_HIVE_AUTO_PUBLISH=1
-```
-
-## Manual Operator Flow
-
-Wait for the server and both clients:
-
-```bash
-setup/hive wait-server
-setup/hive wait-targets
-```
-
-Create and run a room:
-
-```bash
-setup/hive live-demo --room-id room-manual-1
-```
-
-That command waits for the stack, creates or reuses the room, runs the
-collaboration loop, and prints the room snapshot plus publication plan.
-
-## GitHub Install
-
-Start the install:
-
-```bash
-setup/hive start-install github --subject octocat --scope repo
-```
-
-That returns JSON with the install record. Copy the `data.id` value, complete the
-provider-side exchange manually, then finish the install:
-
-```bash
-setup/hive complete-install <install-id> --subject octocat --scope repo
-```
-
-If `JIDO_HIVE_ACCESS_TOKEN` is not set, the script will prompt for the access
-token without echoing it.
-
-List current GitHub connections:
-
-```bash
-setup/hive connections github
-```
-
-## Notion Install
-
-Start the install:
-
-```bash
-setup/hive start-install notion --subject notion-workspace
-```
-
-Complete it after the upstream OAuth or token exchange:
-
-```bash
-setup/hive complete-install <install-id> --subject notion-workspace
-```
-
-List current Notion connections:
-
-```bash
-setup/hive connections notion
-```
-
-## Publication Execution
-
-GitHub only:
-
-```bash
-setup/hive publish room-manual-1 \
-  --github-connection connection-github-1 \
-  --github-repo owner/repo
-```
-
-Notion only:
-
-```bash
-setup/hive publish room-manual-1 \
-  --notion-connection connection-notion-1 \
-  --notion-data-source-id data-source-id
-```
-
-GitHub and Notion together:
-
-```bash
-setup/hive publish room-manual-1 \
-  --github-connection connection-github-1 \
-  --github-repo owner/repo \
-  --notion-connection connection-notion-1 \
-  --notion-data-source-id data-source-id \
-  --notion-title-property Name
-```
-
-Inspect durable publication history:
-
-```bash
-setup/hive publication-runs room-manual-1
-```
-
-## Command Reference
+## Core Commands
 
 Show help:
 
@@ -179,26 +83,104 @@ Wait for the server:
 setup/hive wait-server
 ```
 
-Wait for the default architect and skeptic targets:
+Wait for workers:
 
 ```bash
-setup/hive wait-targets
+setup/hive wait-targets --count 2
+setup/hive wait-targets --target target-worker-01 --target target-worker-02
 ```
 
-Fetch a room snapshot:
+Create a room from the currently connected workers:
 
 ```bash
-setup/hive room room-manual-1
+setup/hive create-room room-manual-1
 ```
 
-List targets:
+Create a room locked to two workers:
 
 ```bash
-setup/hive targets
+setup/hive create-room room-manual-1 --participant-count 2
 ```
 
-Show an install record:
+Create a room from explicit targets:
 
 ```bash
-setup/hive show-install <install-id>
+setup/hive create-room room-manual-1 \
+  --target target-worker-01 \
+  --target target-worker-02
+```
+
+Run a room with its locked default budget:
+
+```bash
+setup/hive run-room room-manual-1 --turn-timeout-ms 180000
+```
+
+Override the number of completed turns to request:
+
+```bash
+setup/hive run-room room-manual-1 --max-turns 4 --turn-timeout-ms 180000
+```
+
+Run the full live demo:
+
+```bash
+setup/hive live-demo --room-id room-demo-1 --participant-count 2
+```
+
+If `--participant-count` is omitted, `live-demo` locks all currently connected
+compatible workers.
+
+## Important Behavior
+
+- `create-room` and `live-demo` discover connected relay targets from
+  `GET /api/targets`
+- the room locks the selected worker set at room creation time
+- the default turn budget is `participant_count * 3`
+- if a worker drops mid-room, the logical budget is preserved and the room keeps
+  round-robining across the remaining workers
+- `run-room` uses the locked room plan by default when `--max-turns` is omitted
+
+## Publication Commands
+
+Inspect publication planning:
+
+```bash
+setup/hive publication-plan room-manual-1
+setup/hive publication-runs room-manual-1
+```
+
+GitHub only:
+
+```bash
+setup/hive publish room-manual-1 \
+  --github-connection connection-github-1 \
+  --github-repo owner/repo
+```
+
+GitHub and Notion together:
+
+```bash
+setup/hive publish room-manual-1 \
+  --github-connection connection-github-1 \
+  --github-repo owner/repo \
+  --notion-connection connection-notion-1 \
+  --notion-data-source-id data-source-id \
+  --notion-title-property Name
+```
+
+## Connector Installs
+
+Start and complete a GitHub install:
+
+```bash
+setup/hive start-install github --subject octocat --scope repo
+setup/hive complete-install <install-id> --subject octocat --scope repo
+```
+
+Start and complete a Notion install:
+
+```bash
+setup/hive start-install notion --subject notion-workspace
+setup/hive complete-install <install-id> --subject notion-workspace
 ```

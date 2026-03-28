@@ -392,26 +392,26 @@ defmodule JidoHiveClient.Executor.Session do
         timeout_ms: min(Keyword.get(opts, :timeout_ms, 30_000), 30_000)
       )
 
-    with {:ok, repair_run, repair_stream} <-
-           Harness.stream_run(session, request,
-             run_id: "#{run.run_id}-repair",
-             driver: Keyword.get(opts, :driver),
-             driver_opts: driver_opts(job, opts)
-           ) do
-      repair_events = Enum.to_list(repair_stream)
-      repair_projection = project(repair_events, repair_run, session)
+    case Harness.stream_run(session, request,
+           run_id: "#{run.run_id}-repair",
+           driver: Keyword.get(opts, :driver),
+           driver_opts: driver_opts(job, opts)
+         ) do
+      {:ok, repair_run, repair_stream} ->
+        repair_events = Enum.to_list(repair_stream)
+        repair_projection = project(repair_events, repair_run, session)
 
-      Status.repair_finished(job, repair_projection.execution["text"])
+        Status.repair_finished(job, repair_projection.execution["text"])
 
-      case ResultDecoder.decode(repair_projection.execution["text"]) do
-        {:ok, decoded_payload} ->
-          {:ok, repair_events, repair_projection, decoded_payload}
+        case ResultDecoder.decode(repair_projection.execution["text"]) do
+          {:ok, decoded_payload} ->
+            {:ok, repair_events, repair_projection, decoded_payload}
 
-        {:error, reason} ->
-          Status.repair_failed(job, reason)
-          :error
-      end
-    else
+          {:error, reason} ->
+            Status.repair_failed(job, reason)
+            :error
+        end
+
       {:error, _} = error ->
         Status.repair_failed(job, error)
         :error

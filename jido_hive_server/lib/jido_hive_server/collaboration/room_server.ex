@@ -5,8 +5,8 @@ defmodule JidoHiveServer.Collaboration.RoomServer do
 
   alias Jido.Signal
   alias Jido.Signal.Bus
-  alias JidoHiveServer.Collaboration.Actions.{ApplyResult, OpenTurn}
-  alias JidoHiveServer.Collaboration.RoomAgent
+  alias JidoHiveServer.Collaboration.Actions.{AbandonTurn, ApplyResult, OpenTurn, SetRuntimeState}
+  alias JidoHiveServer.Collaboration.{ExecutionPlan, RoomAgent}
   alias JidoHiveServer.Persistence
 
   def start_link(opts) when is_list(opts) do
@@ -20,6 +20,14 @@ defmodule JidoHiveServer.Collaboration.RoomServer do
 
   def apply_result(server, payload) when is_map(payload) do
     GenServer.call(server, {:apply_result, payload})
+  end
+
+  def abandon_turn(server, payload) when is_map(payload) do
+    GenServer.call(server, {:abandon_turn, payload})
+  end
+
+  def set_runtime_state(server, payload) when is_map(payload) do
+    GenServer.call(server, {:set_runtime_state, payload})
   end
 
   def snapshot(server) do
@@ -44,6 +52,13 @@ defmodule JidoHiveServer.Collaboration.RoomServer do
           context_entries: [],
           disputes: [],
           current_turn: %{},
+          execution_plan:
+            Keyword.get_lazy(opts, :execution_plan, fn ->
+              case ExecutionPlan.new(Keyword.get(opts, :participants, [])) do
+                {:ok, plan} -> plan
+                {:error, _} -> %{}
+              end
+            end),
           status: "idle",
           phase: "idle",
           round: 0,
@@ -69,6 +84,24 @@ defmodule JidoHiveServer.Collaboration.RoomServer do
     {:ok, agent} = apply_state_op(agent, state_op)
     {:ok, _snapshot} = Persistence.persist_room_snapshot(agent.state)
     publish_signal("room.turn.completed", agent.state)
+    {:reply, {:ok, agent.state}, %{state | agent: agent}}
+  end
+
+  def handle_call({:abandon_turn, payload}, _from, %{agent: agent} = state) do
+    {:ok, _result, state_op} = AbandonTurn.run(normalize_payload(payload), %{state: agent.state})
+    {:ok, agent} = apply_state_op(agent, state_op)
+    {:ok, _snapshot} = Persistence.persist_room_snapshot(agent.state)
+    publish_signal("room.turn.abandoned", agent.state)
+    {:reply, {:ok, agent.state}, %{state | agent: agent}}
+  end
+
+  def handle_call({:set_runtime_state, payload}, _from, %{agent: agent} = state) do
+    {:ok, _result, state_op} =
+      SetRuntimeState.run(normalize_payload(payload), %{state: agent.state})
+
+    {:ok, agent} = apply_state_op(agent, state_op)
+    {:ok, _snapshot} = Persistence.persist_room_snapshot(agent.state)
+    publish_signal("room.runtime.updated", agent.state)
     {:reply, {:ok, agent.state}, %{state | agent: agent}}
   end
 

@@ -62,7 +62,7 @@ defmodule JidoHiveClient.MixProject do
         "test",
         "credo --strict",
         "dialyzer",
-        "docs"
+        "cmd env MIX_ENV=dev mix docs --warnings-as-errors"
       ]
     ]
   end

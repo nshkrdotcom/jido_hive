@@ -47,18 +47,19 @@ defmodule JidoHiveServerWeb.RoomController do
   def run(conn, %{"id" => room_id} = params) do
     max_turns =
       params
-      |> Map.get("max_turns", 6)
-      |> parse_integer(6)
+      |> Map.get("max_turns")
+      |> parse_optional_integer()
 
     turn_timeout_ms =
       params
       |> Map.get("turn_timeout_ms", 180_000)
       |> parse_integer(180_000)
 
-    case Collaboration.run_room(room_id,
-           max_turns: max_turns,
-           turn_timeout_ms: turn_timeout_ms
-         ) do
+    run_opts =
+      [turn_timeout_ms: turn_timeout_ms]
+      |> maybe_put_max_turns(max_turns)
+
+    case Collaboration.run_room(room_id, run_opts) do
       {:ok, snapshot} ->
         json(conn, %{data: snapshot})
 
@@ -125,4 +126,12 @@ defmodule JidoHiveServerWeb.RoomController do
   end
 
   defp parse_integer(_value, default), do: default
+
+  defp parse_optional_integer(nil), do: nil
+  defp parse_optional_integer(value) when is_integer(value), do: value
+  defp parse_optional_integer(value) when is_binary(value), do: parse_integer(value, nil)
+  defp parse_optional_integer(_value), do: nil
+
+  defp maybe_put_max_turns(opts, nil), do: opts
+  defp maybe_put_max_turns(opts, max_turns), do: Keyword.put(opts, :max_turns, max_turns)
 end

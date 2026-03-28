@@ -241,3 +241,35 @@ wait_for_targets() {
     sleep "$(awk "BEGIN { printf \"%.3f\", ${interval_ms}/1000 }")"
   done
 }
+
+fetch_targets_json() {
+  curl -fsS "${JIDO_HIVE_API_BASE}/targets" 2>/dev/null
+}
+
+wait_for_target_count() {
+  local timeout_ms="$1"
+  local interval_ms="$2"
+  local target_count="$3"
+  local deadline_ms
+
+  [[ -n "$target_count" ]] || die "wait_for_target_count requires a target count"
+  deadline_ms=$(( $(date +%s%3N) + timeout_ms ))
+
+  while true; do
+    local targets_json=''
+
+    if targets_json="$(fetch_targets_json)"; then
+      if jq -e --argjson target_count "$target_count" \
+        '.data | length >= $target_count' >/dev/null <<<"$targets_json"; then
+        jq . <<<"$targets_json"
+        return 0
+      fi
+    fi
+
+    if (( $(date +%s%3N) >= deadline_ms )); then
+      die "timed out waiting for at least $target_count targets"
+    fi
+
+    sleep "$(awk "BEGIN { printf \"%.3f\", ${interval_ms}/1000 }")"
+  done
+}

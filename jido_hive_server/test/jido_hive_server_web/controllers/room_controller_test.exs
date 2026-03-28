@@ -115,6 +115,7 @@ defmodule JidoHiveServerWeb.RoomControllerTest do
              "data" => %{
                "room_id" => "room-http-1",
                "status" => "idle",
+               "execution_plan" => %{"participant_count" => 2, "planned_turn_count" => 6},
                "participants" => [
                  %{"participant_id" => "architect"},
                  %{"participant_id" => "skeptic"}
@@ -138,17 +139,25 @@ defmodule JidoHiveServerWeb.RoomControllerTest do
              }
            } = json_response(run_conn, 200)
 
-    assert Enum.map(entries, & &1["entry_type"]) == [
-             "claim",
-             "evidence",
-             "publish_request",
-             "objection",
-             "revision",
-             "decision"
-           ]
+    assert Enum.frequencies_by(entries, & &1["entry_type"]) == %{
+             "claim" => 2,
+             "evidence" => 2,
+             "publish_request" => 2,
+             "objection" => 2,
+             "revision" => 2,
+             "decision" => 2
+           }
 
     assert Enum.all?(disputes, &(&1["status"] == "resolved"))
-    assert Enum.map(turns, & &1["phase"]) == ["proposal", "critique", "resolution"]
+
+    assert Enum.map(turns, & &1["phase"]) == [
+             "proposal",
+             "proposal",
+             "critique",
+             "critique",
+             "resolution",
+             "resolution"
+           ]
 
     show_conn = get(recycle(run_conn), ~p"/api/rooms/room-http-1")
 
@@ -156,6 +165,9 @@ defmodule JidoHiveServerWeb.RoomControllerTest do
              "data" => %{
                "room_id" => "room-http-1",
                "turns" => [
+                 %{"status" => "completed"},
+                 %{"status" => "completed"},
+                 %{"status" => "completed"},
                  %{"status" => "completed"},
                  %{"status" => "completed"},
                  %{"status" => "completed"}
@@ -182,8 +194,8 @@ defmodule JidoHiveServerWeb.RoomControllerTest do
              "draft" => %{"body" => github_body}
            } = Enum.find(publications, &(&1["channel"] == "github"))
 
-    assert github_body =~ "Shared packet"
-    assert github_body =~ "Conflict retention is underspecified"
+    assert github_body =~ "Shared packet envelope"
+    assert github_body =~ "Conflict retention needs more structure"
 
     execute_conn =
       post(recycle(publication_conn), ~p"/api/rooms/room-http-1/publications", %{

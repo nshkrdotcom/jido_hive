@@ -4,9 +4,9 @@ defmodule JidoHiveServer.IntegrationsBootstrap do
   use GenServer
 
   alias Jido.Integration.V2
-  alias Jido.Integration.V2.ControlPlane.Stores
   alias Jido.Integration.V2.Connectors.CodexCli
   alias Jido.Integration.V2.Connectors.{GitHub, Notion}
+  alias Jido.Integration.V2.ControlPlane.Stores
   alias Jido.Integration.V2.RuntimeAsmBridge.HarnessDriver
   alias Jido.Integration.V2.TargetDescriptor
 

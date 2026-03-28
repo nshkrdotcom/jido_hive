@@ -52,16 +52,23 @@ defmodule JidoHiveServerWeb.HomeController do
         api_base: urls.api_base,
         websocket: urls.websocket
       },
+      demo: %{
+        strategy: "round_robin",
+        max_clients: 39,
+        planned_turn_formula: "participant_count * 3"
+      },
       helpers: %{
         local: %{
-          client: "bin/client-architect",
-          skeptic: "bin/client-skeptic",
-          api: "setup/hive doctor"
+          control: "bin/hive-control",
+          clients: "bin/hive-clients",
+          worker: "bin/client-worker --worker-index 1",
+          api: "setup/hive live-demo --participant-count 2"
         },
         prod: %{
-          client: "bin/client-architect --prod",
-          skeptic: "bin/client-skeptic --prod",
-          api: "setup/hive --prod doctor"
+          control: "bin/hive-control --prod",
+          clients: "bin/hive-clients --prod",
+          worker: "bin/client-worker --prod --worker-index 1",
+          api: "setup/hive --prod live-demo --participant-count 2"
         }
       }
     })
@@ -112,10 +119,11 @@ defmodule JidoHiveServerWeb.HomeController do
     local_commands =
       Enum.join(
         [
-          "bin/server",
-          "bin/client-architect",
-          "bin/client-skeptic",
-          "setup/hive doctor"
+          "bin/hive-control",
+          "bin/hive-clients",
+          "bin/client-worker --worker-index 1",
+          "bin/client-worker --worker-index 2",
+          "setup/hive live-demo --participant-count 2"
         ],
         "\n"
       )
@@ -123,10 +131,11 @@ defmodule JidoHiveServerWeb.HomeController do
     prod_commands =
       Enum.join(
         [
-          "bin/client-architect --prod",
-          "bin/client-skeptic --prod",
-          "setup/hive --prod doctor",
-          "setup/hive --prod targets"
+          "bin/hive-control --prod",
+          "bin/hive-clients --prod",
+          "bin/client-worker --prod --worker-index 1",
+          "bin/client-worker --prod --worker-index 2",
+          "setup/hive --prod live-demo --participant-count 2"
         ],
         "\n"
       )
@@ -338,8 +347,9 @@ defmodule JidoHiveServerWeb.HomeController do
             <span class="eyebrow">#{status_label}</span>
             <h1>Jido Hive Server</h1>
             <p class="lede">
-              #{html_escape(summary)} This service exposes the collaboration API under
-              <code>/api</code> and the relay websocket at <code>/socket/websocket</code>.
+              #{html_escape(summary)} This service coordinates locked round-robin collaboration rooms
+              for 1 to 39 generic workers, exposes the API under <code>/api</code>, and serves the
+              relay websocket at <code>/socket/websocket</code>.
             </p>
             <div class="meta">
               #{path_html}
@@ -352,33 +362,36 @@ defmodule JidoHiveServerWeb.HomeController do
               <h2>What This Is</h2>
               <p>
                 This root page is for humans. The operational surface of the app is the JSON API and
-                websocket relay used by the local helper scripts in this repository.
+                websocket relay used by the repo helpers to coordinate generic workers.
               </p>
               <a class="endpoint" href="#{html_escape(urls.api_base)}/targets">GET #{html_escape(urls.api_base)}/targets</a>
               <a class="endpoint" href="#{html_escape(@repo_url)}">Repository: #{html_escape(@repo_url)}</a>
             </section>
 
             <section>
-              <h2>Endpoints</h2>
-              <p>Use these URLs directly if you are integrating outside the repo helpers.</p>
+              <h2>Demo Shape</h2>
+              <p>
+                The current demo locks the selected worker set at room creation and defaults to
+                <code>participant_count * 3</code> planned turns.
+              </p>
               <span class="endpoint">API base: #{html_escape(urls.api_base)}</span>
               <span class="endpoint">Websocket: #{html_escape(urls.websocket)}</span>
               <ul>
-                <li><code>GET /api/targets</code> lists connected relay targets.</li>
-                <li><code>POST /api/rooms</code> creates a collaboration room.</li>
-                <li><code>GET /api/rooms/:id</code> fetches room state.</li>
+                <li><code>GET /api/targets</code> lists the currently connected workers.</li>
+                <li><code>POST /api/rooms</code> locks the selected worker set into a room execution plan.</li>
+                <li><code>POST /api/rooms/:id/run</code> runs the locked plan until the requested completed-turn count is reached.</li>
               </ul>
             </section>
 
             <section>
               <h2>Local Dev</h2>
-              <p>These commands assume the Phoenix app is running on your machine.</p>
+              <p>Use one control terminal and one client terminal, or launch workers directly.</p>
               <pre>#{html_escape(local_commands)}</pre>
             </section>
 
             <section>
               <h2>Run Against Prod</h2>
-              <p>The same helpers also support an explicit production mode.</p>
+              <p>The same helpers support the deployed server with explicit <code>--prod</code> flags.</p>
               <pre>#{html_escape(prod_commands)}</pre>
             </section>
           </div>

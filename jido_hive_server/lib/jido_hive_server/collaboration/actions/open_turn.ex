@@ -6,6 +6,7 @@ defmodule JidoHiveServer.Collaboration.Actions.OpenTurn do
     description: "Open a room turn for one participant",
     schema: [
       job_id: [type: :string, required: true],
+      plan_slot_index: [type: :integer, required: true],
       participant_id: [type: :string, required: true],
       participant_role: [type: :string, required: true],
       target_id: [type: :string, required: true],
@@ -18,13 +19,16 @@ defmodule JidoHiveServer.Collaboration.Actions.OpenTurn do
     ]
 
   alias Jido.Agent.StateOp
+  alias JidoHiveServer.Collaboration.ExecutionPlan
 
   @impl true
   def run(params, context) do
     state = context.state
+    execution_plan = ExecutionPlan.record_open(state.execution_plan, params.plan_slot_index)
 
     turn = %{
       job_id: params.job_id,
+      plan_slot_index: params.plan_slot_index,
       participant_id: params.participant_id,
       participant_role: params.participant_role,
       target_id: params.target_id,
@@ -42,6 +46,7 @@ defmodule JidoHiveServer.Collaboration.Actions.OpenTurn do
      StateOp.set_state(%{
        current_turn: turn,
        turns: state.turns ++ [turn],
+       execution_plan: execution_plan,
        round: params.round,
        phase: params.phase,
        status: "running"

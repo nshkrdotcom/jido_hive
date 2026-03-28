@@ -81,7 +81,9 @@ defmodule JidoHiveClient.StatusTest do
         )
       end)
 
-    assert output =~ "executing room=room-1 phase=proposal provider=codex model=gpt-5.4"
+    assert output =~
+             "executing room=room-1 phase=proposal provider=codex assigned_role=architect model=gpt-5.4"
+
     assert output =~ "system prompt preview room=room-1 phase=proposal"
     assert output =~ "Return strict JSON only."
     assert output =~ "user prompt preview room=room-1 phase=proposal"

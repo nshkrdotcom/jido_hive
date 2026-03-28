@@ -19,12 +19,21 @@ defmodule JidoHiveServer.Collaboration.Actions.ApplyResult do
     ]
 
   alias Jido.Agent.StateOp
-  alias JidoHiveServer.Collaboration.Referee
+  alias JidoHiveServer.Collaboration.{ExecutionPlan, Referee}
 
   @impl true
   def run(params, context) do
     state = context.state
+    current_turn = Map.get(state, :current_turn, %{})
 
+    if current_turn == %{} or current_turn.job_id != params.job_id do
+      {:ok, %{}, StateOp.replace_state(state)}
+    else
+      apply_current_turn_result(state, params)
+    end
+  end
+
+  defp apply_current_turn_result(state, params) do
     {entries, next_entry_seq} =
       Enum.map_reduce(params.actions, state.next_entry_seq, fn action, seq ->
         entry_type = map_entry_type(action["op"])
@@ -69,12 +78,15 @@ defmodule JidoHiveServer.Collaboration.Actions.ApplyResult do
     updated_disputes =
       resolve_disputes(state.disputes ++ Enum.reverse(new_disputes), entries, params.job_id)
 
+    execution_plan = ExecutionPlan.record_completion(state.execution_plan)
+
     updated_state = %{
       state
       | current_turn: %{},
         turns: updated_turns,
         context_entries: state.context_entries ++ entries,
         disputes: updated_disputes,
+        execution_plan: execution_plan,
         next_entry_seq: next_entry_seq,
         next_dispute_seq: next_dispute_seq
     }

@@ -13,22 +13,25 @@ defmodule JidoHiveServer.CollaborationTest do
                rules: ["rule-one"],
                participants: [
                  %{
-                   participant_id: "architect",
-                   role: "architect",
-                   target_id: "target-architect",
+                   participant_id: "worker-01",
+                   role: "worker",
+                   target_id: "target-worker-01",
                    capability_id: "codex.exec.session"
                  }
                ]
              })
 
     assert room.status == "idle"
+    assert room.execution_plan.participant_count == 1
+    assert room.execution_plan.planned_turn_count == 3
 
     assert {:ok, _updated} =
              RoomServer.open_turn(RoomServer.via("room-reuse-1"), %{
                "job_id" => "job-reuse-1",
-               "participant_id" => "architect",
-               "participant_role" => "architect",
-               "target_id" => "target-architect",
+               "plan_slot_index" => 0,
+               "participant_id" => "worker-01",
+               "participant_role" => "proposer",
+               "target_id" => "target-worker-01",
                "capability_id" => "codex.exec.session",
                "phase" => "proposal",
                "objective" => "Draft the first proposal.",
@@ -42,7 +45,14 @@ defmodule JidoHiveServer.CollaborationTest do
                room_id: "room-reuse-1",
                brief: "Replacement brief",
                rules: ["rule-two"],
-               participants: []
+               participants: [
+                 %{
+                   participant_id: "worker-01",
+                   role: "worker",
+                   target_id: "target-worker-01",
+                   capability_id: "codex.exec.session"
+                 }
+               ]
              })
 
     assert reused.brief == "Replacement brief"
@@ -53,5 +63,7 @@ defmodule JidoHiveServer.CollaborationTest do
     assert reused.context_entries == []
     assert reused.disputes == []
     assert reused.current_turn == %{}
+    assert reused.execution_plan.participant_count == 1
+    assert reused.execution_plan.planned_turn_count == 3
   end
 end

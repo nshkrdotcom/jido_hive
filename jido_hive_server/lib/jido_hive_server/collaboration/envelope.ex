@@ -7,19 +7,30 @@ defmodule JidoHiveServer.Collaboration.Envelope do
 
   @spec build(map(), map()) :: map()
   def build(snapshot, assignment) when is_map(snapshot) and is_map(assignment) do
+    execution_plan = snapshot.execution_plan || %{}
+
     %{
       "schema_version" => @schema_version,
       "room" => %{
         "room_id" => snapshot.room_id,
         "brief" => snapshot.brief,
         "rules" => snapshot.rules,
-        "status" => snapshot.status
+        "status" => snapshot.status,
+        "participant_count" => execution_plan[:participant_count],
+        "planned_turn_count" => execution_plan[:planned_turn_count],
+        "completed_turn_count" => execution_plan[:completed_turn_count]
       },
       "referee" => %{
         "phase" => assignment.phase,
         "directives" => assignment.directives,
         "open_disputes" => Enum.map(assignment.open_disputes || [], &public_dispute/1),
-        "publish_requested" => Referee.publish_requested?(snapshot)
+        "publish_requested" => Referee.publish_requested?(snapshot),
+        "turns_remaining" =>
+          max(
+            (execution_plan[:planned_turn_count] || 0) -
+              (execution_plan[:completed_turn_count] || 0),
+            0
+          )
       },
       "turn" => %{
         "phase" => assignment.phase,

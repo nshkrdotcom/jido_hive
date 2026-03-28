@@ -6,6 +6,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 ROOM_ID="${ROOM_ID:-room-live-$(date +%s)}"
 WAIT_TIMEOUT_MS="${JIDO_HIVE_WAIT_TIMEOUT_MS:-120000}"
 PUBLISH_FLAG=()
+ROOM_FLAGS=()
 SERVER_PID=''
 DEMO_PID=''
 
@@ -31,11 +32,15 @@ if [[ "${JIDO_HIVE_AUTO_PUBLISH:-}" == "1" ]] ||
   PUBLISH_FLAG+=(--publish-from-env)
 fi
 
+if [[ -n "${JIDO_HIVE_PARTICIPANT_COUNT:-}" ]]; then
+  ROOM_FLAGS+=(--participant-count "$JIDO_HIVE_PARTICIPANT_COUNT")
+fi
+
 printf '[jido_hive live-demo] room id: %s\n' "$ROOM_ID" >&2
 printf '[jido_hive live-demo] server terminal booting now\n' >&2
 printf '[jido_hive live-demo] start these in two more terminals:\n' >&2
-printf '  bin/client-architect\n' >&2
-printf '  bin/client-skeptic\n' >&2
+printf '  bin/client-worker --worker-index 1\n' >&2
+printf '  bin/client-worker --worker-index 2\n' >&2
 
 trap cleanup EXIT INT TERM
 
@@ -45,6 +50,7 @@ SERVER_PID=$!
 "$ROOT/setup/hive" live-demo \
   --room-id "$ROOM_ID" \
   --wait-timeout-ms "$WAIT_TIMEOUT_MS" \
+  "${ROOM_FLAGS[@]}" \
   "${PUBLISH_FLAG[@]}" \
   "$@" &
 DEMO_PID=$!

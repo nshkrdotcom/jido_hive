@@ -4,6 +4,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 LOCAL_API_BASE="http://127.0.0.1:4000/api"
 PROD_API_BASE="https://jido-hive-server-test.app.nsai.online/api"
+JIDO_HIVE_EXEC_CAPABILITY_ID="${JIDO_HIVE_EXEC_CAPABILITY_ID:-codex.exec.session}"
 
 mode="local"
 
@@ -34,16 +35,17 @@ Usage:
   setup/hive [--local|--prod] help
   setup/hive [--local|--prod] doctor
   setup/hive [--local|--prod] wait-server
-  setup/hive [--local|--prod] wait-targets
+  setup/hive [--local|--prod] wait-targets [--count N] [--target TARGET_ID ...]
   setup/hive [--local|--prod] targets
   setup/hive [--local|--prod] room ROOM_ID
-  setup/hive [--local|--prod] create-room [ROOM_ID] [--brief TEXT] [--rule TEXT] [--if-missing]
+  setup/hive [--local|--prod] create-room [ROOM_ID] [--brief TEXT] [--rule TEXT]
+      [--participant-count N] [--target TARGET_ID ...] [--if-missing]
   setup/hive [--local|--prod] run-room ROOM_ID [--max-turns N] [--turn-timeout-ms N]
   setup/hive [--local|--prod] publication-plan ROOM_ID
   setup/hive [--local|--prod] publication-runs ROOM_ID
   setup/hive [--local|--prod] live-demo [--room-id ROOM_ID] [--brief TEXT] [--rule TEXT]
-      [--max-turns N] [--turn-timeout-ms N] [--wait-timeout-ms N]
-      [--publish-from-env]
+      [--participant-count N] [--target TARGET_ID ...] [--max-turns N]
+      [--turn-timeout-ms N] [--wait-timeout-ms N] [--publish-from-env]
   setup/hive [--local|--prod] start-install github|notion [--subject VALUE] [--scope VALUE]
   setup/hive [--local|--prod] show-install INSTALL_ID
   setup/hive [--local|--prod] complete-install INSTALL_ID [--subject VALUE]
@@ -65,10 +67,10 @@ Environment defaults:
 Examples:
   setup/hive doctor
   setup/hive --prod doctor
-  setup/hive wait-targets
-  setup/hive create-room room-manual-1
+  setup/hive wait-targets --count 2
+  setup/hive create-room room-manual-1 --participant-count 2
   setup/hive run-room room-manual-1 --turn-timeout-ms 180000
-  setup/hive live-demo --room-id room-live-demo
+  setup/hive live-demo --room-id room-live-demo --participant-count 2
   setup/hive publication-plan room-manual-1
   setup/hive start-install github --subject octocat --scope repo
   setup/hive complete-install install-123 --subject octocat
@@ -87,7 +89,8 @@ require_room_id() {
 build_room_payload() {
   local room_id="$1"
   local brief="$2"
-  shift 2 || true
+  local targets_json="$3"
+  shift 3 || true
 
   local -a rules=("$@")
   local rules_json
@@ -97,26 +100,76 @@ build_room_payload() {
   jq -n \
     --arg room_id "$room_id" \
     --arg brief "$brief" \
+    --argjson targets "$targets_json" \
     --argjson rules "$rules_json" \
     '{
       room_id: $room_id,
       brief: $brief,
       rules: $rules,
-      participants: [
-        {
-          participant_id: "architect",
-          role: "architect",
-          target_id: "target-architect",
-          capability_id: "codex.exec.session"
-        },
-        {
-          participant_id: "skeptic",
-          role: "skeptic",
-          target_id: "target-skeptic",
-          capability_id: "codex.exec.session"
-        }
-      ]
+      participants:
+        ($targets | map({
+          participant_id: .participant_id,
+          role: (.participant_role // "worker"),
+          target_id: .target_id,
+          capability_id: .capability_id
+        }))
     }'
+}
+
+select_room_targets() {
+  local participant_count="${1:-}"
+  shift || true
+
+  local -a target_ids=("$@")
+  local targets_json='' selected_json='' target_ids_json='[]'
+  local selected_count='' requested_target_count=''
+
+  targets_json="$(fetch_targets_json)" ||
+    die "cannot reach $JIDO_HIVE_API_BASE; start the server with bin/server or set JIDO_HIVE_API_BASE"
+
+  if ((${#target_ids[@]} > 0)); then
+    target_ids_json="$(printf '%s\n' "${target_ids[@]}" | jq -R . | jq -s .)"
+  fi
+
+  selected_json="$(
+    jq \
+      --arg capability_id "$JIDO_HIVE_EXEC_CAPABILITY_ID" \
+      --argjson target_ids "$target_ids_json" \
+      '
+      .data
+      | map(select(.capability_id == $capability_id))
+      | sort_by(.participant_id, .target_id)
+      | if ($target_ids | length) == 0
+          then .
+          else map(select(.target_id as $target_id | $target_ids | index($target_id)))
+        end
+      ' <<<"$targets_json"
+  )"
+
+  if [[ -n "$participant_count" ]]; then
+    selected_json="$(jq --argjson participant_count "$participant_count" '.[0:$participant_count]' <<<"$selected_json")"
+  fi
+
+  selected_count="$(jq 'length' <<<"$selected_json")"
+  requested_target_count="${#target_ids[@]}"
+
+  if (( requested_target_count > 0 && selected_count < requested_target_count )); then
+    die "not all requested targets are connected for capability $JIDO_HIVE_EXEC_CAPABILITY_ID"
+  fi
+
+  if [[ -n "$participant_count" && "$selected_count" -lt "$participant_count" ]]; then
+    die "requested $participant_count participants but only $selected_count compatible targets are connected"
+  fi
+
+  if (( selected_count == 0 )); then
+    die "no compatible relay targets are connected for capability $JIDO_HIVE_EXEC_CAPABILITY_ID"
+  fi
+
+  printf '%s\n' "$selected_json"
+}
+
+describe_selected_targets() {
+  jq -r 'map("\(.participant_id)@\(.target_id)") | join(", ")'
 }
 
 cmd_wait_server() {
@@ -157,8 +210,8 @@ cmd_wait_targets() {
 
   local timeout_ms='30000'
   local interval_ms='250'
-  local -a targets=('target-architect' 'target-skeptic')
-  local using_default_targets=1
+  local target_count='1'
+  local -a targets=()
 
   while (($# > 0)); do
     case "$1" in
@@ -177,11 +230,13 @@ cmd_wait_targets() {
       --target)
         shift
         [[ $# -gt 0 ]] || die "--target requires a value"
-        if (( using_default_targets )); then
-          targets=()
-          using_default_targets=0
-        fi
         targets+=("$1")
+        ;;
+
+      --count)
+        shift
+        [[ $# -gt 0 ]] || die "--count requires a value"
+        target_count="$1"
         ;;
 
       *)
@@ -192,8 +247,13 @@ cmd_wait_targets() {
     shift || true
   done
 
-  log "waiting for targets: ${targets[*]}"
-  wait_for_targets "$timeout_ms" "$interval_ms" "${targets[@]}"
+  if ((${#targets[@]} > 0)); then
+    log "waiting for targets: ${targets[*]}"
+    wait_for_targets "$timeout_ms" "$interval_ms" "${targets[@]}"
+  else
+    log "waiting for at least $target_count targets"
+    wait_for_target_count "$timeout_ms" "$interval_ms" "$target_count"
+  fi
 }
 
 cmd_doctor() {
@@ -233,8 +293,10 @@ cmd_create_room() {
     shift || true
   fi
 
-  local brief='Develop a distributed collaboration protocol for two AI clients.'
+  local brief='Develop a distributed collaboration protocol for one or more AI workers.'
+  local participant_count=''
   local -a rules=('Every objection must target a claim.')
+  local -a target_ids=()
   local using_default_rules=1
 
   while (($# > 0)); do
@@ -255,6 +317,18 @@ cmd_create_room() {
         rules+=("$1")
         ;;
 
+      --participant-count)
+        shift
+        [[ $# -gt 0 ]] || die "--participant-count requires a value"
+        participant_count="$1"
+        ;;
+
+      --target)
+        shift
+        [[ $# -gt 0 ]] || die "--target requires a value"
+        target_ids+=("$1")
+        ;;
+
       --if-missing)
         if_missing=1
         ;;
@@ -267,8 +341,13 @@ cmd_create_room() {
     shift || true
   done
 
+  local selected_targets_json
+  selected_targets_json="$(select_room_targets "$participant_count" "${target_ids[@]}")"
+
+  log "locking room $room_id to targets: $(describe_selected_targets <<<"$selected_targets_json")"
+
   local payload
-  payload="$(build_room_payload "$room_id" "$brief" "${rules[@]}")"
+  payload="$(build_room_payload "$room_id" "$brief" "$selected_targets_json" "${rules[@]}")"
 
   log "creating room: $room_id"
 
@@ -307,7 +386,7 @@ cmd_run_room() {
   require_room_id "$room_id"
   shift || true
 
-  local max_turns='6'
+  local max_turns=''
   local turn_timeout_ms='180000'
 
   while (($# > 0)); do
@@ -333,15 +412,25 @@ cmd_run_room() {
   done
 
   local payload
-  payload="$(
-    jq -n \
-      --argjson max_turns "$max_turns" \
-      --argjson turn_timeout_ms "$turn_timeout_ms" \
-      '{
-        max_turns: $max_turns,
-        turn_timeout_ms: $turn_timeout_ms
-      }'
-  )"
+  if [[ -n "$max_turns" ]]; then
+    payload="$(
+      jq -n \
+        --argjson max_turns "$max_turns" \
+        --argjson turn_timeout_ms "$turn_timeout_ms" \
+        '{
+          max_turns: $max_turns,
+          turn_timeout_ms: $turn_timeout_ms
+        }'
+    )"
+  else
+    payload="$(
+      jq -n \
+        --argjson turn_timeout_ms "$turn_timeout_ms" \
+        '{
+          turn_timeout_ms: $turn_timeout_ms
+        }'
+    )"
+  fi
 
   api_post "/rooms/$room_id/run" "$payload"
 }
@@ -368,10 +457,12 @@ cmd_live_demo() {
   require_base_tools
 
   local room_id="${ROOM_ID:-room-$(date +%s)}"
-  local brief='Develop a distributed collaboration protocol for two AI clients.'
+  local brief='Develop a distributed collaboration protocol for one or more AI workers.'
   local -a rules=('Every objection must target a claim.')
+  local participant_count=''
+  local -a target_ids=()
   local using_default_rules=1
-  local max_turns='6'
+  local max_turns=''
   local turn_timeout_ms="${JIDO_HIVE_TURN_TIMEOUT_MS:-180000}"
   local wait_timeout_ms='120000'
   local publish_from_env=0
@@ -398,6 +489,18 @@ cmd_live_demo() {
           using_default_rules=0
         fi
         rules+=("$1")
+        ;;
+
+      --participant-count)
+        shift
+        [[ $# -gt 0 ]] || die "--participant-count requires a value"
+        participant_count="$1"
+        ;;
+
+      --target)
+        shift
+        [[ $# -gt 0 ]] || die "--target requires a value"
+        target_ids+=("$1")
         ;;
 
       --max-turns)
@@ -431,20 +534,38 @@ cmd_live_demo() {
   done
 
   local -a create_room_args=("$room_id" "--if-missing" "--brief" "$brief")
+  local -a wait_target_args=(--timeout-ms "$wait_timeout_ms" --interval-ms 250)
+  local -a run_room_args=("$room_id" --turn-timeout-ms "$turn_timeout_ms")
   local rule=''
 
   for rule in "${rules[@]}"; do
     create_room_args+=("--rule" "$rule")
   done
 
+  if [[ -n "$participant_count" ]]; then
+    create_room_args+=("--participant-count" "$participant_count")
+    wait_target_args+=(--count "$participant_count")
+  elif ((${#target_ids[@]} == 0)); then
+    wait_target_args+=(--count 1)
+  fi
+
+  if [[ -n "$max_turns" ]]; then
+    run_room_args+=(--max-turns "$max_turns")
+  fi
+
+  for target_id in "${target_ids[@]}"; do
+    create_room_args+=("--target" "$target_id")
+    wait_target_args+=(--target "$target_id")
+  done
+
   log "live demo room: $room_id"
 
   cmd_wait_server --timeout-ms "$wait_timeout_ms" --interval-ms 250 >/dev/null
-  cmd_wait_targets --timeout-ms "$wait_timeout_ms" --interval-ms 250 >/dev/null
+  cmd_wait_targets "${wait_target_args[@]}" >/dev/null
   cmd_create_room "${create_room_args[@]}" >/dev/null
 
   printf '\n=== Running Room %s ===\n' "$room_id"
-  cmd_run_room "$room_id" --max-turns "$max_turns" --turn-timeout-ms "$turn_timeout_ms"
+  cmd_run_room "${run_room_args[@]}"
   printf '\n=== Room Snapshot %s ===\n' "$room_id"
   cmd_room "$room_id"
   printf '\n=== Publication Plan %s ===\n' "$room_id"

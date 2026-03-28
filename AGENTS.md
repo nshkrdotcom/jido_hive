@@ -24,21 +24,21 @@ bin/live-demo-server
 Terminal 2:
 
 ```bash
-bin/client-architect
+bin/client-worker --worker-index 1
 ```
 
 Terminal 3:
 
 ```bash
-bin/client-skeptic
+bin/client-worker --worker-index 2
 ```
 
-This runs the server locally and connects both local clients to the local
+This runs the server locally and connects two generic workers to the local
 websocket.
 
 ## Two-Terminal Menus
 
-For a simpler workflow, use:
+For the main operator flow:
 
 Terminal 1:
 
@@ -66,12 +66,12 @@ Terminal 2:
 bin/hive-clients --prod
 ```
 
-Fastest two-terminal flow:
+Recommended two-terminal flow:
 
-1. Terminal 2: run `bin/hive-clients` or `bin/hive-clients --prod`, then
-   choose `3`
-2. Terminal 1: run `bin/hive-control` or `bin/hive-control --prod`, then
-   choose `3`
+1. Terminal 2: run `bin/hive-clients` or `bin/hive-clients --prod`, then choose
+   `2` for a two-worker demo or `3` for a custom worker count
+2. Terminal 1: run `bin/hive-control` or `bin/hive-control --prod`, then choose
+   `3`
 3. Watch terminal 2 for `system prompt preview`, `user prompt preview`,
    `response preview`, `completed`, and `result published`
 
@@ -96,24 +96,24 @@ Local API and websocket:
 - API: `http://127.0.0.1:4000/api`
 - WebSocket: `ws://127.0.0.1:4000/socket/websocket`
 
-## Run Clients Locally
+## Run Workers Locally
 
 From the repo root:
 
 ```bash
-bin/client-architect
-bin/client-skeptic
+bin/client-worker --worker-index 1
+bin/client-worker --worker-index 2
 ```
 
 These default to the local server.
 
-## Run Clients Against Production
+## Run Workers Against Production
 
 From the repo root:
 
 ```bash
-bin/client-architect --prod
-bin/client-skeptic --prod
+bin/client-worker --prod --worker-index 1
+bin/client-worker --prod --worker-index 2
 ```
 
 Production API and websocket:
@@ -123,27 +123,14 @@ Production API and websocket:
 
 Important:
 
-- `--prod` clients connect and register targets, then wait for work
-- a healthy client prints `url=...` and then `ready ... waiting_for=job.start`
-- the clients alone do not start LLM activity
+- `--prod` workers connect and register targets, then wait for work
+- a healthy worker prints `url=...` and then `ready ... waiting_for=job.start`
+- the workers alone do not start LLM activity
 
-To make the prod clients actually do work:
-
-```bash
-setup/hive --prod live-demo
-```
-
-The menu equivalent is:
-
-1. Terminal 2: `bin/hive-clients --prod`, then choose `3`
-2. Terminal 1: `bin/hive-control --prod`, then choose `3`
-3. The client terminal shows the prompt/response previews for each turn
-
-Or manually:
+To make the prod workers actually do work:
 
 ```bash
-setup/hive --prod create-room room-prod-1
-setup/hive --prod run-room room-prod-1 --turn-timeout-ms 180000
+setup/hive --prod live-demo --participant-count 2
 ```
 
 Useful prod checks:
@@ -157,10 +144,6 @@ setup/hive --prod targets
 
 This repo uses `coolify_ex` from inside `jido_hive_server`. The manifest lives
 at the repo root in `.coolify_ex.exs`.
-
-During local workspace development, `jido_hive_server` prefers a sibling
-`../coolify_ex` checkout automatically and falls back to the Hex release
-outside that workspace layout.
 
 Canonical deploy from this repo:
 
@@ -181,36 +164,15 @@ cd jido_hive_server
 MIX_ENV=dev mix coolify.deploy
 ```
 
-Latest deployment summary for the manifest project:
+Useful inspection commands:
 
 ```bash
 cd jido_hive_server
 MIX_ENV=dev mix coolify.latest --project server
-```
-
-Deployment status for the latest deployment:
-
-```bash
-cd jido_hive_server
 MIX_ENV=dev mix coolify.status --project server --latest
-```
-
-Deployment logs for the latest deployment:
-
-```bash
-cd jido_hive_server
 MIX_ENV=dev mix coolify.logs --project server --latest --tail 200
-```
-
-Runtime Phoenix logs for the live Coolify-managed app:
-
-```bash
-cd jido_hive_server
 MIX_ENV=dev mix coolify.app_logs --project server --lines 200 --follow
 ```
-
-Use `coolify.logs` for deployment/build logs and `coolify.app_logs` for runtime
-Phoenix logs.
 
 Room runs now return the room snapshot even when a turn fails, so you can fetch
 the failed turn execution details instead of only seeing `422 turn_failed`.

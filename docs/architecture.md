@@ -1,141 +1,157 @@
 # Architecture
 
-## Direction
+## Overview
 
-This repo follows the generalized Jido app split from the local design docs:
+`jido_hive` is a split client/server system:
 
-- Phoenix owns rooms, participants, room protocol, and operator UX
-- `jido_integration` owns durable execution truth and target compatibility
-- `jido_harness` stays the runtime seam into ASM-backed session execution
-- local clients own user-local execution and connect outbound to the server
+- `jido_hive_server` owns rooms, the relay websocket, room persistence, and the
+  coordinator logic
+- `jido_hive_client` owns local execution and connects outward to the relay as a
+  generic worker
 
-The repo is intentionally not an umbrella app. The server and client are independent Mix projects that share architecture, not OTP supervision trees.
+The current demo is a generalized multi-worker slice, not a fixed
+architect/skeptic pair anymore. A room can lock between 1 and 39 connected
+workers and the coordinator drives a simple round-robin workload across them.
 
-## Current Runtime
+## Runtime Shape
 
 ### Server
 
-`jido_hive_server` currently owns:
+`jido_hive_server` owns:
 
-- Phoenix websocket relay at `/socket`
-- HTTP API for room creation, execution, publication planning, publication
-  execution, and connector install/connection flows
-- room lifecycle, referee planning, and collaboration-envelope assembly
-- durable SQLite persistence for room snapshots, targets, and publication runs
-- `Jido.Signal.Bus`
-- `jido_os` bootstrap
-- `Jido.Integration.V2` connector registration for `codex.exec.session`,
-  `github.issue.create`, and `notion.pages.create`
-- server-local direct target announcements for GitHub and Notion publication
-  capabilities
-- relay target advertisement into the control plane
+- Phoenix HTTP and websocket endpoints
+- relay target registration and dispatch
+- room creation, execution, persistence, and publication planning
+- the execution plan that locks the selected worker set for a room
+- the coordinator that assigns turn roles and objectives
+
+The server coordinates work, but it does not execute model calls itself.
 
 ### Client
 
-`jido_hive_client` currently owns:
+`jido_hive_client` owns:
 
-- outbound websocket connection to the relay topic
-- target registration payloads
-- local execution dispatch through `RelayWorker`
-- real session execution through `Jido.Harness -> asm -> ASM`
-- a CLI entrypoint suitable for running multiple local client processes
+- the outbound websocket connection
+- target registration
+- local execution through `RelayWorker`
+- session execution through `Jido.Harness -> asm -> ASM`
+- provider invocation through the configured local runtime, such as Codex CLI
 
-## Collaboration Envelope
+Each client process is just a generic worker. The server assigns the turn role
+for each job.
 
-The server now sends each turn as a versioned collaboration envelope:
+## Round-Robin Execution Plan
 
-- `schema_version`
-- `room`
-  - room id
-  - brief
-  - rules
-  - current room status
-- `referee`
-  - phase
-  - directives
-  - open disputes
-  - whether publication has been requested
-- `turn`
-  - phase
-  - round
-  - participant id and role
-  - objective
-  - strict JSON response contract
-- `shared`
-  - shared context entries
-  - instruction log from prior turns
-  - tool-call log from prior turns
-  - artifact log from prior turns
+When a room is created, the server builds an `execution_plan` from the selected
+participants.
 
-The client turns that envelope into one `RunRequest` with a strict JSON-only
-output contract. The returned `job.result` packet carries:
+The plan currently uses one strategy:
 
-- top-level turn status
-- summary
-- structured actions
-- tool events
-- approvals
-- artifacts
-- full execution event stream
-- normalized execution metadata
+- `round_robin`
 
-If a live provider returns prose or malformed JSON, the client performs one
-follow-up repair run with tools disabled and the same contract so the server
-still receives normalized actions when the underlying content is salvageable.
+The plan locks:
 
-## Refereed Loop
+- the participant list
+- the turn budget
+- the current round-robin pointer
+- room-local exclusions for workers that abandon a turn
 
-The current room loop is:
+The default turn budget is:
 
-1. clients join `relay:local`
-2. clients send `relay.hello` and `target.upsert`
-3. the server exposes registered targets through `RemoteExec` and mirrors compatible targets into `Jido.Integration.V2`
-4. `POST /api/rooms` creates room state with participants and rules
-5. `POST /api/rooms/:id/run` opens a proposal turn, a critique turn, and a
-   resolution turn as needed; the API also accepts `turn_timeout_ms` for
-   real-provider latency
-6. each client receives `job.start`, executes locally, and returns `job.result`
-7. the server merges result actions into shared context entries, disputes,
-   turn histories, and publication run state
+`planned_turn_count = participant_count * 3`
 
-The referee currently drives three phases:
+That means:
 
-- `proposal`
-- `critique`
-- `resolution`
+- 1 worker -> 3 planned turns
+- 2 workers -> 6 planned turns
+- 10 workers -> 30 planned turns
+- 39 workers -> 117 planned turns
 
-The resulting room state captures:
+The coordinator still chooses roles. The workers remain generic.
 
-- claims
-- evidence
-- publish requests
-- objections
-- revisions
-- decisions
-- disputes
-- completed turn records
-- full execution metadata and event logs
-- derived GitHub and Notion publication drafts
-- durable publication run history
+The three coordinator-assigned stages are:
 
-## Why This Shape
+- `proposal` with assigned role `proposer`
+- `critique` with assigned role `critic`
+- `resolution` with assigned role `resolver`
 
-This keeps the trust boundary aligned with the Jido docs:
+The current slice is still intentionally simple: one round-robin pass through
+all locked workers for each of those three stages.
 
-- local execution stays user-owned
-- the server coordinates, but does not pretend to be the local runtime
-- compatibility and target truth flow through `jido_integration`
-- future publication workflows can reuse the same room state and review packets
+## Room Loop
 
-## Current Gaps
+The steady-state room loop is:
 
-1. Publication execution is real, but this repo does not automate the provider
-   auth dance; the operator still needs to bring the provider code/token back to
-   the install-complete endpoint.
-2. The current referee is still a simple architect/skeptic/resolution protocol,
-   not a generalized N-party protocol.
-3. Persistence is durable and correct for this app slice, but still app-local
-   SQLite rather than a multi-node store.
-4. Publication readiness still depends on the room actually emitting a
-   `publish_request` entry; live model runs can complete in `in_review` if they
-   solve the disputes but do not request publication.
+1. workers connect to the relay and register `codex.exec.session` targets
+2. the operator creates a room from the currently selected connected workers
+3. the server locks those workers into an execution plan
+4. `run-room` opens one turn at a time
+5. the coordinator picks the next available worker in round-robin order
+6. the server sends a collaboration envelope plus coordinator directives
+7. the worker executes locally and returns structured actions
+8. the server merges those actions into room state and moves to the next turn
+
+The collaboration envelope now includes execution-plan metadata such as:
+
+- participant count
+- planned turn count
+- completed turn count
+- turns remaining
+
+## Failure Handling
+
+The plan is a logical budget, not just a raw attempt counter.
+
+If a worker drops before it is selected:
+
+- the coordinator simply skips it because it is no longer in the live target set
+
+If a worker drops or times out after a turn has been opened:
+
+- the turn is marked `abandoned`
+- that worker is excluded for the rest of the room
+- the logical turn budget is preserved
+- the coordinator continues with the remaining live workers
+
+Late results from abandoned turns are ignored so they do not corrupt the room
+history or the planned turn count.
+
+If no usable workers remain before the locked plan completes, the room moves to
+`blocked`.
+
+## Operator Flow
+
+The intended demo flow is now:
+
+- one control terminal running `bin/hive-control`
+- one client terminal running `bin/hive-clients`
+
+`bin/hive-clients` can launch 1, 2, or a custom number of generic workers in a
+single terminal. `setup/hive create-room` and `setup/hive live-demo` then lock
+either all currently connected workers or an explicit `--participant-count`
+subset.
+
+The operator surface is deliberately small:
+
+- `wait-targets --count N`
+- `create-room --participant-count N`
+- `run-room`
+- `live-demo`
+
+If `max_turns` is omitted, `run-room` uses the locked execution plan by default
+instead of a hardcoded demo turn count.
+
+## Current Limits
+
+This is still an incremental slice, not a full agent society.
+
+Current intentional limits:
+
+- the coordinator uses one simple three-stage algorithm
+- workers do not negotiate roles with each other
+- the collaboration is serialized one turn at a time
+- persistence is still app-local SQLite
+
+That is deliberate. The architecture is now generalized enough to support more
+than two workers cleanly, while still keeping the demo easy to operate and easy
+to extend.
