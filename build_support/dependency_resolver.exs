@@ -130,9 +130,20 @@ defmodule JidoHive.Build.DependencyResolver do
     )
   end
 
+  def coolify_ex(opts \\ []) do
+    resolve_hex(:coolify_ex, "~> 0.3.0", ["../coolify_ex"], opts)
+  end
+
   defp resolve(app, local_paths, fallback_opts, opts) do
     case workspace_path(local_paths) do
       nil -> {app, Keyword.merge(fallback_opts, opts)}
+      path -> {app, Keyword.merge([path: path], opts)}
+    end
+  end
+
+  defp resolve_hex(app, requirement, local_paths, opts) do
+    case workspace_path(local_paths) do
+      nil -> {app, requirement, opts}
       path -> {app, Keyword.merge([path: path], opts)}
     end
   end

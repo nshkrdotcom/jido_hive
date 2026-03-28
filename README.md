@@ -208,6 +208,10 @@ The setup toolkit is documented in [setup/README.md](setup/README.md).
 Deployments use `coolify_ex` from inside `jido_hive_server`, with the
 repo-root manifest at `.coolify_ex.exs`.
 
+When this repo is checked out beside `../coolify_ex`, the nested app uses that
+local path automatically during development; otherwise it falls back to the Hex
+release.
+
 From the repo root:
 
 ```bash
@@ -233,21 +237,24 @@ cd jido_hive_server
 MIX_ENV=dev mix coolify.deploy
 ```
 
-If you need deployment logs for a specific deployment UUID:
+The full project-based inspection flow is:
 
 ```bash
 cd jido_hive_server
-MIX_ENV=dev mix coolify.logs DEPLOYMENT_UUID --tail 200
-```
-
-If you need runtime Phoenix logs for the running Coolify-managed app:
-
-```bash
-cd jido_hive_server
+MIX_ENV=dev mix coolify.latest --project server
+MIX_ENV=dev mix coolify.logs --project server --latest --tail 200
 MIX_ENV=dev mix coolify.app_logs --project server --lines 200 --follow
 ```
 
-That is the main operator command to monitor the live server now.
+If you need status for the latest deployment without spelling out the UUID:
+
+```bash
+cd jido_hive_server
+MIX_ENV=dev mix coolify.status --project server --latest
+```
+
+Runtime Phoenix logs still come from `coolify.app_logs`; deployment/build logs
+come from `coolify.logs`.
 
 `coolify_ex` discovers `.coolify_ex.exs` by walking parent directories, so the
 nested `jido_hive_server` project can use the repo-root manifest without an

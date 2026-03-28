@@ -158,6 +158,10 @@ setup/hive --prod targets
 This repo uses `coolify_ex` from inside `jido_hive_server`. The manifest lives
 at the repo root in `.coolify_ex.exs`.
 
+During local workspace development, `jido_hive_server` prefers a sibling
+`../coolify_ex` checkout automatically and falls back to the Hex release
+outside that workspace layout.
+
 Canonical deploy from this repo:
 
 ```bash
@@ -177,18 +181,25 @@ cd jido_hive_server
 MIX_ENV=dev mix coolify.deploy
 ```
 
-Deployment status for a known deployment UUID:
+Latest deployment summary for the manifest project:
 
 ```bash
 cd jido_hive_server
-MIX_ENV=dev mix coolify.status DEPLOYMENT_UUID
+MIX_ENV=dev mix coolify.latest --project server
 ```
 
-Deployment logs for a known deployment UUID:
+Deployment status for the latest deployment:
 
 ```bash
 cd jido_hive_server
-MIX_ENV=dev mix coolify.logs DEPLOYMENT_UUID --tail 200
+MIX_ENV=dev mix coolify.status --project server --latest
+```
+
+Deployment logs for the latest deployment:
+
+```bash
+cd jido_hive_server
+MIX_ENV=dev mix coolify.logs --project server --latest --tail 200
 ```
 
 Runtime Phoenix logs for the live Coolify-managed app:
@@ -198,8 +209,8 @@ cd jido_hive_server
 MIX_ENV=dev mix coolify.app_logs --project server --lines 200 --follow
 ```
 
-That `coolify.app_logs` command is the canonical way in this repo to watch the
-live server logs through `coolify_ex`.
+Use `coolify.logs` for deployment/build logs and `coolify.app_logs` for runtime
+Phoenix logs.
 
 Room runs now return the room snapshot even when a turn fails, so you can fetch
 the failed turn execution details instead of only seeing `422 turn_failed`.
