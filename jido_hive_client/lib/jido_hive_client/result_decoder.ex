@@ -20,6 +20,15 @@ defmodule JidoHiveClient.ResultDecoder do
      }}
   end
 
+  defp normalize(%{"ops" => ops} = decoded) when is_list(ops) do
+    {:ok,
+     %{
+       "summary" => normalize_summary(Map.get(decoded, "summary"), ops),
+       "actions" => Enum.map(ops, &normalize_action/1),
+       "artifacts" => normalize_artifacts(Map.get(decoded, "artifacts", []))
+     }}
+  end
+
   defp normalize(_decoded), do: {:error, :invalid_contract}
 
   defp normalize_action(action) when is_map(action) do
@@ -27,8 +36,10 @@ defmodule JidoHiveClient.ResultDecoder do
 
     %{
       "op" => op,
-      "title" => Map.get(action, "title") || Map.get(action, "ref") || op,
-      "body" => Map.get(action, "body") || Map.get(action, "content") || "",
+      "title" =>
+        Map.get(action, "title") || Map.get(action, "ref") || Map.get(action, "id") || op,
+      "body" =>
+        Map.get(action, "body") || Map.get(action, "content") || Map.get(action, "text") || "",
       "severity" => Map.get(action, "severity"),
       "targets" => normalize_targets(action_targets(action))
     }

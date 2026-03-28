@@ -15,6 +15,10 @@ defmodule JidoHiveClient.CollaborationPromptTest do
              "Allowed action ops for this turn: CLAIM, EVIDENCE, OBJECT, REVISE, DECIDE, PUBLISH"
 
     assert request.prompt =~ "Return the JSON object only."
+    assert request.prompt =~ "\"summary\": \"string\""
+
+    assert request.prompt =~
+             "Do not return wrapper keys like schema_version, room_id, participant_id,"
   end
 
   test "explicit allowed tools still pass through when requested" do

@@ -34,4 +34,22 @@ defmodule JidoHiveClient.ResultDecoderTest do
              %{"op" => "EVIDENCE", "title" => "EVIDENCE", "body" => "It keeps a durable history."}
            ] = decoded["actions"]
   end
+
+  test "normalizes codex wrapper ops into collaboration actions" do
+    payload = """
+    {"schema_version":"jido_hive/collab_envelope.v1","room_id":"room-123","participant_id":"architect","phase":"proposal","ops":[{"op":"CLAIM","id":"c1","text":"Use explicit turn envelopes.","grounding":"room.brief"},{"op":"EVIDENCE","id":"e1","text":"The shared envelope already carries durable shared state.","grounding":"shared envelope"}]}
+    """
+
+    assert {:ok, decoded} = ResultDecoder.decode(payload)
+    assert decoded["summary"] == "collaboration response with actions: CLAIM, EVIDENCE"
+
+    assert [
+             %{"op" => "CLAIM", "title" => "c1", "body" => "Use explicit turn envelopes."},
+             %{
+               "op" => "EVIDENCE",
+               "title" => "e1",
+               "body" => "The shared envelope already carries durable shared state."
+             }
+           ] = decoded["actions"]
+  end
 end

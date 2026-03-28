@@ -52,6 +52,87 @@ defmodule JidoHiveClient.CollaborationPrompt do
 
   @spec render_system_prompt(map()) :: String.t()
   def render_system_prompt(envelope) when is_map(envelope) do
+    """
+    #{render_contract_instructions(envelope)}
+    """
+    |> String.trim()
+  end
+
+  @spec render_prompt(map()) :: String.t()
+  def render_prompt(envelope) when is_map(envelope) do
+    """
+    Execute the current collaboration turn using this shared envelope.
+    Return the JSON object only.
+
+    #{render_contract_instructions(envelope)}
+
+    Shared envelope JSON:
+
+    #{Jason.encode!(envelope, pretty: true)}
+    """
+    |> String.trim()
+  end
+
+  defp workspace_root(job) do
+    get_in(job, ["session", "workspace_root"]) ||
+      Map.get(job, "workspace_root") ||
+      File.cwd!()
+  end
+
+  defp render_repair_system_prompt(job) do
+    allowed_ops = allowed_ops(job)
+
+    """
+    Convert the provided assistant response into strict JSON only.
+
+    Required contract:
+    {
+      "summary": "string",
+      "actions": [
+        {
+          "op": "#{allowed_ops}",
+          "title": "string",
+          "body": "string",
+          "severity": "low|medium|high|null",
+          "targets": [
+            {
+              "entry_ref": "string|null",
+              "dispute_id": "string|null"
+            }
+          ]
+        }
+      ],
+      "artifacts": [
+        {
+          "artifact_type": "prompt|tool_output|note",
+          "title": "string",
+          "body": "string"
+        }
+      ]
+    }
+
+    Preserve meaning. If the source mentions dispute IDs or entry refs inline,
+    move them into targets. Do not use tools. Return JSON only.
+    Do not return wrapper keys like schema_version, room_id, participant_id,
+    phase, ops, or ids outside the allowed actions/artifacts structure.
+    """
+    |> String.trim()
+  end
+
+  defp render_repair_prompt(text) do
+    """
+    Convert this assistant response into the required JSON contract:
+    - Return exactly one JSON object.
+    - Do not use markdown fences.
+    - Do not return wrapper keys like schema_version, room_id, participant_id,
+      phase, or ops.
+
+    #{text}
+    """
+    |> String.trim()
+  end
+
+  defp render_contract_instructions(envelope) do
     turn = Map.fetch!(envelope, "turn")
     referee = Map.fetch!(envelope, "referee")
     room = Map.fetch!(envelope, "room")
@@ -99,72 +180,9 @@ defmodule JidoHiveClient.CollaborationPrompt do
     Do not inspect local files, run shell commands, or call tools unless tools
     were explicitly enabled for this turn and the shared envelope is
     insufficient.
-
     Do not add markdown fences, prose, or commentary outside that JSON object.
-    """
-    |> String.trim()
-  end
-
-  @spec render_prompt(map()) :: String.t()
-  def render_prompt(envelope) when is_map(envelope) do
-    """
-    Execute the current collaboration turn using this shared envelope.
-    Return the JSON object only.
-
-    #{Jason.encode!(envelope, pretty: true)}
-    """
-    |> String.trim()
-  end
-
-  defp workspace_root(job) do
-    get_in(job, ["session", "workspace_root"]) ||
-      Map.get(job, "workspace_root") ||
-      File.cwd!()
-  end
-
-  defp render_repair_system_prompt(job) do
-    allowed_ops = allowed_ops(job)
-
-    """
-    Convert the provided assistant response into strict JSON only.
-
-    Required contract:
-    {
-      "summary": "string",
-      "actions": [
-        {
-          "op": "#{allowed_ops}",
-          "title": "string",
-          "body": "string",
-          "severity": "low|medium|high|null",
-          "targets": [
-            {
-              "entry_ref": "string|null",
-              "dispute_id": "string|null"
-            }
-          ]
-        }
-      ],
-      "artifacts": [
-        {
-          "artifact_type": "prompt|tool_output|note",
-          "title": "string",
-          "body": "string"
-        }
-      ]
-    }
-
-    Preserve meaning. If the source mentions dispute IDs or entry refs inline,
-    move them into targets. Do not use tools. Return JSON only.
-    """
-    |> String.trim()
-  end
-
-  defp render_repair_prompt(text) do
-    """
-    Convert this assistant response into the required JSON contract:
-
-    #{text}
+    Do not return wrapper keys like schema_version, room_id, participant_id,
+    phase, ops, or ids outside action/artifact objects.
     """
     |> String.trim()
   end
