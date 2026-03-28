@@ -11,6 +11,10 @@ Required environment variables:
   COOLIFY_TOKEN      Coolify API token with write access
   COOLIFY_APP_UUID   Coolify application UUID
 
+This wrapper runs the real deploy command from the nested Mix app:
+  cd jido_hive_server
+  MIX_ENV=dev mix coolify.deploy
+
 Examples:
   export COOLIFY_BASE_URL="https://coolify.example.com"
   export COOLIFY_TOKEN="..."

@@ -146,6 +146,9 @@ cd jido_hive_server
 MIX_ENV=dev mix coolify.deploy
 ```
 
+The Mix task is the real deployment implementation. The shell script only gives
+you a convenient repo-root entrypoint for this monorepo.
+
 Useful variants:
 
 ```bash
