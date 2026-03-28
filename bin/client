@@ -3,7 +3,57 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
-URL="${JIDO_HIVE_URL:-ws://127.0.0.1:4000/socket/websocket}"
+LOCAL_URL="ws://127.0.0.1:4000/socket/websocket"
+PROD_URL="wss://jido-hive-server-test.app.nsai.online/socket/websocket"
+
+usage() {
+  cat <<'EOF'
+Usage:
+  bin/client [--local|--prod] [client options...]
+
+Modes:
+  --local  Connect to the local Phoenix server (default)
+  --prod   Connect to https://jido-hive-server-test.app.nsai.online
+
+Examples:
+  bin/client
+  bin/client --prod
+  bin/client --url ws://127.0.0.1:4000/socket/websocket
+EOF
+}
+
+mode="local"
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --local)
+      mode="local"
+      shift
+      ;;
+    --prod)
+      mode="prod"
+      shift
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    --)
+      shift
+      break
+      ;;
+    *)
+      break
+      ;;
+  esac
+done
+
+case "$mode" in
+  local) default_url="$LOCAL_URL" ;;
+  prod) default_url="$PROD_URL" ;;
+esac
+
+URL="${JIDO_HIVE_URL:-$default_url}"
 WORKSPACE_ID="${JIDO_HIVE_WORKSPACE_ID:-workspace-local}"
 RELAY_TOPIC="${JIDO_HIVE_RELAY_TOPIC:-relay:$WORKSPACE_ID}"
 WORKSPACE_ROOT="${JIDO_HIVE_WORKSPACE_ROOT:-$ROOT}"

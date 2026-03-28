@@ -40,8 +40,10 @@ case System.get_env("JIDO_HIVE_LOG_LEVEL") do
     raise "unsupported JIDO_HIVE_LOG_LEVEL: #{inspect(other)}"
 end
 
-config :jido_hive_server, JidoHiveServerWeb.Endpoint,
-  http: [port: String.to_integer(System.get_env("PORT", "4000"))]
+unless config_env() == :test do
+  config :jido_hive_server, JidoHiveServerWeb.Endpoint,
+    http: [port: String.to_integer(System.get_env("PORT", "4000"))]
+end
 
 config :jido_hive_server, JidoHiveServer.Repo,
   database:

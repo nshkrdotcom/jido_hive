@@ -2,6 +2,28 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+LOCAL_API_BASE="http://127.0.0.1:4000/api"
+PROD_API_BASE="https://jido-hive-server-test.app.nsai.online/api"
+
+mode="local"
+
+case "${1:-}" in
+  --local)
+    mode="local"
+    shift
+    ;;
+  --prod)
+    mode="prod"
+    shift
+    ;;
+esac
+
+if [[ -z "${JIDO_HIVE_API_BASE:-}" ]]; then
+  case "$mode" in
+    local) export JIDO_HIVE_API_BASE="$LOCAL_API_BASE" ;;
+    prod) export JIDO_HIVE_API_BASE="$PROD_API_BASE" ;;
+  esac
+fi
 
 # shellcheck source=setup/lib.sh
 source "$ROOT/setup/lib.sh"
@@ -9,31 +31,32 @@ source "$ROOT/setup/lib.sh"
 usage() {
   cat <<'EOF'
 Usage:
-  setup/hive help
-  setup/hive doctor
-  setup/hive wait-server
-  setup/hive wait-targets
-  setup/hive targets
-  setup/hive room ROOM_ID
-  setup/hive create-room [ROOM_ID] [--brief TEXT] [--rule TEXT] [--if-missing]
-  setup/hive run-room ROOM_ID [--max-turns N] [--turn-timeout-ms N]
-  setup/hive publication-plan ROOM_ID
-  setup/hive publication-runs ROOM_ID
-  setup/hive live-demo [--room-id ROOM_ID] [--brief TEXT] [--rule TEXT]
+  setup/hive [--local|--prod] help
+  setup/hive [--local|--prod] doctor
+  setup/hive [--local|--prod] wait-server
+  setup/hive [--local|--prod] wait-targets
+  setup/hive [--local|--prod] targets
+  setup/hive [--local|--prod] room ROOM_ID
+  setup/hive [--local|--prod] create-room [ROOM_ID] [--brief TEXT] [--rule TEXT] [--if-missing]
+  setup/hive [--local|--prod] run-room ROOM_ID [--max-turns N] [--turn-timeout-ms N]
+  setup/hive [--local|--prod] publication-plan ROOM_ID
+  setup/hive [--local|--prod] publication-runs ROOM_ID
+  setup/hive [--local|--prod] live-demo [--room-id ROOM_ID] [--brief TEXT] [--rule TEXT]
       [--max-turns N] [--turn-timeout-ms N] [--wait-timeout-ms N]
       [--publish-from-env]
-  setup/hive start-install github|notion [--subject VALUE] [--scope VALUE]
-  setup/hive show-install INSTALL_ID
-  setup/hive complete-install INSTALL_ID [--subject VALUE]
+  setup/hive [--local|--prod] start-install github|notion [--subject VALUE] [--scope VALUE]
+  setup/hive [--local|--prod] show-install INSTALL_ID
+  setup/hive [--local|--prod] complete-install INSTALL_ID [--subject VALUE]
       [--scope VALUE] [--access-token VALUE]
-  setup/hive connections github|notion [--subject VALUE]
-  setup/hive publish ROOM_ID
+  setup/hive [--local|--prod] connections github|notion [--subject VALUE]
+  setup/hive [--local|--prod] publish ROOM_ID
       [--github-connection ID --github-repo OWNER/REPO]
       [--notion-connection ID --notion-data-source-id ID]
       [--notion-title-property NAME]
 
 Environment defaults:
-  JIDO_HIVE_API_BASE    default: http://127.0.0.1:4000/api
+  JIDO_HIVE_API_BASE    default local: http://127.0.0.1:4000/api
+                        default prod:  https://jido-hive-server-test.app.nsai.online/api
   JIDO_HIVE_TENANT_ID   default: workspace-local
   JIDO_HIVE_ACTOR_ID    default: operator-1
   JIDO_HIVE_GITHUB_SUBJECT
@@ -41,6 +64,7 @@ Environment defaults:
 
 Examples:
   setup/hive doctor
+  setup/hive --prod doctor
   setup/hive wait-targets
   setup/hive create-room room-manual-1
   setup/hive run-room room-manual-1 --turn-timeout-ms 180000

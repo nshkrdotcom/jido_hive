@@ -4,4 +4,6 @@ set -eu
 cd -P -- "$(dirname -- "$0")"
 export PHX_SERVER=true
 
+./migrate
+
 exec ./jido_hive_server start

@@ -1,6 +1,10 @@
 defmodule JidoHiveServerWeb.Router do
   use JidoHiveServerWeb, :router
 
+  scope "/", JidoHiveServerWeb do
+    get "/", HomeController, :index
+  end
+
   pipeline :api do
     plug :accepts, ["json"]
   end
@@ -20,5 +24,9 @@ defmodule JidoHiveServerWeb.Router do
     get "/rooms/:id/publications", RoomController, :publication_runs
     post "/rooms/:id/publications", RoomController, :execute_publications
     post "/rooms/:id/first_slice", RoomController, :run_first_slice
+  end
+
+  scope "/", JidoHiveServerWeb do
+    get "/*path", HomeController, :not_found
   end
 end
