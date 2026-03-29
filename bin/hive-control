@@ -178,17 +178,17 @@ cmd_deploy_coolify() {
 
 cmd_show_latest_deployment() {
   cd "$ROOT/jido_hive_server"
-  exec env MIX_ENV=dev mix coolify.latest --project server
+  exec env MIX_ENV=coolify mix coolify.latest --project server
 }
 
 cmd_tail_latest_deployment_logs() {
   cd "$ROOT/jido_hive_server"
-  exec env MIX_ENV=dev mix coolify.logs --project server --latest --tail 200
+  exec env MIX_ENV=coolify mix coolify.logs --project server --latest --tail 200
 }
 
 cmd_tail_prod_logs() {
   cd "$ROOT/jido_hive_server"
-  exec env MIX_ENV=dev mix coolify.app_logs --project server --lines 200 --follow
+  exec env MIX_ENV=coolify mix coolify.app_logs --project server --lines 200 --follow
 }
 
 print_menu() {

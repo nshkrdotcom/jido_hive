@@ -147,7 +147,9 @@ before printing targets.
 ## Coolify
 
 This repo uses `coolify_ex` from inside `jido_hive_server`. The manifest lives
-at the repo root in `.coolify_ex.exs`.
+at the repo root in `.coolify_ex.exs`. Coolify tasks run in the dedicated
+`MIX_ENV=coolify` lane so deploy-only tooling does not affect the normal
+dev/test/docs quality floor.
 
 Canonical deploy from this repo:
 
@@ -165,17 +167,17 @@ Direct `mix` usage from the nested app:
 
 ```bash
 cd jido_hive_server
-MIX_ENV=dev mix coolify.deploy
+MIX_ENV=coolify mix coolify.deploy
 ```
 
 Useful inspection commands:
 
 ```bash
 cd jido_hive_server
-MIX_ENV=dev mix coolify.latest --project server
-MIX_ENV=dev mix coolify.status --project server --latest
-MIX_ENV=dev mix coolify.logs --project server --latest --tail 200
-MIX_ENV=dev mix coolify.app_logs --project server --lines 200 --follow
+MIX_ENV=coolify mix coolify.latest --project server
+MIX_ENV=coolify mix coolify.status --project server --latest
+MIX_ENV=coolify mix coolify.logs --project server --latest --tail 200
+MIX_ENV=coolify mix coolify.app_logs --project server --lines 200 --follow
 ```
 
 Room runs now return the room snapshot even when a turn fails, so you can fetch

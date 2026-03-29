@@ -17,13 +17,13 @@ Optional environment variables:
 
 This wrapper runs the real deploy command from the nested Mix app:
   cd jido_hive_server
-  MIX_ENV=dev mix coolify.deploy
+  MIX_ENV=coolify mix coolify.deploy
 
 Useful follow-up commands:
   cd jido_hive_server
-  MIX_ENV=dev mix coolify.latest --project server
-  MIX_ENV=dev mix coolify.logs --project server --latest --tail 200
-  MIX_ENV=dev mix coolify.app_logs --project server --lines 200 --follow
+  MIX_ENV=coolify mix coolify.latest --project server
+  MIX_ENV=coolify mix coolify.logs --project server --latest --tail 200
+  MIX_ENV=coolify mix coolify.app_logs --project server --lines 200 --follow
 
 Examples:
   export COOLIFY_BASE_URL="https://coolify.example.com"
@@ -130,6 +130,6 @@ repo_root="$(git rev-parse --show-toplevel)"
 server_root="${repo_root}/jido_hive_server"
 
 cd "$server_root"
-mix deps.get --only dev
+mix deps.get --only coolify
 
-exec env MIX_ENV=dev mix coolify.deploy "$@"
+exec env MIX_ENV=coolify mix coolify.deploy "$@"
