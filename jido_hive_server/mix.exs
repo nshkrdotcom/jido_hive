@@ -40,6 +40,11 @@ defmodule JidoHiveServer.MixProject do
         credo: :test,
         dialyzer: :test,
         docs: :dev,
+        "coolify.app_logs": :coolify,
+        "coolify.deploy": :coolify,
+        "coolify.latest": :coolify,
+        "coolify.logs": :coolify,
+        "coolify.status": :coolify,
         precommit: :test,
         quality: :test
       ]
@@ -77,7 +82,7 @@ defmodule JidoHiveServer.MixProject do
       DependencyResolver.jido_integration_codex_cli(),
       DependencyResolver.jido_integration_github(),
       DependencyResolver.jido_integration_notion(),
-      DependencyResolver.coolify_ex(only: :dev, runtime: false),
+      DependencyResolver.coolify_ex(only: :coolify, runtime: false),
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
       {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false},
       {:ex_doc, "~> 0.40", only: [:dev, :test], runtime: false},

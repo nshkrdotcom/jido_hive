@@ -226,7 +226,9 @@ The generated server docs now expose a dedicated Developer Guides section throug
 ## Deploy And Logs
 
 Deployments use `coolify_ex` from inside `jido_hive_server`, with the repo-root
-manifest at `.coolify_ex.exs`.
+manifest at `.coolify_ex.exs`. Those tasks now run in the dedicated
+`MIX_ENV=coolify` lane so deploy-only tooling stays out of the normal
+dev/test/docs quality floor.
 
 From the repo root:
 
@@ -264,10 +266,10 @@ Useful nested-app commands:
 
 ```bash
 cd jido_hive_server
-MIX_ENV=dev mix coolify.latest --project server
-MIX_ENV=dev mix coolify.status --project server --latest
-MIX_ENV=dev mix coolify.logs --project server --latest --tail 200
-MIX_ENV=dev mix coolify.app_logs --project server --lines 200 --follow
+MIX_ENV=coolify mix coolify.latest --project server
+MIX_ENV=coolify mix coolify.status --project server --latest
+MIX_ENV=coolify mix coolify.logs --project server --latest --tail 200
+MIX_ENV=coolify mix coolify.app_logs --project server --lines 200 --follow
 ```
 
 ## GitHub And Notion Publishing
