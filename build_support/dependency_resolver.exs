@@ -40,7 +40,12 @@ defmodule JidoHive.Build.DependencyResolver do
   end
 
   def jido_os(opts \\ []) do
-    resolve(:jido_os, ["../jido_os"], [github: "epic-creative/jido_os", branch: "main"], opts)
+    resolve(
+      :jido_os,
+      ["../jido_os"],
+      [git: "git@github.com:nshkrdotcom/jido_os.git", branch: "main"],
+      opts
+    )
   end
 
   def jido_shell(opts \\ []) do
