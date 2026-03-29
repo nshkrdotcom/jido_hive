@@ -131,6 +131,5 @@ server_root="${repo_root}/jido_hive_server"
 
 cd "$server_root"
 mix deps.get --only dev
-MIX_ENV=dev mix deps.compile coolify_ex
 
 exec env MIX_ENV=dev mix coolify.deploy "$@"
