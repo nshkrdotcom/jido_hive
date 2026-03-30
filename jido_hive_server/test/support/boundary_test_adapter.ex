@@ -48,15 +48,13 @@ defmodule JidoHiveServer.TestSupport.BoundaryTestAdapter do
           {{:error, %{message: "unknown boundary_session_id"}}, state}
 
         descriptor ->
+          attach_mode = get_in(descriptor, [:attach, :mode])
+
           claimed =
             descriptor
             |> Map.put(:status, :ready)
-            |> Map.put(:attach_ready?, true)
-            |> Map.update(:metadata, %{}, fn metadata ->
-              metadata
-              |> Map.put(:runtime_owner, Map.get(payload, :runtime_owner))
-              |> Map.put(:runtime_ref, Map.get(payload, :runtime_ref))
-            end)
+            |> Map.put(:attach_ready?, attach_mode == :attachable)
+            |> Map.update(:metadata, %{}, &claim_metadata(&1, payload))
 
           {{:ok, claimed},
            state
@@ -96,6 +94,8 @@ defmodule JidoHiveServer.TestSupport.BoundaryTestAdapter do
     target_id = get_in(payload, [:refs, :target_id]) || "target-#{payload.boundary_session_id}"
     lease_ref = get_in(payload, [:refs, :lease_ref])
     surface_ref = get_in(payload, [:refs, :surface_ref])
+    attach_mode = normalize_attach_mode(get_in(payload, [:attach, :mode]))
+    working_directory = get_in(payload, [:attach, :working_directory])
 
     %{
       descriptor_version: 1,
@@ -103,16 +103,17 @@ defmodule JidoHiveServer.TestSupport.BoundaryTestAdapter do
       backend_kind: payload.backend_kind,
       boundary_class: payload.boundary_class,
       status: :ready,
-      attach_ready?: true,
+      attach_ready?: attach_mode == :attachable,
       workspace: %{
-        workspace_root: get_in(payload, [:attach, :working_directory]),
+        workspace_root: working_directory,
         snapshot_ref: Map.get(payload, :checkpoint_id),
         artifact_namespace: get_in(payload, [:refs, :request_id])
       },
       attach: %{
-        mode: :attachable,
-        execution_surface: execution_surface(target_id, lease_ref, surface_ref, payload),
-        working_directory: get_in(payload, [:attach, :working_directory])
+        mode: attach_mode,
+        execution_surface:
+          execution_surface(attach_mode, target_id, lease_ref, surface_ref, payload),
+        working_directory: working_directory
       },
       checkpointing: %{
         supported?: is_binary(Map.get(payload, :checkpoint_id)),
@@ -129,9 +130,17 @@ defmodule JidoHiveServer.TestSupport.BoundaryTestAdapter do
   defp normalize_boundary_class(value) when is_binary(value), do: String.to_atom(value)
   defp normalize_boundary_class(_value), do: nil
 
-  defp execution_surface(target_id, lease_ref, surface_ref, payload) do
+  defp normalize_attach_mode(:attachable), do: :attachable
+  defp normalize_attach_mode("attachable"), do: :attachable
+  defp normalize_attach_mode(:not_applicable), do: :not_applicable
+  defp normalize_attach_mode("not_applicable"), do: :not_applicable
+  defp normalize_attach_mode(_mode), do: :attachable
+
+  defp execution_surface(:not_applicable, _target_id, _lease_ref, _surface_ref, _payload), do: nil
+
+  defp execution_surface(:attachable, target_id, lease_ref, surface_ref, payload) do
     {:ok, surface} =
-      CliSubprocessCore.ExecutionSurface.new(%{
+      CliSubprocessCore.ExecutionSurface.new(
         surface_kind: :guest_bridge,
         transport_options: [
           endpoint: %{kind: :unix_socket, path: "/tmp/#{target_id}.sock"},
@@ -144,8 +153,14 @@ defmodule JidoHiveServer.TestSupport.BoundaryTestAdapter do
         surface_ref: surface_ref,
         boundary_class: normalize_boundary_class(payload.boundary_class),
         observability: %{}
-      })
+      )
 
     surface
+  end
+
+  defp claim_metadata(metadata, payload) do
+    metadata
+    |> Map.put(:runtime_owner, Map.get(payload, :runtime_owner))
+    |> Map.put(:runtime_ref, Map.get(payload, :runtime_ref))
   end
 end

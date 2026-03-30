@@ -2,8 +2,8 @@ defmodule JidoHiveServer.RemoteExecTest do
   use ExUnit.Case, async: false
   use JidoHiveServer.PersistenceCase
 
-  alias Jido.Integration.V2.BoundaryCapability
   alias Jido.Integration.V2
+  alias Jido.Integration.V2.BoundaryCapability
   alias Jido.Integration.V2.TargetDescriptor
   alias JidoHiveServer.RemoteExec
 
