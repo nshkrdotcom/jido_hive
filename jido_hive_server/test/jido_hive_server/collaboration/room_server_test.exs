@@ -187,6 +187,62 @@ defmodule JidoHiveServer.Collaboration.RoomServerTest do
     assert length(persisted.turns) == 6
   end
 
+  test "retains boundary_session_id and reopen metadata in room state for later turns" do
+    room =
+      start_supervised!(
+        {RoomServer,
+         room_id: "room-boundary-state-1",
+         session_id: "session-room-boundary-state-1",
+         brief: "Retain one bridge-backed boundary across turns.",
+         rules: ["Reuse the retained boundary instead of reallocating blindly."],
+         participants: [
+           %{
+             participant_id: "worker-01",
+             role: "worker",
+             target_id: "target-worker-01",
+             capability_id: "codex.exec.session"
+           }
+         ]}
+      )
+
+    assert {:ok, opened} =
+             RoomServer.open_turn(room, %{
+               "job_id" => "job-worker-01-boundary",
+               "plan_slot_index" => 0,
+               "participant_id" => "worker-01",
+               "participant_role" => "proposer",
+               "target_id" => "target-worker-01",
+               "capability_id" => "codex.exec.session",
+               "phase" => "proposal",
+               "objective" => "Use the retained boundary-backed session.",
+               "round" => 1,
+               "session" => %{
+                 "provider" => "codex",
+                 "boundary" => %{
+                   "descriptor" => %{
+                     "descriptor_version" => 1,
+                     "boundary_session_id" => "bnd-room-state-1"
+                   },
+                   "reopen_request" => %{
+                     "boundary_session_id" => "bnd-room-state-1",
+                     "backend_kind" => "microvm"
+                   }
+                 }
+               },
+               "collaboration_envelope" => %{"turn" => %{"phase" => "proposal"}}
+             })
+
+    assert opened.boundary_sessions["target-worker-01"]["boundary_session_id"] == "bnd-room-state-1"
+
+    assert opened.boundary_sessions["target-worker-01"]["reopen_request"]["backend_kind"] ==
+             "microvm"
+
+    assert {:ok, persisted} = Persistence.fetch_room_snapshot("room-boundary-state-1")
+
+    assert persisted.boundary_sessions["target-worker-01"]["boundary_session_id"] ==
+             "bnd-room-state-1"
+  end
+
   defp proposal_result(job_id) do
     %{
       "job_id" => job_id,

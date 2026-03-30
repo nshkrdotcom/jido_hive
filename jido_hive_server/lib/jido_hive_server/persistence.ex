@@ -185,6 +185,7 @@ defmodule JidoHiveServer.Persistence do
       disputes: snapshot_list(snapshot, "disputes", &rehydrate_dispute/1),
       current_turn: snapshot_map(snapshot, "current_turn", &rehydrate_turn_map/1),
       execution_plan: snapshot_map(snapshot, "execution_plan", &rehydrate_execution_plan/1),
+      boundary_sessions: snapshot_map(snapshot, "boundary_sessions", & &1),
       status: snapshot_value(snapshot, "status", "idle"),
       phase: snapshot_value(snapshot, "phase", "idle"),
       round: snapshot_value(snapshot, "round", 0),
@@ -207,6 +208,9 @@ defmodule JidoHiveServer.Persistence do
       execution_surface: snapshot["execution_surface"],
       execution_environment: snapshot["execution_environment"],
       provider_options: snapshot["provider_options"],
+      boundary_capability: snapshot["boundary_capability"],
+      boundary_request: snapshot["boundary_request"],
+      boundary_reopen_request: snapshot["boundary_reopen_request"],
       status: snapshot["status"]
     }
   end

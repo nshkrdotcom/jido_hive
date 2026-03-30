@@ -2,7 +2,9 @@ defmodule JidoHiveServer.RemoteExecTest do
   use ExUnit.Case, async: false
   use JidoHiveServer.PersistenceCase
 
+  alias Jido.Integration.V2.BoundaryCapability
   alias Jido.Integration.V2
+  alias Jido.Integration.V2.TargetDescriptor
   alias JidoHiveServer.RemoteExec
 
   test "registers relay connection and target metadata for observability" do
@@ -92,6 +94,108 @@ defmodule JidoHiveServer.RemoteExecTest do
     assert :ok = RemoteExec.remove_channel(channel_pid)
     refute Enum.any?(RemoteExec.list_targets(), &(&1.target_id == "target-cleanup"))
     refute target_ids_for("codex.exec.session") |> Enum.member?("target-cleanup")
+  end
+
+  test "projects boundary-capable relay targets through the standardized target extension" do
+    channel_pid = self()
+    on_exit(fn -> :ok = RemoteExec.remove_channel(channel_pid) end)
+
+    assert {:ok, _connection} =
+             RemoteExec.register_connection(channel_pid, %{
+               "workspace_id" => "workspace-boundary",
+               "user_id" => "user-boundary",
+               "participant_id" => "worker-boundary",
+               "participant_role" => "worker"
+             })
+
+    assert {:ok, _target} =
+             RemoteExec.upsert_target(channel_pid, %{
+               "workspace_id" => "workspace-boundary",
+               "user_id" => "user-boundary",
+               "participant_id" => "worker-boundary",
+               "participant_role" => "worker",
+               "target_id" => "target-boundary",
+               "capability_id" => "codex.exec.session",
+               "runtime_driver" => "asm",
+               "provider" => "codex",
+               "workspace_root" => "/srv/hive",
+               "boundary_capability" => %{
+                 "supported" => true,
+                 "boundary_classes" => ["leased_cell"],
+                 "attach_modes" => ["guest_bridge"],
+                 "checkpointing" => false
+               },
+               "boundary_request" => %{
+                 "boundary_session_id" => "bnd-target-boundary",
+                 "backend_kind" => "microvm",
+                 "boundary_class" => "leased_cell",
+                 "attach" => %{"mode" => "attachable", "working_directory" => "/srv/hive"},
+                 "refs" => %{
+                   "target_id" => "target-boundary",
+                   "runtime_ref" => "runtime-target-boundary",
+                   "correlation_id" => "corr-target-boundary",
+                   "request_id" => "req-target-boundary"
+                 }
+               }
+             })
+
+    assert {:ok, %TargetDescriptor{} = descriptor} = V2.fetch_target("target-boundary")
+
+    assert TargetDescriptor.authored_boundary_capability(descriptor) ==
+             BoundaryCapability.new!(%{
+               supported: true,
+               boundary_classes: ["leased_cell"],
+               attach_modes: ["guest_bridge"],
+               checkpointing: false
+             })
+  end
+
+  test "projects boundary-capable relay targets from reopen metadata through the standardized target extension" do
+    channel_pid = self()
+    on_exit(fn -> :ok = RemoteExec.remove_channel(channel_pid) end)
+
+    assert {:ok, _connection} =
+             RemoteExec.register_connection(channel_pid, %{
+               "workspace_id" => "workspace-boundary-reopen",
+               "user_id" => "user-boundary-reopen",
+               "participant_id" => "worker-boundary-reopen",
+               "participant_role" => "worker"
+             })
+
+    assert {:ok, _target} =
+             RemoteExec.upsert_target(channel_pid, %{
+               "workspace_id" => "workspace-boundary-reopen",
+               "user_id" => "user-boundary-reopen",
+               "participant_id" => "worker-boundary-reopen",
+               "participant_role" => "worker",
+               "target_id" => "target-boundary-reopen",
+               "capability_id" => "codex.exec.session",
+               "runtime_driver" => "asm",
+               "provider" => "codex",
+               "workspace_root" => "/srv/hive",
+               "boundary_reopen_request" => %{
+                 "boundary_session_id" => "bnd-target-boundary-reopen",
+                 "backend_kind" => "microvm",
+                 "boundary_class" => "leased_cell",
+                 "attach" => %{"mode" => "attachable", "working_directory" => "/srv/hive"},
+                 "refs" => %{
+                   "target_id" => "target-boundary-reopen",
+                   "runtime_ref" => "runtime-target-boundary-reopen",
+                   "correlation_id" => "corr-target-boundary-reopen",
+                   "request_id" => "req-target-boundary-reopen"
+                 }
+               }
+             })
+
+    assert {:ok, %TargetDescriptor{} = descriptor} = V2.fetch_target("target-boundary-reopen")
+
+    assert TargetDescriptor.authored_boundary_capability(descriptor) ==
+             BoundaryCapability.new!(%{
+               supported: true,
+               boundary_classes: ["leased_cell"],
+               attach_modes: ["guest_bridge"],
+               checkpointing: false
+             })
   end
 
   defp target_ids_for(capability_id) do

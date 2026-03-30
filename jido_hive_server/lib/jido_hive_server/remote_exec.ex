@@ -80,7 +80,10 @@ defmodule JidoHiveServer.RemoteExec do
         workspace_root: payload["workspace_root"] || File.cwd!(),
         execution_surface: payload["execution_surface"],
         execution_environment: payload["execution_environment"],
-        provider_options: payload["provider_options"]
+        provider_options: payload["provider_options"],
+        boundary_capability: payload["boundary_capability"],
+        boundary_request: payload["boundary_request"],
+        boundary_reopen_request: payload["boundary_reopen_request"]
       }
 
     targets = Map.put(state.targets, target.target_id, target)

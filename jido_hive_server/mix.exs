@@ -78,6 +78,7 @@ defmodule JidoHiveServer.MixProject do
       DependencyResolver.jido_vfs(override: true),
       DependencyResolver.sprites(override: true),
       DependencyResolver.jido_integration_platform(),
+      boundary_bridge_dep(),
       DependencyResolver.jido_integration_runtime_asm_bridge(override: true),
       DependencyResolver.jido_integration_codex_cli(),
       DependencyResolver.jido_integration_github(),
@@ -111,6 +112,17 @@ defmodule JidoHiveServer.MixProject do
       test_all: ["test"],
       precommit: ["compile --warnings-as-errors", "deps.unlock --unused", "format", "test"]
     ]
+  end
+
+  defp boundary_bridge_dep do
+    local_path = Path.expand("../../jido_integration/bridges/boundary_bridge", __DIR__)
+
+    if File.dir?(local_path) do
+      {:jido_integration_v2_boundary_bridge, path: local_path}
+    else
+      {:jido_integration_v2_boundary_bridge,
+       github: "agentjido/jido_integration", subdir: "bridges/boundary_bridge"}
+    end
   end
 
   defp docs do

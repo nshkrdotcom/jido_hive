@@ -1,6 +1,7 @@
 defmodule JidoHiveServer.Collaboration do
   @moduledoc false
 
+  alias JidoHiveServer.BoundaryRuntime
   alias JidoHiveServer.Collaboration.{Envelope, ExecutionPlan, Referee}
   alias JidoHiveServer.Collaboration.RoomServer
   alias JidoHiveServer.Persistence
@@ -32,6 +33,7 @@ defmodule JidoHiveServer.Collaboration do
            disputes: [],
            current_turn: %{},
            execution_plan: execution_plan,
+           boundary_sessions: %{},
            status: "idle",
            phase: "idle",
            round: 0,
@@ -180,7 +182,8 @@ defmodule JidoHiveServer.Collaboration do
     with {:ok, target} <- RemoteExec.fetch_target(assignment.target_id),
          true <- target_online?(target),
          envelope <- Envelope.build(snapshot, Map.put(assignment, :job_id, job_id)),
-         session <- session_request(target),
+         {:ok, session} <-
+           session_request(target, snapshot, room_id, job_id, assignment.participant_id),
          {:ok, _opened} <-
            RoomServer.open_turn(server, %{
              "job_id" => job_id,
@@ -289,17 +292,17 @@ defmodule JidoHiveServer.Collaboration do
     end
   end
 
-  defp session_request(target) do
-    %{
-      "runtime_driver" => target.runtime_driver || "asm",
-      "provider" => target.provider || "codex",
-      "workspace_root" => target.workspace_root,
-      "execution_surface" => Map.get(target, :execution_surface),
-      "execution_environment" => Map.get(target, :execution_environment),
-      "provider_options" => Map.get(target, :provider_options)
-    }
-    |> Enum.reject(fn {_key, value} -> is_nil(value) end)
-    |> Map.new()
+  defp session_request(target, snapshot, room_id, job_id, participant_id) do
+    BoundaryRuntime.prepare_session(target, Map.get(snapshot, :boundary_sessions, %{}),
+      target_id: target.target_id,
+      room_id: room_id,
+      job_id: job_id,
+      participant_id: participant_id
+    )
+    |> case do
+      {:ok, prepared} -> {:ok, prepared.session}
+      {:error, _reason} = error -> error
+    end
   end
 
   defp wait_for_turn(room_id, job_id, timeout_ms) do
