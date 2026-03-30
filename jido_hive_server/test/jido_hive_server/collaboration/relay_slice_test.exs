@@ -132,7 +132,7 @@ defmodule JidoHiveServer.Collaboration.RelaySliceTest do
     start_worker(:timeout_worker_02_client, url, "worker-02")
 
     start_worker(:timeout_worker_03_client, url, "worker-03",
-      executor: {DelayedExecutor, [delay_ms: 200, provider: :claude, driver: ScriptedRunModule]}
+      executor: {DelayedExecutor, [delay_ms: 1_500, provider: :claude, driver: ScriptedRunModule]}
     )
 
     assert wait_until(fn -> length(RemoteExec.list_targets()) == 3 end)
@@ -146,7 +146,7 @@ defmodule JidoHiveServer.Collaboration.RelaySliceTest do
              })
 
     assert room.execution_plan.planned_turn_count == 9
-    assert {:ok, _snapshot} = Collaboration.run_room("room-relay-timeout-1", turn_timeout_ms: 50)
+    assert {:ok, _snapshot} = Collaboration.run_room("room-relay-timeout-1", turn_timeout_ms: 800)
 
     assert wait_until(fn ->
              case Collaboration.fetch_room("room-relay-timeout-1") do

@@ -75,7 +75,6 @@ defmodule JidoHiveServer.MixProject do
       DependencyResolver.jido_harness(override: true),
       DependencyResolver.jido_os(),
       DependencyResolver.jido_shell(override: true),
-      DependencyResolver.jido_vfs(override: true),
       DependencyResolver.sprites(override: true),
       DependencyResolver.jido_integration_platform(),
       boundary_bridge_dep(),

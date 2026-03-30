@@ -4,6 +4,7 @@ defmodule JidoHiveServer.BoundaryRuntime do
   alias Jido.BoundaryBridge
   alias Jido.BoundaryBridge.Adapters.JidoOs
   alias Jido.Harness.Error
+  alias Jido.Integration.V2
   alias Jido.Integration.V2.TargetDescriptor
   alias JidoHiveServer.Runtime
 
@@ -48,7 +49,7 @@ defmodule JidoHiveServer.BoundaryRuntime do
         {:ok, descriptor}
 
       nil ->
-        fetch_target_fun = Keyword.get(opts, :fetch_target, &Jido.Integration.V2.fetch_target/1)
+        fetch_target_fun = Keyword.get(opts, :fetch_target, &V2.fetch_target/1)
         target_id = Keyword.get(opts, :target_id) || fetch_target_id(target)
 
         case fetch_target_fun.(target_id) do
@@ -225,8 +226,10 @@ defmodule JidoHiveServer.BoundaryRuntime do
   defp ensure_attach_metadata(descriptor, nil) do
     {:error,
      Error.validation_error("boundary attach metadata is required for Hive session execution", %{
-       boundary_session_id: descriptor.boundary_session_id,
-       attach_mode: descriptor.attach.mode
+       details: %{
+         boundary_session_id: descriptor.boundary_session_id,
+         attach_mode: descriptor.attach.mode
+       }
      })}
   end
 
@@ -363,8 +366,6 @@ defmodule JidoHiveServer.BoundaryRuntime do
       Map.get(boundary_sessions, to_string(target_id))
   end
 
-  defp fetch_boundary_state(_boundary_sessions, _target_id), do: nil
-
   defp has_boundary_state?(boundary_sessions, target_id) do
     fetch_boundary_state(boundary_sessions, target_id) != nil
   end
@@ -408,7 +409,7 @@ defmodule JidoHiveServer.BoundaryRuntime do
     end
   end
 
-  defp normalize_error(%Exception{} = error), do: error
+  defp normalize_error(error) when is_exception(error), do: error
   defp normalize_error(error), do: RuntimeError.exception(inspect(error))
 
   defp map_value(map, key) when is_map(map),
