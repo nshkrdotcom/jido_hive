@@ -77,7 +77,10 @@ defmodule JidoHiveServer.RemoteExec do
         participant_role: payload["participant_role"] || connection.participant_role,
         runtime_driver: payload["runtime_driver"] || "asm",
         provider: payload["provider"] || "codex",
-        workspace_root: payload["workspace_root"] || File.cwd!()
+        workspace_root: payload["workspace_root"] || File.cwd!(),
+        execution_surface: payload["execution_surface"],
+        execution_environment: payload["execution_environment"],
+        provider_options: payload["provider_options"]
       }
 
     targets = Map.put(state.targets, target.target_id, target)

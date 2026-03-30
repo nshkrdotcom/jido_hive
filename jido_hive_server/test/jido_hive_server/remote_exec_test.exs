@@ -33,7 +33,16 @@ defmodule JidoHiveServer.RemoteExecTest do
                "capability_id" => "codex.exec.session",
                "runtime_driver" => "asm",
                "provider" => "codex",
-               "workspace_root" => "/tmp/jido_hive_observable"
+               "workspace_root" => "/tmp/jido_hive_observable",
+               "execution_surface" => %{
+                 "surface_kind" => "ssh_exec",
+                 "transport_options" => %{"destination" => "builder.example"}
+               },
+               "execution_environment" => %{
+                 "workspace_root" => "/tmp/jido_hive_observable",
+                 "allowed_tools" => ["git.status"]
+               },
+               "provider_options" => %{"model" => "gpt-5.4", "reasoning_effort" => "low"}
              })
 
     assert target.workspace_id == "workspace-observable"
@@ -42,10 +51,16 @@ defmodule JidoHiveServer.RemoteExecTest do
     assert target.target_id == "target-observable"
     assert target.capability_id == "codex.exec.session"
     assert target.provider == "codex"
+    assert target.execution_surface["surface_kind"] == "ssh_exec"
+    assert target.execution_environment["workspace_root"] == "/tmp/jido_hive_observable"
+    assert target.provider_options["model"] == "gpt-5.4"
 
     assert {:ok, fetched_target} = RemoteExec.fetch_target("target-observable")
     assert fetched_target.participant_id == "architect"
     assert fetched_target.capability_id == "codex.exec.session"
+    assert fetched_target.execution_surface["surface_kind"] == "ssh_exec"
+    assert fetched_target.execution_environment["allowed_tools"] == ["git.status"]
+    assert fetched_target.provider_options["reasoning_effort"] == "low"
   end
 
   test "removing a channel retracts its session target from the V2 projection" do

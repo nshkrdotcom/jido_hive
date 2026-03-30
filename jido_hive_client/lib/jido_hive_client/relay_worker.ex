@@ -5,7 +5,7 @@ defmodule JidoHiveClient.RelayWorker do
 
   alias Jido.Signal
   alias Jido.Signal.Bus
-  alias JidoHiveClient.Status
+  alias JidoHiveClient.{ExecutionContract, Status}
   alias PhoenixClient.{Channel, Message, Socket}
 
   @join_retry_ms 200
@@ -158,10 +158,17 @@ defmodule JidoHiveClient.RelayWorker do
       "participant_role" => state.participant_role,
       "target_id" => state.target_id,
       "capability_id" => state.capability_id,
-      "runtime_driver" => "asm",
-      "provider" => "codex",
-      "workspace_root" => state.workspace_root
+      "runtime_driver" => "asm"
     }
+    |> Map.merge(execution_target_payload(state))
+  end
+
+  defp execution_target_payload(%{
+         executor: {_module, executor_opts},
+         workspace_root: workspace_root
+       })
+       when is_list(executor_opts) and is_binary(workspace_root) do
+    ExecutionContract.target_registration_payload(executor_opts, workspace_root)
   end
 
   defp publish_signal(type, data) do

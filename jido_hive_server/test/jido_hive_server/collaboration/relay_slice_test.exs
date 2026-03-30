@@ -167,6 +167,64 @@ defmodule JidoHiveServer.Collaboration.RelaySliceTest do
     assert Enum.all?(snapshot.disputes, &(&1.status == :resolved))
   end
 
+  test "job session payload preserves nested execution contracts from target registration" do
+    url = relay_url()
+
+    start_worker(:envelope_worker_01_client, url, "worker-01",
+      executor:
+        {Session,
+         [
+           provider: :codex,
+           model: "gpt-5.4",
+           reasoning_effort: :low,
+           execution_surface: [
+             surface_kind: :ssh_exec,
+             transport_options: [destination: "builder.example"]
+           ],
+           execution_environment: [
+             workspace_root: "/srv/hive",
+             allowed_tools: ["git.status"],
+             approval_posture: :manual,
+             permission_mode: :default
+           ],
+           driver: ScriptedRunModule
+         ]}
+    )
+
+    assert wait_until(fn -> length(RemoteExec.list_targets()) == 1 end)
+
+    assert {:ok, room} =
+             Collaboration.create_room(%{
+               room_id: "room-relay-envelope-1",
+               brief: "Verify session envelope carriage.",
+               rules: ["Preserve the authored nested execution contract."],
+               participants: worker_participants(1..1)
+             })
+
+    assert room.execution_plan.planned_turn_count == 3
+    assert {:ok, _snapshot} = Collaboration.run_room("room-relay-envelope-1")
+
+    assert wait_until(fn ->
+             case Collaboration.fetch_room("room-relay-envelope-1") do
+               {:ok, snapshot} -> snapshot.execution_plan.completed_turn_count == 3
+               _ -> false
+             end
+           end)
+
+    assert {:ok, snapshot} = Collaboration.fetch_room("room-relay-envelope-1")
+    first_turn = hd(snapshot.turns)
+
+    assert first_turn.session["execution_surface"]["surface_kind"] == "ssh_exec"
+
+    assert first_turn.session["execution_surface"]["transport_options"]["destination"] ==
+             "builder.example"
+
+    assert first_turn.session["execution_environment"]["workspace_root"] == "/srv/hive"
+    assert first_turn.session["execution_environment"]["allowed_tools"] == ["git.status"]
+    assert first_turn.session["provider_options"]["model"] == "gpt-5.4"
+    assert first_turn.session["provider_options"]["reasoning_effort"] == "low"
+  end
+
   defp relay_url do
     port =
       Application.fetch_env!(:jido_hive_server, JidoHiveServerWeb.Endpoint)

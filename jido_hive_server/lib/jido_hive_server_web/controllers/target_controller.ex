@@ -22,7 +22,10 @@ defmodule JidoHiveServerWeb.TargetController do
       :participant_role,
       :runtime_driver,
       :provider,
-      :workspace_root
+      :workspace_root,
+      :execution_surface,
+      :execution_environment,
+      :provider_options
     ])
   end
 end

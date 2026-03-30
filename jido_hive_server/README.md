@@ -29,6 +29,16 @@ execution through `Jido.Integration.V2`.
 - `max_turns`
 - `turn_timeout_ms`
 
+Target registrations and dispatched room turns now preserve the same nested
+runtime envelope used by the shared stack:
+
+- `execution_surface`
+- `execution_environment`
+- `provider_options`
+
+Those fields remain optional; when absent, Hive keeps today’s default local
+execution behavior.
+
 ## Persistence
 
 The server uses SQLite through Ecto for:

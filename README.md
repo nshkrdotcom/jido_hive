@@ -3,6 +3,16 @@
 `jido_hive` is a Phoenix coordination server plus local ASM-backed worker
 clients.
 
+The repo now carries the same nested execution-contract vocabulary used by the
+shared ASM/core lane:
+
+- `execution_surface`
+- `execution_environment`
+
+Those fields remain optional for the default local path, but they are now the
+future-facing contract for alternate placement without another Hive wire-format
+pass later.
+
 This repo has two Mix apps:
 
 - `jido_hive_server`: the Phoenix API and relay websocket
