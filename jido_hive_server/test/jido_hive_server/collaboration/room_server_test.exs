@@ -232,7 +232,8 @@ defmodule JidoHiveServer.Collaboration.RoomServerTest do
                "collaboration_envelope" => %{"turn" => %{"phase" => "proposal"}}
              })
 
-    assert opened.boundary_sessions["target-worker-01"]["boundary_session_id"] == "bnd-room-state-1"
+    assert opened.boundary_sessions["target-worker-01"]["boundary_session_id"] ==
+             "bnd-room-state-1"
 
     assert opened.boundary_sessions["target-worker-01"]["reopen_request"]["backend_kind"] ==
              "microvm"

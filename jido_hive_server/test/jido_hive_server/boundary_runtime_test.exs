@@ -31,7 +31,9 @@ defmodule JidoHiveServer.BoundaryRuntimeTest do
     assert prepared.boundary_sessions["target-boundary-1"]["boundary_session_id"] ==
              "bnd-hive-room-1"
 
-    assert prepared.boundary_sessions["target-boundary-1"]["reopen_request"]["boundary_session_id"] ==
+    assert prepared.boundary_sessions["target-boundary-1"]["reopen_request"][
+             "boundary_session_id"
+           ] ==
              "bnd-hive-room-1"
 
     assert BoundaryTestAdapter.calls(store) == [
