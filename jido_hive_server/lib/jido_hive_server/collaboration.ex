@@ -293,8 +293,13 @@ defmodule JidoHiveServer.Collaboration do
     %{
       "runtime_driver" => target.runtime_driver || "asm",
       "provider" => target.provider || "codex",
-      "workspace_root" => target.workspace_root
+      "workspace_root" => target.workspace_root,
+      "execution_surface" => Map.get(target, :execution_surface),
+      "execution_environment" => Map.get(target, :execution_environment),
+      "provider_options" => Map.get(target, :provider_options)
     }
+    |> Enum.reject(fn {_key, value} -> is_nil(value) end)
+    |> Map.new()
   end
 
   defp wait_for_turn(room_id, job_id, timeout_ms) do

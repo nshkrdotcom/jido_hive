@@ -5,12 +5,13 @@ defmodule JidoHiveClient.Executor.Session do
 
   alias Jido.Harness
   alias Jido.Harness.ExecutionEvent
-  alias JidoHiveClient.{CollaborationPrompt, ResultDecoder, Status}
+  alias JidoHiveClient.{CollaborationPrompt, ExecutionContract, ResultDecoder, Status}
 
   @runtime_id :asm
 
   @impl true
   def run(job, opts) when is_map(job) and is_list(opts) do
+    opts = ExecutionContract.apply_session_defaults(job, opts)
     provider = Keyword.get(opts, :provider, provider(job))
     model = Keyword.get(opts, :model) || default_model(provider)
     reasoning_effort = Keyword.get(opts, :reasoning_effort, :low)
@@ -25,11 +26,7 @@ defmodule JidoHiveClient.Executor.Session do
     run_id = Keyword.get(opts, :run_id, default_run_id(job))
 
     start_opts =
-      opts
-      |> Keyword.drop([:run_id, :allowed_tools, :timeout_ms, :model])
-      |> Keyword.put_new(:provider, provider)
-      |> Keyword.put_new(:session_id, session_id)
-      |> Keyword.put_new(:cwd, workspace_root(job, opts))
+      ExecutionContract.start_session_opts(job, opts, provider, session_id)
 
     Status.execution_started(
       job,
@@ -245,10 +242,7 @@ defmodule JidoHiveClient.Executor.Session do
   end
 
   defp workspace_root(job, opts) do
-    Keyword.get(opts, :cwd) ||
-      get_in(job, ["session", "workspace_root"]) ||
-      Map.get(job, "workspace_root") ||
-      File.cwd!()
+    ExecutionContract.workspace_root(job, opts)
   end
 
   defp default_session_id(job) do
@@ -278,7 +272,7 @@ defmodule JidoHiveClient.Executor.Session do
       cwd: workspace_root(job, opts),
       model: Keyword.get(opts, :model),
       timeout_ms: Keyword.get(opts, :timeout_ms),
-      allowed_tools: Keyword.get(opts, :allowed_tools)
+      allowed_tools: ExecutionContract.allowed_tools(job, opts)
     ]
   end
 

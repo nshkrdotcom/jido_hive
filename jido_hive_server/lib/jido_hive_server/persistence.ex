@@ -204,6 +204,9 @@ defmodule JidoHiveServer.Persistence do
       runtime_driver: snapshot["runtime_driver"],
       provider: snapshot["provider"],
       workspace_root: snapshot["workspace_root"],
+      execution_surface: snapshot["execution_surface"],
+      execution_environment: snapshot["execution_environment"],
+      provider_options: snapshot["provider_options"],
       status: snapshot["status"]
     }
   end

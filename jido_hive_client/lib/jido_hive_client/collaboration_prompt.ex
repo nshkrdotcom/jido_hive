@@ -2,6 +2,7 @@ defmodule JidoHiveClient.CollaborationPrompt do
   @moduledoc false
 
   alias Jido.Harness.RunRequest
+  alias JidoHiveClient.ExecutionContract
 
   @schema_version "jido_hive/collab_envelope.v1"
 
@@ -74,9 +75,7 @@ defmodule JidoHiveClient.CollaborationPrompt do
   end
 
   defp workspace_root(job) do
-    get_in(job, ["session", "workspace_root"]) ||
-      Map.get(job, "workspace_root") ||
-      File.cwd!()
+    ExecutionContract.workspace_root(job)
   end
 
   defp render_repair_system_prompt(job) do
