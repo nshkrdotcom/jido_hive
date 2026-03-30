@@ -194,7 +194,8 @@ defmodule JidoHiveServer.BoundaryRuntime do
              :ok <- ensure_supported_boundary_descriptor(descriptor),
              {:ok, attach_metadata} <- BoundaryBridge.project_attach_metadata(descriptor),
              :ok <- ensure_attach_metadata(descriptor, attach_metadata) do
-          reopen_request = reopen_request_from_descriptor(target, descriptor, boundary_request, opts)
+          reopen_request =
+            reopen_request_from_descriptor(target, descriptor, boundary_request, opts)
 
           {:ok,
            %{
@@ -299,7 +300,8 @@ defmodule JidoHiveServer.BoundaryRuntime do
       checkpoint_id: descriptor.checkpointing.last_checkpoint_id,
       attach: %{
         mode: descriptor.attach.mode,
-        working_directory: descriptor.attach.working_directory || descriptor.workspace.workspace_root
+        working_directory:
+          descriptor.attach.working_directory || descriptor.workspace.workspace_root
       },
       refs: refs
     }
@@ -368,7 +370,8 @@ defmodule JidoHiveServer.BoundaryRuntime do
   end
 
   defp has_boundary_request?(target) do
-    map_value(target, :boundary_request) != nil || map_value(target, :boundary_reopen_request) != nil
+    map_value(target, :boundary_request) != nil ||
+      map_value(target, :boundary_reopen_request) != nil
   end
 
   defp fetch_target_id(target) do
@@ -408,7 +411,9 @@ defmodule JidoHiveServer.BoundaryRuntime do
   defp normalize_error(%Exception{} = error), do: error
   defp normalize_error(error), do: RuntimeError.exception(inspect(error))
 
-  defp map_value(map, key) when is_map(map), do: Map.get(map, key) || Map.get(map, Atom.to_string(key))
+  defp map_value(map, key) when is_map(map),
+    do: Map.get(map, key) || Map.get(map, Atom.to_string(key))
+
   defp map_value(_map, _key), do: nil
 
   defp maybe_put(map, _key, nil), do: map
