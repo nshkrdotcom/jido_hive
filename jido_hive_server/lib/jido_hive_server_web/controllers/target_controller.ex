@@ -25,7 +25,8 @@ defmodule JidoHiveServerWeb.TargetController do
       :workspace_root,
       :execution_surface,
       :execution_environment,
-      :provider_options
+      :provider_options,
+      :boundary_capability
     ])
   end
 end
