@@ -2,23 +2,23 @@ defmodule JidoHive.Build.DependencyResolver do
   @moduledoc false
 
   @repo_root Path.expand("..", __DIR__)
+  @jido_integration_repo "https://github.com/agentjido/jido_integration.git"
+  @jido_ai_repo "https://github.com/agentjido/jido_ai.git"
 
   def jido(opts \\ []) do
-    resolve(
-      :jido,
-      ["../jido"],
-      [github: "nshkrdotcom/jido", branch: "nshkrdotcom/phase-5-jido-surface-verification"],
-      opts
-    )
+    resolve_hex(:jido, "~> 2.2", [], opts)
   end
 
   def jido_action(opts \\ []) do
-    resolve(
-      :jido_action,
-      ["../jido_action"],
-      [github: "nshkrdotcom/jido_action", branch: "main"],
-      opts
-    )
+    resolve_hex(:jido_action, "~> 2.2", [], opts)
+  end
+
+  def req_llm(opts \\ []) do
+    resolve_hex(:req_llm, "~> 1.9", [], opts)
+  end
+
+  def jido_ai(opts \\ []) do
+    resolve(:jido_ai, ["../jido_ai"], [github: @jido_ai_repo, branch: "main"], opts)
   end
 
   def jido_signal(opts \\ []) do
@@ -61,7 +61,7 @@ defmodule JidoHive.Build.DependencyResolver do
     resolve(
       :jido_vfs,
       ["../jido_vfs"],
-      [github: "nshkrdotcom/jido_vfs", branch: "main"],
+      [github: "agentjido/jido_vfs", branch: "main"],
       opts
     )
   end
@@ -75,14 +75,15 @@ defmodule JidoHive.Build.DependencyResolver do
     )
   end
 
+  def jido_integration(opts \\ []) do
+    jido_integration_platform(opts)
+  end
+
   def jido_integration_platform(opts \\ []) do
     resolve(
       :jido_integration_v2,
       ["../jido_integration/core/platform"],
-      [
-        github: "agentjido/jido_integration",
-        subdir: "core/platform"
-      ],
+      [github: @jido_integration_repo, subdir: "core/platform"],
       opts
     )
   end
@@ -91,10 +92,7 @@ defmodule JidoHive.Build.DependencyResolver do
     resolve(
       :jido_integration_v2_runtime_asm_bridge,
       ["../jido_integration/core/runtime_asm_bridge"],
-      [
-        github: "agentjido/jido_integration",
-        subdir: "core/runtime_asm_bridge"
-      ],
+      [github: @jido_integration_repo, subdir: "core/runtime_asm_bridge"],
       opts
     )
   end
@@ -103,10 +101,7 @@ defmodule JidoHive.Build.DependencyResolver do
     resolve(
       :jido_integration_v2_codex_cli,
       ["../jido_integration/connectors/codex_cli"],
-      [
-        github: "agentjido/jido_integration",
-        subdir: "connectors/codex_cli"
-      ],
+      [github: @jido_integration_repo, subdir: "connectors/codex_cli"],
       opts
     )
   end
@@ -115,10 +110,7 @@ defmodule JidoHive.Build.DependencyResolver do
     resolve(
       :jido_integration_v2_github,
       ["../jido_integration/connectors/github"],
-      [
-        github: "agentjido/jido_integration",
-        subdir: "connectors/github"
-      ],
+      [github: @jido_integration_repo, subdir: "connectors/github"],
       opts
     )
   end
@@ -127,10 +119,16 @@ defmodule JidoHive.Build.DependencyResolver do
     resolve(
       :jido_integration_v2_notion,
       ["../jido_integration/connectors/notion"],
-      [
-        github: "agentjido/jido_integration",
-        subdir: "connectors/notion"
-      ],
+      [github: @jido_integration_repo, subdir: "connectors/notion"],
+      opts
+    )
+  end
+
+  def jido_integration_boundary_bridge(opts \\ []) do
+    resolve(
+      :jido_integration_v2_boundary_bridge,
+      ["../jido_integration/bridges/boundary_bridge"],
+      [github: @jido_integration_repo, subdir: "bridges/boundary_bridge"],
       opts
     )
   end
