@@ -18,7 +18,7 @@ defmodule JidoHive.Build.DependencyResolver do
   end
 
   def jido_ai(opts \\ []) do
-    resolve(:jido_ai, ["../jido_ai"], [github: @jido_ai_repo, branch: "main"], opts)
+    resolve(:jido_ai, ["../jido_ai"], [git: @jido_ai_repo, branch: "main"], opts)
   end
 
   def jido_signal(opts \\ []) do
@@ -83,7 +83,7 @@ defmodule JidoHive.Build.DependencyResolver do
     resolve(
       :jido_integration_v2,
       ["../jido_integration/core/platform"],
-      [github: @jido_integration_repo, subdir: "core/platform"],
+      [git: @jido_integration_repo, subdir: "core/platform"],
       opts
     )
   end
@@ -92,7 +92,7 @@ defmodule JidoHive.Build.DependencyResolver do
     resolve(
       :jido_integration_v2_runtime_asm_bridge,
       ["../jido_integration/core/runtime_asm_bridge"],
-      [github: @jido_integration_repo, subdir: "core/runtime_asm_bridge"],
+      [git: @jido_integration_repo, subdir: "core/runtime_asm_bridge"],
       opts
     )
   end
@@ -101,7 +101,7 @@ defmodule JidoHive.Build.DependencyResolver do
     resolve(
       :jido_integration_v2_codex_cli,
       ["../jido_integration/connectors/codex_cli"],
-      [github: @jido_integration_repo, subdir: "connectors/codex_cli"],
+      [git: @jido_integration_repo, subdir: "connectors/codex_cli"],
       opts
     )
   end
@@ -110,7 +110,7 @@ defmodule JidoHive.Build.DependencyResolver do
     resolve(
       :jido_integration_v2_github,
       ["../jido_integration/connectors/github"],
-      [github: @jido_integration_repo, subdir: "connectors/github"],
+      [git: @jido_integration_repo, subdir: "connectors/github"],
       opts
     )
   end
@@ -119,7 +119,7 @@ defmodule JidoHive.Build.DependencyResolver do
     resolve(
       :jido_integration_v2_notion,
       ["../jido_integration/connectors/notion"],
-      [github: @jido_integration_repo, subdir: "connectors/notion"],
+      [git: @jido_integration_repo, subdir: "connectors/notion"],
       opts
     )
   end
@@ -128,7 +128,7 @@ defmodule JidoHive.Build.DependencyResolver do
     resolve(
       :jido_integration_v2_boundary_bridge,
       ["../jido_integration/bridges/boundary_bridge"],
-      [github: @jido_integration_repo, subdir: "bridges/boundary_bridge"],
+      [git: @jido_integration_repo, subdir: "bridges/boundary_bridge"],
       opts
     )
   end
