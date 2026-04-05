@@ -8,8 +8,6 @@ RUN apt-get update \
 ENV LANG=C.UTF-8
 ENV MIX_ENV=prod
 
-ARG JIDO_OS_DEPLOY_KEY
-
 WORKDIR /workspace
 
 RUN mix local.hex --force \
@@ -22,22 +20,12 @@ WORKDIR /workspace/jido_hive_server
 
 COPY jido_hive_server/config config
 
-RUN mkdir -p /root/.ssh \
-  && chmod 700 /root/.ssh \
-  && ssh-keyscan github.com >> /root/.ssh/known_hosts \
-  && if [ -n "${JIDO_OS_DEPLOY_KEY:-}" ]; then \
-    printf '%s\n' "$JIDO_OS_DEPLOY_KEY" > /root/.ssh/id_ed25519_jido_os; \
-    chmod 600 /root/.ssh/id_ed25519_jido_os; \
-    printf 'Host github.com\n  HostName github.com\n  User git\n  IdentityFile /root/.ssh/id_ed25519_jido_os\n  IdentitiesOnly yes\n' > /root/.ssh/config; \
-  fi \
-  && mix deps.get \
-  && rm -f /root/.ssh/id_ed25519_jido_os /root/.ssh/config
+RUN mix deps.get
 RUN MIX_ENV=dev mix deps.get \
   && MIX_ENV=dev mix deps.compile agent_session_manager --include-children \
   && MIX_ENV=dev mix deps.compile jido_integration_v2_runtime_asm_bridge --include-children
 RUN mix deps.compile
-RUN mix deps.compile jido jido_action jido_signal jido_shell jido_vfs --include-children
-RUN mix deps.compile jido_os --include-children
+RUN mix deps.compile jido jido_action jido_signal jido_shell --include-children
 RUN mix deps.compile \
   jido_harness \
   jido_integration_v2 \

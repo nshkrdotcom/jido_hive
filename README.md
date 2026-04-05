@@ -260,20 +260,6 @@ export COOLIFY_APP_UUID="..."
 scripts/deploy_coolify.sh
 ```
 
-`scripts/deploy_coolify.sh` also syncs the build-only `JIDO_OS_DEPLOY_KEY`
-variable into Coolify before deployment so the Docker build can fetch the
-private `nshkrdotcom/jido_os` fork. By default it reads the key from:
-
-```bash
-~/.ssh/id_ed25519_jido_os_nshkrdotcom_fork_deploy
-```
-
-Override that with:
-
-```bash
-export JIDO_OS_DEPLOY_KEY_PATH=/path/to/your/jido_os_deploy_key
-```
-
 Useful deploy variants:
 
 ```bash

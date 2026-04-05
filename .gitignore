@@ -3,7 +3,6 @@
 .idea/
 .vscode/
 jido_integration/
-jido_os/
 agent_session_manager/
 cli_subprocess_core/
 !bin/

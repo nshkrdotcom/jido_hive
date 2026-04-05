@@ -31,48 +31,19 @@ defmodule JidoHive.Build.DependencyResolver do
   end
 
   def jido_harness(opts \\ []) do
-    resolve(
-      :jido_harness,
-      ["../jido_harness"],
-      [github: "nshkrdotcom/jido_harness", branch: "bridge/jido_os_compose"],
-      opts
-    )
-  end
-
-  def jido_os(opts \\ []) do
-    resolve(
-      :jido_os,
-      ["../jido_os"],
-      [git: "git@github.com:nshkrdotcom/jido_os.git", branch: "main"],
-      opts
-    )
+    resolve(:jido_harness, [], [github: "nshkrdotcom/jido_harness", branch: "main"], opts)
   end
 
   def jido_shell(opts \\ []) do
-    resolve(
-      :jido_shell,
-      ["../jido_shell"],
-      [github: "nshkrdotcom/jido_shell", branch: "main"],
-      opts
-    )
+    resolve(:jido_shell, [], [github: "nshkrdotcom/jido_shell", branch: "main"], opts)
   end
 
   def jido_vfs(opts \\ []) do
-    resolve(
-      :jido_vfs,
-      ["../jido_vfs"],
-      [github: "nshkrdotcom/jido_vfs", branch: "main"],
-      opts
-    )
+    resolve(:jido_vfs, [], [github: "nshkrdotcom/jido_vfs", branch: "main"], opts)
   end
 
   def sprites(opts \\ []) do
-    resolve(
-      :sprites,
-      ["../sprites-ex", "../sprites_ex"],
-      [github: "mikehostetler/sprites-ex", branch: "main"],
-      opts
-    )
+    resolve(:sprites, [], [github: "mikehostetler/sprites-ex", branch: "main"], opts)
   end
 
   def external_runtime_transport(opts \\ []) do
@@ -84,6 +55,15 @@ defmodule JidoHive.Build.DependencyResolver do
     )
   end
 
+  def pristine(opts \\ []) do
+    resolve(
+      :pristine,
+      ["../pristine/apps/pristine_runtime"],
+      [github: "nshkrdotcom/pristine", branch: "main", subdir: "apps/pristine_runtime"],
+      opts
+    )
+  end
+
   def jido_integration(opts \\ []) do
     jido_integration_platform(opts)
   end
@@ -91,8 +71,12 @@ defmodule JidoHive.Build.DependencyResolver do
   def jido_integration_platform(opts \\ []) do
     resolve(
       :jido_integration_v2,
-      ["../jido_integration/core/platform"],
-      [git: @jido_integration_repo, branch: "bridge/jido_os_compose", subdir: "core/platform"],
+      [],
+      [
+        git: @jido_integration_repo,
+        branch: "feat/universal-contract-standards",
+        subdir: "core/platform"
+      ],
       opts
     )
   end
@@ -100,10 +84,10 @@ defmodule JidoHive.Build.DependencyResolver do
   def jido_integration_runtime_asm_bridge(opts \\ []) do
     resolve(
       :jido_integration_v2_runtime_asm_bridge,
-      ["../jido_integration/core/runtime_asm_bridge"],
+      [],
       [
         git: @jido_integration_repo,
-        branch: "bridge/jido_os_compose",
+        branch: "feat/universal-contract-standards",
         subdir: "core/runtime_asm_bridge"
       ],
       opts
@@ -113,10 +97,10 @@ defmodule JidoHive.Build.DependencyResolver do
   def jido_integration_codex_cli(opts \\ []) do
     resolve(
       :jido_integration_v2_codex_cli,
-      ["../jido_integration/connectors/codex_cli"],
+      [],
       [
         git: @jido_integration_repo,
-        branch: "bridge/jido_os_compose",
+        branch: "feat/universal-contract-standards",
         subdir: "connectors/codex_cli"
       ],
       opts
@@ -126,10 +110,10 @@ defmodule JidoHive.Build.DependencyResolver do
   def jido_integration_github(opts \\ []) do
     resolve(
       :jido_integration_v2_github,
-      ["../jido_integration/connectors/github"],
+      [],
       [
         git: @jido_integration_repo,
-        branch: "bridge/jido_os_compose",
+        branch: "feat/universal-contract-standards",
         subdir: "connectors/github"
       ],
       opts
@@ -139,24 +123,11 @@ defmodule JidoHive.Build.DependencyResolver do
   def jido_integration_notion(opts \\ []) do
     resolve(
       :jido_integration_v2_notion,
-      ["../jido_integration/connectors/notion"],
+      [],
       [
         git: @jido_integration_repo,
-        branch: "bridge/jido_os_compose",
+        branch: "feat/universal-contract-standards",
         subdir: "connectors/notion"
-      ],
-      opts
-    )
-  end
-
-  def jido_integration_boundary_bridge(opts \\ []) do
-    resolve(
-      :jido_integration_v2_boundary_bridge,
-      ["../jido_integration/bridges/boundary_bridge"],
-      [
-        git: @jido_integration_repo,
-        branch: "bridge/jido_os_compose",
-        subdir: "bridges/boundary_bridge"
       ],
       opts
     )
