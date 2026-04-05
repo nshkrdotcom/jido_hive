@@ -33,6 +33,7 @@ Out of the box, `jido_hive` gives you:
 - a live worker relay over Phoenix WebSockets
 - durable room persistence in SQLite
 - workflow-aware room execution
+- a room timeline projection for UI and operator history views
 - local worker execution through `Jido.Harness -> asm`
 - optional GitHub and Notion publication flows
 - a local client control surface over `REST + SSE` for worker visibility and UI work
@@ -177,9 +178,13 @@ Key server APIs include:
 - `GET /api/rooms/:id`
 - `GET /api/rooms/:id/events`
 - `GET /api/rooms/:id/timeline`
+- `GET /api/rooms/:id/timeline?after=<cursor>`
+- `GET /api/rooms/:id/timeline?stream=true`
 - `POST /api/rooms/:id/run`
 - `GET /api/rooms/:id/publication_plan`
 - `POST /api/rooms/:id/publications`
+
+Use `GET /api/rooms/:id/events` when you want the low-level persisted room event log. Use `GET /api/rooms/:id/timeline` when you want the UI-facing projection of room activity.
 
 ### Client surfaces
 
@@ -189,6 +194,7 @@ The client exposes, when enabled, a local control API:
 - `GET /api/runtime/jobs`
 - `GET /api/runtime/events`
 - `GET /api/runtime/events?stream=true`
+- `GET /api/runtime/events?stream=true&once=true`
 - `POST /api/runtime/execute`
 - `POST /api/runtime/shutdown`
 

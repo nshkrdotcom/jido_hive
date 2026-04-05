@@ -92,6 +92,16 @@ When enabled, the local client exposes:
 - `POST /api/runtime/execute`
 - `POST /api/runtime/shutdown`
 
+What these routes are for:
+
+- `GET /api/runtime`: current runtime snapshot for the local worker
+- `GET /api/runtime/jobs`: recent job activity known to the local worker
+- `GET /api/runtime/events`: local runtime event log
+- `GET /api/runtime/events?stream=true`: SSE feed for local runtime events
+- `GET /api/runtime/events?stream=true&once=true`: backlog-only SSE response for UI catch-up
+- `POST /api/runtime/execute`: local manual execution hook
+- `POST /api/runtime/shutdown`: local process shutdown hook
+
 ### How to enable it
 
 CLI flags:
@@ -158,12 +168,7 @@ Important session fields:
 - `session.execution_environment`
 - `session.provider_options`
 
-Important defaults still supported:
-
-- `workspace_root`
-- provider shorthands from the wrapper scripts
-
-That means older local flows still work, while the underlying wire shape is ready for more generalized execution placement later.
+For local UI and operator work, the canonical client surface is `/api/runtime*`. The client remains a local execution node, not a second orchestration authority.
 
 ## What developers should know
 

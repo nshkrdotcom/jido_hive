@@ -89,6 +89,9 @@ Key endpoints:
 - `GET /api/rooms/:id`
 - `GET /api/rooms/:id/events`
 - `GET /api/rooms/:id/timeline`
+- `GET /api/rooms/:id/timeline?after=<cursor>`
+- `GET /api/rooms/:id/timeline?stream=true`
+- `GET /api/rooms/:id/timeline?stream=true&once=true`
 - `POST /api/rooms/:id/run`
 - `POST /api/rooms/:id/first_slice`
 - `GET /api/rooms/:id/publication_plan`
@@ -116,6 +119,22 @@ High-level flow:
 For UI and operator history views, the server also exposes a room timeline projection derived from persisted room events.
 
 Default workflow behavior is a structured round-robin collaboration pattern with proposal, critique, and resolution phases. The generalized substrate also supports additional workflow definitions, including chain-of-responsibility.
+
+## Room history surfaces
+
+The server exposes two different history views for a room:
+
+- `GET /api/rooms/:id/events`: the low-level persisted room event history
+- `GET /api/rooms/:id/timeline`: the UI-facing timeline projection derived from those events
+
+Use the timeline endpoint when you want:
+
+- human-readable room activity
+- incremental polling with `?after=<cursor>`
+- SSE delivery with `?stream=true`
+- one-shot backlog streaming with `?stream=true&once=true`
+
+Use the raw events endpoint when you want the underlying event records rather than the projection.
 
 ## Persistence
 
