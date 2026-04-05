@@ -7,6 +7,10 @@
 # General application configuration
 import Config
 
+config :mime, :types, %{
+  "text/event-stream" => ["event-stream"]
+}
+
 config :jido_hive_server,
   generators: [timestamp_type: :utc_datetime, binary_id: true],
   turn_wait_timeout_ms: 180_000,

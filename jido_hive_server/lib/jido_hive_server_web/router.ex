@@ -6,7 +6,7 @@ defmodule JidoHiveServerWeb.Router do
   end
 
   pipeline :api do
-    plug :accepts, ["json"]
+    plug :accepts, ["json", "event-stream"]
   end
 
   scope "/api", JidoHiveServerWeb do
@@ -22,6 +22,7 @@ defmodule JidoHiveServerWeb.Router do
     post "/rooms", RoomController, :create
     get "/rooms/:id", RoomController, :show
     get "/rooms/:id/events", RoomEventsController, :index
+    get "/rooms/:id/timeline", RoomTimelineController, :index
     post "/rooms/:id/run", RoomController, :run
     get "/rooms/:id/publication_plan", RoomController, :publication_plan
     get "/rooms/:id/publications", RoomController, :publication_runs

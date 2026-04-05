@@ -176,6 +176,7 @@ Key server APIs include:
 - `POST /api/rooms`
 - `GET /api/rooms/:id`
 - `GET /api/rooms/:id/events`
+- `GET /api/rooms/:id/timeline`
 - `POST /api/rooms/:id/run`
 - `GET /api/rooms/:id/publication_plan`
 - `POST /api/rooms/:id/publications`
@@ -184,13 +185,12 @@ Key server APIs include:
 
 The client exposes, when enabled, a local control API:
 
-- `GET /api/status`
-- `GET /api/snapshot`
-- `GET /api/jobs`
-- `GET /api/events`
-- `GET /api/events?stream=true`
-- `POST /api/execute`
-- `POST /api/shutdown`
+- `GET /api/runtime`
+- `GET /api/runtime/jobs`
+- `GET /api/runtime/events`
+- `GET /api/runtime/events?stream=true`
+- `POST /api/runtime/execute`
+- `POST /api/runtime/shutdown`
 
 That local surface is intended for diagnostics, local UIs, and operator tooling. It is not the orchestration authority.
 
@@ -338,7 +338,7 @@ Main persisted data:
 - target registrations
 - publication runs
 
-Local server startup applies migrations automatically through the repo-level [`bin/server`](bin/server) wrapper.
+Local server startup applies migrations automatically through the repo-level `bin/server` wrapper.
 
 ## Architecture notes for developers
 
@@ -358,8 +358,8 @@ That split is deliberate:
 
 If you are building a UI, prefer:
 
-- server `REST` for shared rooms, workflows, targets, and publications
-- client `REST + SSE` for local worker health, event streams, and manual execution
+- server `REST` for shared rooms, workflows, targets, publications, and room timelines
+- client `REST + SSE` for local worker runtime state, event streams, and manual execution
 
 ## Deployment
 

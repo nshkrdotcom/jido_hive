@@ -17,28 +17,16 @@ defmodule JidoHiveClient.Control.Router do
     |> super(opts)
   end
 
-  get "/api/status" do
-    snapshot = Runtime.snapshot(runtime(conn))
-
-    send_json(conn, 200, %{
-      client_id: snapshot.client_id,
-      connection_status: snapshot.connection_status,
-      current_job: snapshot.current_job,
-      metrics: snapshot.metrics,
-      updated_at: snapshot.updated_at
-    })
-  end
-
-  get "/api/snapshot" do
+  get "/api/runtime" do
     send_json(conn, 200, Runtime.snapshot(runtime(conn)))
   end
 
-  get "/api/jobs" do
+  get "/api/runtime/jobs" do
     snapshot = Runtime.snapshot(runtime(conn))
     send_json(conn, 200, %{recent_jobs: snapshot.recent_jobs})
   end
 
-  get "/api/events" do
+  get "/api/runtime/events" do
     conn = fetch_query_params(conn)
 
     if stream_request?(conn) do
@@ -53,7 +41,7 @@ defmodule JidoHiveClient.Control.Router do
     end
   end
 
-  post "/api/execute" do
+  post "/api/runtime/execute" do
     payload =
       case conn.body_params do
         %{"job" => %{} = job} -> job
@@ -70,7 +58,7 @@ defmodule JidoHiveClient.Control.Router do
     end
   end
 
-  post "/api/shutdown" do
+  post "/api/runtime/shutdown" do
     shutdown_fun =
       Keyword.get(conn.private[:jido_hive_control_opts], :shutdown_fun, &default_shutdown/0)
 

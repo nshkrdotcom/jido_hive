@@ -27,11 +27,20 @@ defmodule JidoHiveClient.Control.EventsControllerTest do
   test "GET /api/events returns runtime events as JSON", %{runtime: runtime} do
     :ok = Runtime.update_connection(runtime, :ready, %{})
 
-    conn = call_router(conn(:get, "/api/events"), runtime)
+    conn = call_router(conn(:get, "/api/runtime/events"), runtime)
     body = Jason.decode!(conn.resp_body)
 
     assert conn.status == 200
-    assert [%{"type" => "client.connection.changed"}] = body["events"]
+
+    assert [
+             %{
+               "event_id" => _event_id,
+               "schema_version" => "jido_hive/client_event.v1",
+               "timestamp" => _timestamp,
+               "type" => "client.connection.changed"
+             }
+           ] = body["events"]
+
     assert body["next_cursor"] == "client-event-1"
   end
 
@@ -40,7 +49,7 @@ defmodule JidoHiveClient.Control.EventsControllerTest do
     [first] = Runtime.recent_events(runtime)
     :ok = Runtime.update_connection(runtime, :waiting_socket, %{"reason" => "disconnect"})
 
-    conn = call_router(conn(:get, "/api/events?after=#{first.event_id}"), runtime)
+    conn = call_router(conn(:get, "/api/runtime/events?after=#{first.event_id}"), runtime)
     body = Jason.decode!(conn.resp_body)
 
     assert conn.status == 200
@@ -58,7 +67,7 @@ defmodule JidoHiveClient.Control.EventsControllerTest do
     :ok = Runtime.update_connection(runtime, :ready, %{})
 
     conn =
-      conn(:get, "/api/events?stream=true&once=true")
+      conn(:get, "/api/runtime/events?stream=true&once=true")
       |> put_req_header("accept", "text/event-stream")
       |> call_router(runtime)
 
@@ -66,6 +75,11 @@ defmodule JidoHiveClient.Control.EventsControllerTest do
     assert List.first(get_resp_header(conn, "content-type")) =~ "text/event-stream"
     assert conn.resp_body =~ "event: client.connection.changed"
     assert conn.resp_body =~ "\"type\":\"client.connection.changed\""
+  end
+
+  test "returns 404 for removed top-level runtime event routes", %{runtime: runtime} do
+    conn = call_router(conn(:get, "/api/events"), runtime)
+    assert conn.status == 404
   end
 
   defp call_router(conn, runtime, extra_opts \\ []) do

@@ -88,6 +88,7 @@ Key endpoints:
 - `POST /api/rooms`
 - `GET /api/rooms/:id`
 - `GET /api/rooms/:id/events`
+- `GET /api/rooms/:id/timeline`
 - `POST /api/rooms/:id/run`
 - `POST /api/rooms/:id/first_slice`
 - `GET /api/rooms/:id/publication_plan`
@@ -111,6 +112,8 @@ High-level flow:
 5. clients execute and return structured results
 6. the server reduces those results into room state
 7. the server can prepare and execute publications
+
+For UI and operator history views, the server also exposes a room timeline projection derived from persisted room events.
 
 Default workflow behavior is a structured round-robin collaboration pattern with proposal, critique, and resolution phases. The generalized substrate also supports additional workflow definitions, including chain-of-responsibility.
 

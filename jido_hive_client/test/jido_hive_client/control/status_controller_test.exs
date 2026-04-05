@@ -24,28 +24,51 @@ defmodule JidoHiveClient.Control.StatusControllerTest do
     [runtime: runtime]
   end
 
-  test "GET /api/status returns summarized runtime status", %{runtime: runtime} do
+  test "GET /api/runtime returns the canonical runtime snapshot", %{runtime: runtime} do
     :ok = Runtime.update_connection(runtime, :ready, %{"relay_topic" => "relay:workspace-1"})
 
-    conn = call_router(conn(:get, "/api/status"), runtime)
+    conn = call_router(conn(:get, "/api/runtime"), runtime)
     body = Jason.decode!(conn.resp_body)
 
     assert conn.status == 200
     assert body["client_id"] == "workspace-1:target-1"
+    assert body["identity"]["workspace_id"] == "workspace-1"
+    assert body["identity"]["target_id"] == "target-1"
     assert body["connection_status"] == "ready"
     assert body["metrics"]["jobs_completed"] == 0
   end
 
-  test "GET /api/snapshot returns the full runtime snapshot", %{runtime: runtime} do
-    conn = call_router(conn(:get, "/api/snapshot"), runtime)
-    body = Jason.decode!(conn.resp_body)
+  test "GET /api/runtime/jobs returns recent jobs", %{runtime: runtime} do
+    request = %{
+      "job" => %{
+        "job_id" => "job-1",
+        "room_id" => "room-1",
+        "participant_id" => "participant-1",
+        "participant_role" => "architect",
+        "target_id" => "target-1",
+        "capability_id" => "capability-1",
+        "session" => %{"provider" => "codex"},
+        "collaboration_envelope" => %{"turn" => %{"phase" => "proposal"}}
+      }
+    }
 
-    assert conn.status == 200
-    assert body["identity"]["workspace_id"] == "workspace-1"
-    assert body["identity"]["target_id"] == "target-1"
+    execute_conn =
+      conn(:post, "/api/runtime/execute", Jason.encode!(request))
+      |> put_req_header("content-type", "application/json")
+      |> call_router(runtime)
+
+    assert execute_conn.status == 200
+
+    jobs_conn = call_router(conn(:get, "/api/runtime/jobs"), runtime)
+    body = Jason.decode!(jobs_conn.resp_body)
+
+    assert jobs_conn.status == 200
+    assert [%{"job_id" => "job-1"}] = body["recent_jobs"]
   end
 
-  test "POST /api/execute runs a manual job through the configured executor", %{runtime: runtime} do
+  test "POST /api/runtime/execute runs a manual job through the configured executor", %{
+    runtime: runtime
+  } do
     request = %{
       "job" => %{
         "job_id" => "job-1",
@@ -60,7 +83,7 @@ defmodule JidoHiveClient.Control.StatusControllerTest do
     }
 
     conn =
-      conn(:post, "/api/execute", Jason.encode!(request))
+      conn(:post, "/api/runtime/execute", Jason.encode!(request))
       |> put_req_header("content-type", "application/json")
       |> call_router(runtime)
 
@@ -74,11 +97,11 @@ defmodule JidoHiveClient.Control.StatusControllerTest do
     assert [%{job_id: "job-1"}] = snapshot.recent_jobs
   end
 
-  test "POST /api/shutdown invokes the configured shutdown callback", %{runtime: runtime} do
+  test "POST /api/runtime/shutdown invokes the configured shutdown callback", %{runtime: runtime} do
     parent = self()
 
     conn =
-      conn(:post, "/api/shutdown", "")
+      conn(:post, "/api/runtime/shutdown", "")
       |> call_router(runtime,
         shutdown_fun: fn ->
           send(parent, :shutdown_requested)
@@ -93,9 +116,9 @@ defmodule JidoHiveClient.Control.StatusControllerTest do
     assert_receive :shutdown_requested
   end
 
-  test "returns 404 for room orchestration endpoints", %{runtime: runtime} do
+  test "returns 404 for removed top-level client control routes", %{runtime: runtime} do
     conn =
-      conn(:post, "/api/rooms", "{}")
+      conn(:get, "/api/status")
       |> put_req_header("content-type", "application/json")
       |> call_router(runtime)
 

@@ -84,14 +84,13 @@ It is not the orchestration authority.
 
 When enabled, the local client exposes:
 
-- `GET /api/status`
-- `GET /api/snapshot`
-- `GET /api/jobs`
-- `GET /api/events`
-- `GET /api/events?stream=true`
-- `GET /api/events?stream=true&once=true`
-- `POST /api/execute`
-- `POST /api/shutdown`
+- `GET /api/runtime`
+- `GET /api/runtime/jobs`
+- `GET /api/runtime/events`
+- `GET /api/runtime/events?stream=true`
+- `GET /api/runtime/events?stream=true&once=true`
+- `POST /api/runtime/execute`
+- `POST /api/runtime/shutdown`
 
 ### How to enable it
 
@@ -114,9 +113,9 @@ bin/client-worker --worker-index 1 --control-port 4101
 Then inspect it locally:
 
 ```bash
-curl http://127.0.0.1:4101/api/status
-curl http://127.0.0.1:4101/api/events
-curl -N -H 'Accept: text/event-stream' 'http://127.0.0.1:4101/api/events?stream=true'
+curl http://127.0.0.1:4101/api/runtime
+curl http://127.0.0.1:4101/api/runtime/events
+curl -N -H 'Accept: text/event-stream' 'http://127.0.0.1:4101/api/runtime/events?stream=true'
 ```
 
 ## Raw CLI usage
