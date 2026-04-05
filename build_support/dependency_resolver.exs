@@ -34,7 +34,7 @@ defmodule JidoHive.Build.DependencyResolver do
     resolve(
       :jido_harness,
       ["../jido_harness"],
-      [github: "nshkrdotcom/jido_harness", branch: "main"],
+      [github: "nshkrdotcom/jido_harness", branch: "bridge/jido_os_compose"],
       opts
     )
   end
@@ -83,7 +83,7 @@ defmodule JidoHive.Build.DependencyResolver do
     resolve(
       :jido_integration_v2,
       ["../jido_integration/core/platform"],
-      [git: @jido_integration_repo, subdir: "core/platform"],
+      [git: @jido_integration_repo, branch: "bridge/jido_os_compose", subdir: "core/platform"],
       opts
     )
   end
@@ -92,7 +92,11 @@ defmodule JidoHive.Build.DependencyResolver do
     resolve(
       :jido_integration_v2_runtime_asm_bridge,
       ["../jido_integration/core/runtime_asm_bridge"],
-      [git: @jido_integration_repo, subdir: "core/runtime_asm_bridge"],
+      [
+        git: @jido_integration_repo,
+        branch: "bridge/jido_os_compose",
+        subdir: "core/runtime_asm_bridge"
+      ],
       opts
     )
   end
@@ -101,7 +105,11 @@ defmodule JidoHive.Build.DependencyResolver do
     resolve(
       :jido_integration_v2_codex_cli,
       ["../jido_integration/connectors/codex_cli"],
-      [git: @jido_integration_repo, subdir: "connectors/codex_cli"],
+      [
+        git: @jido_integration_repo,
+        branch: "bridge/jido_os_compose",
+        subdir: "connectors/codex_cli"
+      ],
       opts
     )
   end
@@ -110,7 +118,11 @@ defmodule JidoHive.Build.DependencyResolver do
     resolve(
       :jido_integration_v2_github,
       ["../jido_integration/connectors/github"],
-      [git: @jido_integration_repo, subdir: "connectors/github"],
+      [
+        git: @jido_integration_repo,
+        branch: "bridge/jido_os_compose",
+        subdir: "connectors/github"
+      ],
       opts
     )
   end
@@ -119,7 +131,11 @@ defmodule JidoHive.Build.DependencyResolver do
     resolve(
       :jido_integration_v2_notion,
       ["../jido_integration/connectors/notion"],
-      [git: @jido_integration_repo, subdir: "connectors/notion"],
+      [
+        git: @jido_integration_repo,
+        branch: "bridge/jido_os_compose",
+        subdir: "connectors/notion"
+      ],
       opts
     )
   end
@@ -128,7 +144,11 @@ defmodule JidoHive.Build.DependencyResolver do
     resolve(
       :jido_integration_v2_boundary_bridge,
       ["../jido_integration/bridges/boundary_bridge"],
-      [git: @jido_integration_repo, subdir: "bridges/boundary_bridge"],
+      [
+        git: @jido_integration_repo,
+        branch: "bridge/jido_os_compose",
+        subdir: "bridges/boundary_bridge"
+      ],
       opts
     )
   end

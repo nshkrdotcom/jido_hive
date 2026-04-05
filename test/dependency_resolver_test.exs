@@ -32,6 +32,18 @@ defmodule JidoHive.Build.DependencyResolverTest do
 
     assert integration_opts[:git] == "https://github.com/agentjido/jido_integration.git"
     assert integration_opts[:subdir] == "core/platform"
+    assert integration_opts[:branch] == "bridge/jido_os_compose"
+
+    assert {:jido_harness, harness_opts} = apply(isolated_resolver, :jido_harness, [])
+    assert harness_opts[:github] == "nshkrdotcom/jido_harness"
+    assert harness_opts[:branch] == "bridge/jido_os_compose"
+
+    assert {:jido_integration_v2_runtime_asm_bridge, asm_bridge_opts} =
+             apply(isolated_resolver, :jido_integration_runtime_asm_bridge, [])
+
+    assert asm_bridge_opts[:git] == "https://github.com/agentjido/jido_integration.git"
+    assert asm_bridge_opts[:subdir] == "core/runtime_asm_bridge"
+    assert asm_bridge_opts[:branch] == "bridge/jido_os_compose"
 
     assert {:jido_vfs, vfs_opts} = apply(isolated_resolver, :jido_vfs, [])
     assert vfs_opts[:github] == "nshkrdotcom/jido_vfs"
