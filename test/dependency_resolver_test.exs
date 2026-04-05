@@ -32,5 +32,9 @@ defmodule JidoHive.Build.DependencyResolverTest do
 
     assert integration_opts[:git] == "https://github.com/agentjido/jido_integration.git"
     assert integration_opts[:subdir] == "core/platform"
+
+    assert {:jido_vfs, vfs_opts} = apply(isolated_resolver, :jido_vfs, [])
+    assert vfs_opts[:github] == "nshkrdotcom/jido_vfs"
+    assert vfs_opts[:branch] == "main"
   end
 end

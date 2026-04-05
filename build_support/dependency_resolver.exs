@@ -61,7 +61,7 @@ defmodule JidoHive.Build.DependencyResolver do
     resolve(
       :jido_vfs,
       ["../jido_vfs"],
-      [github: "agentjido/jido_vfs", branch: "main"],
+      [github: "nshkrdotcom/jido_vfs", branch: "main"],
       opts
     )
   end
