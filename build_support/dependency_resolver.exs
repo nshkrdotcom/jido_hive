@@ -74,7 +74,7 @@ defmodule JidoHive.Build.DependencyResolver do
       [],
       [
         git: @jido_integration_repo,
-        branch: "feat/universal-contract-standards",
+        branch: "bridge/jido_os_compose",
         subdir: "core/platform"
       ],
       opts
@@ -87,7 +87,7 @@ defmodule JidoHive.Build.DependencyResolver do
       [],
       [
         git: @jido_integration_repo,
-        branch: "feat/universal-contract-standards",
+        branch: "bridge/jido_os_compose",
         subdir: "core/runtime_asm_bridge"
       ],
       opts
@@ -100,7 +100,7 @@ defmodule JidoHive.Build.DependencyResolver do
       [],
       [
         git: @jido_integration_repo,
-        branch: "feat/universal-contract-standards",
+        branch: "bridge/jido_os_compose",
         subdir: "connectors/codex_cli"
       ],
       opts
@@ -113,7 +113,7 @@ defmodule JidoHive.Build.DependencyResolver do
       [],
       [
         git: @jido_integration_repo,
-        branch: "feat/universal-contract-standards",
+        branch: "bridge/jido_os_compose",
         subdir: "connectors/github"
       ],
       opts
@@ -126,7 +126,7 @@ defmodule JidoHive.Build.DependencyResolver do
       [],
       [
         git: @jido_integration_repo,
-        branch: "feat/universal-contract-standards",
+        branch: "bridge/jido_os_compose",
         subdir: "connectors/notion"
       ],
       opts
