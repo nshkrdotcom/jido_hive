@@ -36,17 +36,6 @@ runtime envelope used by the shared stack:
 - `execution_environment`
 - `provider_options`
 
-For boundary-capable session workers, the server also consumes the shared
-lower-boundary seam instead of product-local glue:
-
-- target projection advertises `extensions["boundary"]` through
-  `Jido.Integration.V2.TargetDescriptor`
-- the server uses `Jido.BoundaryBridge` when a retained room target needs an
-  isolated attach surface
-- room snapshots retain `boundary_session_id`, the normalized descriptor, and
-  reopen metadata per target so later turns can reuse the same boundary instead
-  of allocating a fresh one blindly
-
 Those fields remain optional; when absent, Hive keeps today’s default local
 execution behavior.
 
@@ -57,10 +46,6 @@ The server uses SQLite through Ecto for:
 - durable room snapshots
 - target registrations
 - publication run history
-
-Room snapshots now also persist retained boundary session state for any
-bridge-backed target that is expected to reuse the same isolated boundary
-across turns.
 
 The repo-level `bin/server` wrapper runs `mix ecto.create` and `mix ecto.migrate`
 before starting Phoenix.

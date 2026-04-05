@@ -9,7 +9,6 @@ defmodule JidoHiveServer.IntegrationsBootstrap do
   alias Jido.Integration.V2.ControlPlane.Stores
   alias Jido.Integration.V2.RuntimeAsmBridge.HarnessDriver
   alias Jido.Integration.V2.TargetDescriptor
-  alias JidoHiveServer.BoundaryRuntime
 
   @connectors [CodexCli, GitHub, Notion]
 
@@ -108,15 +107,6 @@ defmodule JidoHiveServer.IntegrationsBootstrap do
   end
 
   defp session_target_descriptor(target) do
-    extensions =
-      %{
-        "runtime" => %{
-          "driver" => target.runtime_driver,
-          "provider" => target.provider
-        }
-      }
-      |> maybe_put_boundary_extension(target)
-
     TargetDescriptor.new!(%{
       target_id: target.target_id,
       capability_id: target.capability_id,
@@ -134,14 +124,12 @@ defmodule JidoHiveServer.IntegrationsBootstrap do
         region: "local",
         workspace_root: target.workspace_root
       },
-      extensions: extensions
+      extensions: %{
+        "runtime" => %{
+          "driver" => target.runtime_driver,
+          "provider" => target.provider
+        }
+      }
     })
-  end
-
-  defp maybe_put_boundary_extension(extensions, target) do
-    case BoundaryRuntime.boundary_capability(target) do
-      nil -> extensions
-      capability -> Map.put(extensions, "boundary", capability)
-    end
   end
 end

@@ -16,7 +16,6 @@ defmodule JidoHiveServer.Application do
       {Registry, keys: :unique, name: JidoHiveServer.Collaboration.Registry},
       {DynamicSupervisor,
        strategy: :one_for_one, name: JidoHiveServer.Collaboration.RoomSupervisor},
-      JidoHiveServer.RuntimeBootstrap,
       JidoHiveServer.IntegrationsBootstrap,
       JidoHiveServer.RemoteExec,
       JidoHiveServerWeb.Endpoint

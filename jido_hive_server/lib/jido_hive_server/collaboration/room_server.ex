@@ -59,7 +59,6 @@ defmodule JidoHiveServer.Collaboration.RoomServer do
                 {:error, _} -> %{}
               end
             end),
-          boundary_sessions: Keyword.get(opts, :boundary_sessions, %{}),
           status: "idle",
           phase: "idle",
           round: 0,

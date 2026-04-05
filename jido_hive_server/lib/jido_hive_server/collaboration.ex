@@ -1,17 +1,13 @@
 defmodule JidoHiveServer.Collaboration do
   @moduledoc false
 
-  alias JidoHiveServer.BoundaryRuntime
   alias JidoHiveServer.Collaboration.{Envelope, ExecutionPlan, Referee}
   alias JidoHiveServer.Collaboration.RoomServer
   alias JidoHiveServer.Persistence
   alias JidoHiveServer.Publications
   alias JidoHiveServer.RemoteExec
-  alias JidoHiveServer.Runtime
 
   def create_room(attrs) when is_map(attrs) do
-    :ok = Runtime.ensure_instance()
-
     room_id = Map.get(attrs, :room_id) || Map.get(attrs, "room_id")
     brief = Map.get(attrs, :brief) || Map.get(attrs, "brief")
     rules = Map.get(attrs, :rules) || Map.get(attrs, "rules") || []
@@ -33,7 +29,6 @@ defmodule JidoHiveServer.Collaboration do
            disputes: [],
            current_turn: %{},
            execution_plan: execution_plan,
-           boundary_sessions: %{},
            status: "idle",
            phase: "idle",
            round: 0,
@@ -293,16 +288,22 @@ defmodule JidoHiveServer.Collaboration do
   end
 
   defp session_request(target, snapshot, room_id, job_id, participant_id) do
-    BoundaryRuntime.prepare_session(target, Map.get(snapshot, :boundary_sessions, %{}),
-      target_id: target.target_id,
-      room_id: room_id,
-      job_id: job_id,
-      participant_id: participant_id
-    )
-    |> case do
-      {:ok, prepared} -> {:ok, prepared.session}
-      {:error, _reason} = error -> error
-    end
+    _ = snapshot
+    _ = room_id
+    _ = job_id
+    _ = participant_id
+
+    {:ok,
+     %{
+       "runtime_driver" => target.runtime_driver || "asm",
+       "provider" => target.provider || "codex",
+       "workspace_root" => target.workspace_root,
+       "execution_surface" => target.execution_surface,
+       "execution_environment" => target.execution_environment,
+       "provider_options" => target.provider_options
+     }
+     |> Enum.reject(fn {_key, value} -> is_nil(value) end)
+     |> Map.new()}
   end
 
   defp wait_for_turn(room_id, job_id, timeout_ms) do

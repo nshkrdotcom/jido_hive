@@ -15,7 +15,6 @@ defmodule JidoHiveServer.Collaboration.RoomAgent do
       disputes: [type: {:list, :map}, default: []],
       current_turn: [type: :map, default: %{}],
       execution_plan: [type: :map, default: %{}],
-      boundary_sessions: [type: :map, default: %{}],
       status: [type: :string, default: "idle"],
       phase: [type: :string, default: "idle"],
       round: [type: :integer, default: 0],
