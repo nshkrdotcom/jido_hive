@@ -11,38 +11,48 @@
 
 # jido_hive
 
-`jido_hive` is a Phoenix coordination server plus local ASM-backed worker
-clients.
+`jido_hive` is a collaborative AI runtime made of:
 
-The repo now carries the same nested execution-contract vocabulary used by the
-shared ASM/core lane:
+- a Phoenix server that coordinates rooms, workers, workflows, and publications
+- local Elixir clients that connect outbound, execute turns, and report results
+- a shell toolkit for operators who want to run demos, inspect state, and publish outputs
 
-- `execution_surface`
-- `execution_environment`
+The default experience is: start the server, start one or more workers, create a room, and let the server orchestrate a structured multi-turn workflow across those workers.
 
-Those fields remain optional for the default local path, but they are now the
-future-facing contract for alternate placement without another Hive wire-format
-pass later.
+## Who this is for
 
-This repo has two Mix apps:
+- end users and operators who want to run local or hosted collaborative AI workflows
+- developers who want a generalized substrate for orchestration, local execution, and UI integration
+- integrators who want a server-controlled collaboration system with pluggable workflows and local worker surfaces
 
-- `jido_hive_server`: the Phoenix API and relay websocket
-- `jido_hive_client`: the local executor used by the client wrappers
+## What the system does
 
-The current demo is a generalized multi-worker round-robin slice:
+Out of the box, `jido_hive` gives you:
 
-- 1 to 39 connected workers
-- the coordinator still chooses the turn role for each job
-- the room locks the selected worker set when the room is created
-- the default turn budget is `participant_count * 3`
+- a server-side control plane over `REST`
+- a live worker relay over Phoenix WebSockets
+- durable room persistence in SQLite
+- workflow-aware room execution
+- local worker execution through `Jido.Harness -> asm`
+- optional GitHub and Notion publication flows
+- a local client control surface over `REST + SSE` for worker visibility and UI work
 
-That means:
+The system is coordinator-driven. Workers do not negotiate among themselves. The server owns room state, workflow sequencing, dispatch, result intake, and publication planning.
 
-- 1 worker -> 3 planned turns
-- 2 workers -> 6 planned turns
-- 39 workers -> 117 planned turns
+## Repository layout
 
-## Fastest Local Run
+This repo contains two Mix apps:
+
+- [`jido_hive_server`](jido_hive_server/README.md): Phoenix API, relay, workflow orchestration, persistence, and publication execution
+- [`jido_hive_client`](jido_hive_client/README.md): local worker runtime, relay client, execution wrapper, and local control API
+
+Additional user-facing docs:
+
+- [Setup Toolkit](setup/README.md)
+- [Architecture Overview](docs/architecture.md)
+- [Developer Guide: Multi-Agent Round Robin](docs/developer/multi_agent_round_robin.md)
+
+## Fastest local onboarding
 
 From a fresh clone:
 
@@ -52,7 +62,7 @@ cd jido_hive
 bin/setup
 ```
 
-Then open three terminals.
+Open three terminals.
 
 Terminal 1:
 
@@ -72,12 +82,16 @@ Terminal 3:
 bin/client-worker --worker-index 2
 ```
 
-That is the quickest way to see the coordinator distribute work across more than
-one worker with a locked round-robin plan.
+What you should see:
 
-## Two-Terminal Menus
+- the server starts locally and applies any pending migrations
+- both workers connect and register targets
+- the live demo creates a room and runs a workflow
+- workers print execution logs as they receive `job.start` and publish `job.result`
 
-For the main operator flow, use:
+## Recommended operator flow
+
+For the main user flow, use the two menu-driven tools:
 
 Terminal 1:
 
@@ -91,110 +105,110 @@ Terminal 2:
 bin/hive-clients
 ```
 
-For production:
+Typical loop:
 
-Terminal 1:
+1. In `bin/hive-clients`, start `2` workers or choose a custom worker count.
+2. In `bin/hive-control`, create and run a room.
+3. Watch worker output for prompt previews, execution status, and result publication.
+
+Production equivalents:
 
 ```bash
 bin/hive-control --prod
-```
-
-Terminal 2:
-
-```bash
 bin/hive-clients --prod
 ```
 
-Recommended two-terminal loop:
+## Core concepts
 
-1. In terminal 2, run `bin/hive-clients` and choose `2` for two workers, or
-   choose `3` for a custom worker count.
-2. In terminal 1, run `bin/hive-control` and choose `3`.
-3. Watch terminal 2 for `system prompt preview`, `user prompt preview`,
-   `response preview`, `completed`, and `result published` lines.
+### Server
 
-`bin/hive-clients` can launch 1, 2, or a custom 1..39 worker fan-out in one
-terminal. If the room is created from all connected workers, the locked plan
-budget defaults to `worker_count * 3`.
+The server owns:
 
-## What The Demo Does
+- room creation and execution
+- workflow definitions and workflow selection
+- live relay topics and worker dispatch
+- result intake and state reduction
+- durable snapshots and event history
+- publication planning and execution
 
-The current slice is intentionally simple but now generalized:
+See the server app guide: [`jido_hive_server/README.md`](jido_hive_server/README.md)
 
-- workers connect outbound and register relay targets
-- `setup/hive create-room` or `live-demo` locks the selected worker set
-- the coordinator schedules workers in round-robin order
-- the coordinator assigns the current stage role:
-  - `proposer`
-  - `critic`
-  - `resolver`
-- workers execute locally through `Jido.Harness -> asm -> ASM`
-- the server persists room state, disputes, execution metadata, and publication
-  plans in SQLite
+### Client
 
-This is still a coordinator-driven demo, not a peer-to-peer multi-agent system.
-The generalization is about distributed workload across generic workers, not
-about removing the coordinator.
+Each client:
 
-## Local Commands
+- connects outbound to the server relay
+- registers one execution target
+- waits for work
+- executes turns locally
+- returns structured results
+- optionally exposes a local control API for status, events, and manual execution
 
-These are the main repo-level commands:
+See the client app guide: [`jido_hive_client/README.md`](jido_hive_client/README.md)
+
+### Rooms and workflows
+
+A room is the unit of collaborative execution.
+
+A workflow defines the ordered phases that run inside that room. The default workflow is a round-robin proposal, critique, and resolution flow. The generalized substrate also supports additional workflow definitions such as chain-of-responsibility.
+
+### Targets and workers
+
+A worker advertises a target to the server. The server dispatches room turns to registered targets over the WebSocket relay.
+
+### Publications
+
+After a room completes, the server can prepare and execute publication steps such as GitHub and Notion writes through configured connector flows.
+
+## What is exposed
+
+### Server surfaces
+
+The server exposes:
+
+- `REST` API at `/api`
+- Phoenix WebSocket relay at `/socket/websocket`
+
+Key server APIs include:
+
+- `GET /api/targets`
+- `GET /api/workflows`
+- `POST /api/rooms`
+- `GET /api/rooms/:id`
+- `GET /api/rooms/:id/events`
+- `POST /api/rooms/:id/run`
+- `GET /api/rooms/:id/publication_plan`
+- `POST /api/rooms/:id/publications`
+
+### Client surfaces
+
+The client exposes, when enabled, a local control API:
+
+- `GET /api/status`
+- `GET /api/snapshot`
+- `GET /api/jobs`
+- `GET /api/events`
+- `GET /api/events?stream=true`
+- `POST /api/execute`
+- `POST /api/shutdown`
+
+That local surface is intended for diagnostics, local UIs, and operator tooling. It is not the orchestration authority.
+
+## Common local commands
+
+Repo-level commands:
 
 ```bash
 bin/setup
+bin/server
+bin/live-demo-server
 bin/hive-control
 bin/hive-clients
 bin/client-worker --worker-index 1
 setup/hive help
 ```
 
-Legacy wrappers still exist:
-
-```bash
-bin/client-architect
-bin/client-skeptic
-```
-
-They remain available for compatibility, but the generic worker wrappers and the
-menu flow are now the primary path.
-
-## Production
-
-The deployed public server is:
-
-- HTTPS: `https://jido-hive-server-test.app.nsai.online`
-- API base: `https://jido-hive-server-test.app.nsai.online/api`
-- WebSocket relay: `wss://jido-hive-server-test.app.nsai.online/socket/websocket`
-
-Workers alone do not start LLM activity. They only connect, register targets,
-and wait for `job.start`.
-
-To exercise the production demo:
-
-```bash
-bin/hive-clients --prod
-bin/hive-control --prod
-```
-
-Or manually:
-
-```bash
-bin/client-worker --prod --worker-index 1
-bin/client-worker --prod --worker-index 2
-setup/hive --prod live-demo --participant-count 2
-```
-
-Useful production checks:
-
-```bash
-setup/hive --prod doctor
-setup/hive --prod targets
-setup/hive --prod server-info
-```
-
-## Manual Room Control
-
-The setup toolkit is the main shell surface for manual control:
+Useful manual room control:
 
 ```bash
 setup/hive wait-server
@@ -205,85 +219,42 @@ setup/hive publication-plan room-manual-1
 setup/hive publication-runs room-manual-1
 ```
 
-Important behavior:
+## Production endpoints
 
-- `doctor` verifies the deployed root demo contract in addition to API
-  reachability
-- `server-info` is the scripted replacement for ad hoc `curl` checks against the
-  root JSON status payload
-- `create-room` locks either all currently connected compatible workers or the
-  requested `--participant-count` subset
-- `run-room` uses the locked execution plan by default when `--max-turns` is
-  omitted
-- `live-demo` waits for workers, creates or reuses the room, runs it, and prints
-  the room snapshot plus publication plan
+Current deployed server:
 
-The toolkit is documented in [setup/README.md](setup/README.md).
+- HTTPS: `https://jido-hive-server-test.app.nsai.online`
+- API base: `https://jido-hive-server-test.app.nsai.online/api`
+- WebSocket relay: `wss://jido-hive-server-test.app.nsai.online/socket/websocket`
 
-## Drop-Off Behavior
-
-The room budget is logical, not just a count of raw attempts.
-
-If a room starts with 10 workers, the default planned budget is 30 completed
-turns. If one worker drops after the room starts:
-
-- the room preserves the 30-turn plan
-- the abandoned worker is excluded for the rest of that room
-- the remaining workers continue absorbing the rest of the round robin
-
-Late results from abandoned turns are ignored.
-
-## Documentation
-
-High-level docs:
-
-- [Architecture](docs/architecture.md)
-- [Developer Guide: Multi-Agent Round Robin](docs/developer/multi_agent_round_robin.md)
-- [Setup Toolkit](setup/README.md)
-
-The generated server docs now expose a dedicated Developer Guides section through
-`jido_hive_server/mix.exs`.
-
-## Deploy And Logs
-
-Deployments use `coolify_ex 0.4.0` from inside `jido_hive_server`, with the repo-root
-manifest at `.coolify_ex.exs`. Those tasks now run in the dedicated
-`MIX_ENV=coolify` lane so deploy-only tooling stays out of the normal
-dev/test/docs quality floor.
-
-From the repo root:
+Typical production usage:
 
 ```bash
-export COOLIFY_BASE_URL="https://coolify.example.com"
-export COOLIFY_TOKEN="..."
-export COOLIFY_APP_UUID="..."
-scripts/deploy_coolify.sh
+bin/hive-clients --prod
+bin/hive-control --prod
 ```
 
-Useful deploy variants:
+Or explicitly:
 
 ```bash
-scripts/deploy_coolify.sh --no-push
-scripts/deploy_coolify.sh --project server
-scripts/deploy_coolify.sh --force --instant
-scripts/deploy_coolify.sh --skip-verify
+bin/client-worker --prod --worker-index 1
+bin/client-worker --prod --worker-index 2
+setup/hive --prod live-demo --participant-count 2
 ```
 
-Useful nested-app commands:
+Useful checks:
 
 ```bash
-cd jido_hive_server
-MIX_ENV=coolify mix coolify.latest --project server
-MIX_ENV=coolify mix coolify.status --project server --latest
-MIX_ENV=coolify mix coolify.logs --project server --latest --tail 200
-MIX_ENV=coolify mix coolify.app_logs --project server --lines 200 --follow
+setup/hive --prod doctor
+setup/hive --prod targets
+setup/hive --prod server-info
 ```
 
-## GitHub And Notion Publishing
+## Publishing to GitHub and Notion
 
-The setup toolkit also wraps the live connector flow.
+The setup toolkit wraps connector installation and publication execution.
 
-Start and complete installs:
+Examples:
 
 ```bash
 setup/hive start-install github --subject octocat --scope repo
@@ -292,14 +263,14 @@ setup/hive start-install notion --subject notion-workspace
 setup/hive complete-install <install-id> --subject notion-workspace
 ```
 
-List current connector connections:
+List live connections:
 
 ```bash
 setup/hive connections github
 setup/hive connections notion
 ```
 
-Execute a publication run:
+Execute publications:
 
 ```bash
 setup/hive publish room-manual-1 \
@@ -310,32 +281,96 @@ setup/hive publish room-manual-1 \
   --notion-title-property Name
 ```
 
-If you already have live connector connections, `bin/live-demo-server` can also
-publish automatically when these env vars are set:
+## Persistence and migrations
 
-- `JIDO_HIVE_GITHUB_CONNECTION`
-- `JIDO_HIVE_GITHUB_REPO`
-- `JIDO_HIVE_NOTION_CONNECTION`
-- `JIDO_HIVE_NOTION_DATA_SOURCE_ID`
-- `JIDO_HIVE_NOTION_TITLE_PROPERTY`
-- `JIDO_HIVE_AUTO_PUBLISH=1`
+The server uses SQLite through Ecto for durable state.
 
-## Useful Client Env Vars
+Main persisted data:
 
-The repo-level `bin/client` wrapper accepts these useful env vars:
+- room snapshots
+- room events
+- target registrations
+- publication runs
 
-- `JIDO_HIVE_URL`
-- `JIDO_HIVE_WORKSPACE_ID`
-- `JIDO_HIVE_RELAY_TOPIC`
-- `JIDO_HIVE_WORKSPACE_ROOT`
-- `PARTICIPANT_ROLE`
-- `PARTICIPANT_ID`
-- `TARGET_ID`
-- `USER_ID`
-- `CAPABILITY_ID`
-- `JIDO_HIVE_PROVIDER`
-- `JIDO_HIVE_MODEL`
-- `JIDO_HIVE_REASONING_EFFORT`
-- `JIDO_HIVE_TIMEOUT_MS`
-- `JIDO_HIVE_CLI_PATH`
-- `JIDO_HIVE_TURN_TIMEOUT_MS`
+Local server startup applies migrations automatically through the repo-level [`bin/server`](bin/server) wrapper.
+
+## Architecture notes for developers
+
+The current generalized substrate is organized around:
+
+- server control plane over `REST`
+- live dispatch plane over Phoenix channels
+- server internals modeled as `commands -> events -> snapshot`
+- workflow registry and workflow-specific execution logic
+- client runtime state and event log
+- client local `REST + SSE` surface for node-local introspection
+
+That split is deliberate:
+
+- shared multi-user state belongs on the server
+- local worker state belongs on the client
+
+If you are building a UI, prefer:
+
+- server `REST` for shared rooms, workflows, targets, and publications
+- client `REST + SSE` for local worker health, event streams, and manual execution
+
+## Deployment
+
+Deployments use `coolify_ex` from inside `jido_hive_server`.
+
+From the repo root:
+
+```bash
+export COOLIFY_BASE_URL="https://coolify.example.com"
+export COOLIFY_TOKEN="..."
+export COOLIFY_APP_UUID="..."
+scripts/deploy_coolify.sh
+```
+
+Useful follow-up commands:
+
+```bash
+cd jido_hive_server
+MIX_ENV=coolify mix coolify.latest --project server
+MIX_ENV=coolify mix coolify.status --project server --latest
+MIX_ENV=coolify mix coolify.logs --project server --latest --tail 200
+MIX_ENV=coolify mix coolify.app_logs --project server --lines 200 --follow
+```
+
+## Development and quality
+
+From the repo root:
+
+```bash
+mix ci
+```
+
+That runs the repo-wide quality flow:
+
+1. `mix deps.get`
+2. `mix format --check-formatted`
+3. `mix compile`
+4. `mix test`
+5. `mix credo --strict`
+6. `mix dialyzer`
+7. `mix docs`
+
+Useful monorepo shortcuts:
+
+```bash
+mix mr.deps.get
+mix mr.format
+mix mr.compile
+mix mr.test
+mix mr.credo
+mix mr.dialyzer
+mix mr.docs
+```
+
+## Where to go next
+
+- Want to operate the system: read [setup/README.md](setup/README.md)
+- Want to understand the server: read [`jido_hive_server/README.md`](jido_hive_server/README.md)
+- Want to understand the worker/client side: read [`jido_hive_client/README.md`](jido_hive_client/README.md)
+- Want architecture and deeper developer context: read [docs/architecture.md](docs/architecture.md)

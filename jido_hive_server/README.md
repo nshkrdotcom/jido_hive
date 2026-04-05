@@ -1,63 +1,190 @@
 # JidoHiveServer
 
-`jido_hive_server` is the Phoenix coordination server for `jido_hive`.
+`jido_hive_server` is the Phoenix server that runs the shared side of `jido_hive`.
 
-It owns rooms, referee planning, the shared collaboration envelope, durable room
-snapshots, relay target registration, and direct GitHub/Notion publication
-execution through `Jido.Integration.V2`.
+It is responsible for:
 
-## What It Exposes
+- exposing the public `REST` API
+- accepting worker connections over Phoenix WebSockets
+- registering targets
+- creating and running rooms
+- applying workflow logic
+- persisting room snapshots and room events
+- planning and executing publications
 
-- websocket relay at `/socket`
-- room API:
-  - `POST /api/rooms`
-  - `GET /api/rooms/:id`
-  - `POST /api/rooms/:id/run`
-  - `GET /api/rooms/:id/publication_plan`
-  - `POST /api/rooms/:id/publications`
-  - `GET /api/rooms/:id/publications`
-- connector operator API:
-  - `GET /api/connectors/:connector_id/connections`
-  - `POST /api/connectors/:connector_id/installs`
-  - `GET /api/connectors/installs/:install_id`
-  - `POST /api/connectors/installs/:install_id/complete`
-- target discovery:
-  - `GET /api/targets`
+If you are new to the repo, start with the root guide first: [../README.md](../README.md)
 
-`POST /api/rooms/:id/run` accepts:
+## What end users should know
 
-- `max_turns`
-- `turn_timeout_ms`
+From an operator point of view, the server is the source of truth.
 
-Target registrations and dispatched room turns now preserve the same nested
-runtime envelope used by the shared stack:
+If you want to:
 
-- `execution_surface`
-- `execution_environment`
-- `provider_options`
+- create rooms
+- run workflows
+- inspect room state
+- inspect target availability
+- inspect room history
+- publish completed outputs
 
-Those fields remain optional; when absent, Hive keeps today’s default local
-execution behavior.
+you are using the server app.
+
+Workers connect to the server, but workers do not own the collaboration lifecycle.
+
+## Quick local start
+
+From the repo root, the recommended startup path is:
+
+```bash
+bin/server
+```
+
+That wrapper runs:
+
+- `mix ecto.create`
+- `mix ecto.migrate`
+- `mix phx.server`
+
+You can also run directly inside this app:
+
+```bash
+cd jido_hive_server
+mix deps.get
+mix ecto.create
+mix ecto.migrate
+mix phx.server
+```
+
+Default local endpoint:
+
+- `http://127.0.0.1:4000`
+
+## What the server exposes
+
+### WebSocket relay
+
+Relay endpoint:
+
+- `ws://127.0.0.1:4000/socket/websocket`
+
+This is used by worker clients to:
+
+- join a relay topic
+- register connections and targets
+- receive `job.start`
+- send back `job.result`
+
+### REST API
+
+Base local API:
+
+- `http://127.0.0.1:4000/api`
+
+Key endpoints:
+
+- `GET /api/targets`
+- `GET /api/workflows`
+- `GET /api/workflows/*id`
+- `POST /api/rooms`
+- `GET /api/rooms/:id`
+- `GET /api/rooms/:id/events`
+- `POST /api/rooms/:id/run`
+- `POST /api/rooms/:id/first_slice`
+- `GET /api/rooms/:id/publication_plan`
+- `GET /api/rooms/:id/publications`
+- `POST /api/rooms/:id/publications`
+- `GET /api/connectors/:connector_id/connections`
+- `POST /api/connectors/:connector_id/installs`
+- `GET /api/connectors/installs/:install_id`
+- `POST /api/connectors/installs/:install_id/complete`
+
+## Room execution model
+
+The server runs collaboration through rooms and workflows.
+
+High-level flow:
+
+1. workers connect and register targets
+2. a room is created
+3. the server chooses a workflow
+4. the server dispatches turns to targets
+5. clients execute and return structured results
+6. the server reduces those results into room state
+7. the server can prepare and execute publications
+
+Default workflow behavior is a structured round-robin collaboration pattern with proposal, critique, and resolution phases. The generalized substrate also supports additional workflow definitions, including chain-of-responsibility.
 
 ## Persistence
 
-The server uses SQLite through Ecto for:
+The server uses SQLite through Ecto.
 
-- durable room snapshots
+Persisted server data includes:
+
+- room snapshots
+- room events
 - target registrations
-- publication run history
+- publication runs
 
-The repo-level `bin/server` wrapper runs `mix ecto.create` and `mix ecto.migrate`
-before starting Phoenix.
+This is what lets the server act as the durable shared state holder instead of treating the relay as an ephemeral pass-through.
 
-For the fastest end-to-end local run, use `bin/live-demo-server` from the repo
-root with `bin/client-architect` and `bin/client-skeptic` in two more terminals.
+## Publications
 
-For the guided operator flow around installs, connections, and publication
-execution, use the root setup toolkit in
-[../setup/README.md](../setup/README.md).
+The server owns publication planning and execution.
 
-## Dev
+That includes:
+
+- turning final room state into publication payloads
+- using configured connector installations
+- recording publication run history
+
+For operator-oriented publication commands, use the repo-level toolkit:
+
+- [../setup/README.md](../setup/README.md)
+
+## What developers should know
+
+The server is not just a Phoenix transport shell. The generalized refactor moved the collaboration model toward:
+
+- explicit room command and room event structures
+- pure event reduction into snapshots
+- workflow registry and workflow modules
+- thinner relay and controller boundaries
+
+Design split:
+
+- controllers and channels are boundaries
+- orchestration lives in collaboration and persistence modules
+- workflows define the ordered execution behavior
+
+That structure is what future UI and workflow work should build on.
+
+## Production and deployment
+
+Current deployed base:
+
+- `https://jido-hive-server-test.app.nsai.online`
+
+Deployments run through `coolify_ex` in `MIX_ENV=coolify`.
+
+Typical deploy path from repo root:
+
+```bash
+scripts/deploy_coolify.sh
+```
+
+Useful follow-up commands:
+
+```bash
+cd jido_hive_server
+MIX_ENV=coolify mix coolify.latest --project server
+MIX_ENV=coolify mix coolify.status --project server --latest
+MIX_ENV=coolify mix coolify.logs --project server --latest --tail 200
+MIX_ENV=coolify mix coolify.app_logs --project server --lines 200 --follow
+```
+
+## Development
+
+Inside this app:
 
 ```bash
 mix deps.get
@@ -66,3 +193,16 @@ mix ecto.migrate
 mix test
 mix quality
 ```
+
+Repo-wide from the root:
+
+```bash
+mix ci
+```
+
+## Related docs
+
+- root guide: [../README.md](../README.md)
+- setup toolkit: [../setup/README.md](../setup/README.md)
+- architecture: [../docs/architecture.md](../docs/architecture.md)
+- round-robin developer guide: [../docs/developer/multi_agent_round_robin.md](../docs/developer/multi_agent_round_robin.md)
