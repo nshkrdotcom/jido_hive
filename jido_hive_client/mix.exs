@@ -42,6 +42,7 @@ defmodule JidoHiveClient.MixProject do
     [
       {:jason, "~> 1.4"},
       {:phoenix_client, "~> 0.11.1"},
+      {:plug_cowboy, "~> 2.7"},
       DependencyResolver.jido(override: true),
       DependencyResolver.jido_action(override: true),
       DependencyResolver.jido_signal(override: true),

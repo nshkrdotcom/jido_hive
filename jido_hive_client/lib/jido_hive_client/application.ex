@@ -15,11 +15,31 @@ defmodule JidoHiveClient.Application do
       )
     )
 
-    children = [
-      {Jido.Signal.Bus, name: JidoHiveClient.SignalBus}
-    ]
+    runtime_opts =
+      Application.get_env(:jido_hive_client, :runtime, [])
+      |> Keyword.put_new(:name, JidoHiveClient.Runtime)
+
+    children =
+      [
+        {Jido.Signal.Bus, name: JidoHiveClient.SignalBus},
+        {JidoHiveClient.Runtime, runtime_opts}
+      ] ++ control_children()
 
     opts = [strategy: :one_for_one, name: JidoHiveClient.Supervisor]
     Supervisor.start_link(children, opts)
+  end
+
+  defp control_children do
+    case Application.get_env(:jido_hive_client, :control_api, []) do
+      control_opts when is_list(control_opts) ->
+        if Keyword.get(control_opts, :enabled, false) do
+          [{JidoHiveClient.Control.Server, control_opts}]
+        else
+          []
+        end
+
+      _other ->
+        []
+    end
   end
 end

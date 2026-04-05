@@ -5,8 +5,10 @@ defmodule JidoHiveServer.Collaboration.RoomServer do
 
   alias Jido.Signal
   alias Jido.Signal.Bus
-  alias JidoHiveServer.Collaboration.Actions.{AbandonTurn, ApplyResult, OpenTurn, SetRuntimeState}
-  alias JidoHiveServer.Collaboration.{ExecutionPlan, RoomAgent}
+  alias JidoHiveServer.Collaboration.{EventReducer, ExecutionPlan, RoomAgent}
+  alias JidoHiveServer.Collaboration.Schema.RoomEvent
+  alias JidoHiveServer.Collaboration.Workflow.Registry, as: WorkflowRegistry
+  alias JidoHiveServer.Collaboration.Workflows.DefaultRoundRobin
   alias JidoHiveServer.Persistence
 
   def start_link(opts) when is_list(opts) do
@@ -54,11 +56,18 @@ defmodule JidoHiveServer.Collaboration.RoomServer do
           current_turn: %{},
           execution_plan:
             Keyword.get_lazy(opts, :execution_plan, fn ->
-              case ExecutionPlan.new(Keyword.get(opts, :participants, [])) do
+              workflow_id = Keyword.get(opts, :workflow_id, DefaultRoundRobin.id())
+              workflow_config = Keyword.get(opts, :workflow_config, %{})
+              stages = workflow_stages(workflow_id, workflow_config)
+
+              case ExecutionPlan.new(Keyword.get(opts, :participants, []), stages: stages) do
                 {:ok, plan} -> plan
                 {:error, _} -> %{}
               end
             end),
+          workflow_id: Keyword.get(opts, :workflow_id, DefaultRoundRobin.id()),
+          workflow_config: Keyword.get(opts, :workflow_config, %{}),
+          workflow_state: Keyword.get(opts, :workflow_state, %{applied_event_ids: []}),
           status: "idle",
           phase: "idle",
           round: 0,
@@ -72,37 +81,49 @@ defmodule JidoHiveServer.Collaboration.RoomServer do
 
   @impl true
   def handle_call({:open_turn, payload}, _from, %{agent: agent} = state) do
-    {:ok, _result, state_op} = OpenTurn.run(normalize_payload(payload), %{state: agent.state})
-    {:ok, agent} = apply_state_op(agent, state_op)
-    {:ok, _snapshot} = Persistence.persist_room_snapshot(agent.state)
-    publish_signal("room.turn.opened", agent.state)
-    {:reply, {:ok, agent.state}, %{state | agent: agent}}
+    with {:ok, event} <- room_event(agent.state.room_id, :turn_opened, payload),
+         {:ok, agent} <- apply_event(agent, event),
+         :ok <- Persistence.append_room_events(agent.state.room_id, [event]),
+         {:ok, _snapshot} <- Persistence.persist_room_snapshot(agent.state) do
+      publish_signal("room.turn.opened", agent.state)
+      {:reply, {:ok, agent.state}, %{state | agent: agent}}
+    end
   end
 
   def handle_call({:apply_result, payload}, _from, %{agent: agent} = state) do
-    {:ok, _result, state_op} = ApplyResult.run(normalize_payload(payload), %{state: agent.state})
-    {:ok, agent} = apply_state_op(agent, state_op)
-    {:ok, _snapshot} = Persistence.persist_room_snapshot(agent.state)
-    publish_signal("room.turn.completed", agent.state)
-    {:reply, {:ok, agent.state}, %{state | agent: agent}}
+    event_type =
+      case Map.get(payload, "status") || Map.get(payload, :status) do
+        "failed" -> :turn_failed
+        _other -> :turn_completed
+      end
+
+    with {:ok, event} <- room_event(agent.state.room_id, event_type, payload),
+         {:ok, agent} <- apply_event(agent, event),
+         :ok <- Persistence.append_room_events(agent.state.room_id, [event]),
+         {:ok, _snapshot} <- Persistence.persist_room_snapshot(agent.state) do
+      publish_signal("room.turn.completed", agent.state)
+      {:reply, {:ok, agent.state}, %{state | agent: agent}}
+    end
   end
 
   def handle_call({:abandon_turn, payload}, _from, %{agent: agent} = state) do
-    {:ok, _result, state_op} = AbandonTurn.run(normalize_payload(payload), %{state: agent.state})
-    {:ok, agent} = apply_state_op(agent, state_op)
-    {:ok, _snapshot} = Persistence.persist_room_snapshot(agent.state)
-    publish_signal("room.turn.abandoned", agent.state)
-    {:reply, {:ok, agent.state}, %{state | agent: agent}}
+    with {:ok, event} <- room_event(agent.state.room_id, :turn_abandoned, payload),
+         {:ok, agent} <- apply_event(agent, event),
+         :ok <- Persistence.append_room_events(agent.state.room_id, [event]),
+         {:ok, _snapshot} <- Persistence.persist_room_snapshot(agent.state) do
+      publish_signal("room.turn.abandoned", agent.state)
+      {:reply, {:ok, agent.state}, %{state | agent: agent}}
+    end
   end
 
   def handle_call({:set_runtime_state, payload}, _from, %{agent: agent} = state) do
-    {:ok, _result, state_op} =
-      SetRuntimeState.run(normalize_payload(payload), %{state: agent.state})
-
-    {:ok, agent} = apply_state_op(agent, state_op)
-    {:ok, _snapshot} = Persistence.persist_room_snapshot(agent.state)
-    publish_signal("room.runtime.updated", agent.state)
-    {:reply, {:ok, agent.state}, %{state | agent: agent}}
+    with {:ok, event} <- room_event(agent.state.room_id, :runtime_state_changed, payload),
+         {:ok, agent} <- apply_event(agent, event),
+         :ok <- Persistence.append_room_events(agent.state.room_id, [event]),
+         {:ok, _snapshot} <- Persistence.persist_room_snapshot(agent.state) do
+      publish_signal("room.runtime.updated", agent.state)
+      {:reply, {:ok, agent.state}, %{state | agent: agent}}
+    end
   end
 
   def handle_call(:snapshot, _from, %{agent: agent} = state) do
@@ -123,11 +144,29 @@ defmodule JidoHiveServer.Collaboration.RoomServer do
     :ok
   end
 
-  defp apply_state_op(agent, %Jido.Agent.StateOp.SetState{attrs: attrs}) do
-    RoomAgent.set(agent, attrs)
+  defp apply_event(agent, %RoomEvent{} = event) do
+    {:ok, %{agent | state: EventReducer.apply_event(agent.state, event)}}
   end
 
-  defp apply_state_op(agent, %Jido.Agent.StateOp.ReplaceState{state: new_state}) do
-    {:ok, %{agent | state: new_state}}
+  defp room_event(room_id, type, payload)
+       when is_binary(room_id) and is_atom(type) and is_map(payload) do
+    RoomEvent.new(%{
+      event_id: unique_id("evt"),
+      room_id: room_id,
+      type: type,
+      payload: normalize_payload(payload),
+      recorded_at: DateTime.utc_now()
+    })
+  end
+
+  defp unique_id(prefix) do
+    "#{prefix}-#{System.unique_integer([:positive, :monotonic])}"
+  end
+
+  defp workflow_stages(workflow_id, workflow_config) do
+    case WorkflowRegistry.fetch_module(workflow_id) do
+      {:ok, module} -> module.stages(workflow_config)
+      {:error, _reason} -> DefaultRoundRobin.stages(%{})
+    end
   end
 end

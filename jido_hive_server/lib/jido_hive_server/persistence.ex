@@ -3,7 +3,15 @@ defmodule JidoHiveServer.Persistence do
 
   import Ecto.Query
 
-  alias JidoHiveServer.Persistence.{PublicationRunRecord, RoomSnapshotRecord, TargetRecord}
+  alias JidoHiveServer.Collaboration.Schema.RoomEvent
+
+  alias JidoHiveServer.Persistence.{
+    PublicationRunRecord,
+    RoomEventRecord,
+    RoomSnapshotRecord,
+    TargetRecord
+  }
+
   alias JidoHiveServer.Repo
 
   @spec persist_room_snapshot(map()) :: {:ok, map()} | {:error, Ecto.Changeset.t()}
@@ -28,6 +36,14 @@ defmodule JidoHiveServer.Persistence do
       %RoomSnapshotRecord{snapshot: snapshot} -> {:ok, rehydrate_room_snapshot(snapshot)}
       nil -> {:error, :room_not_found}
     end
+  end
+
+  @spec delete_room_events(String.t()) :: :ok
+  def delete_room_events(room_id) when is_binary(room_id) do
+    from(record in RoomEventRecord, where: record.room_id == ^room_id)
+    |> Repo.delete_all()
+
+    :ok
   end
 
   @spec upsert_target(map()) :: {:ok, map()} | {:error, Ecto.Changeset.t()}
@@ -157,6 +173,40 @@ defmodule JidoHiveServer.Persistence do
     |> Enum.map(&publication_run_snapshot/1)
   end
 
+  @spec append_room_events(String.t(), [RoomEvent.t()]) :: :ok | {:error, term()}
+  def append_room_events(room_id, events) when is_binary(room_id) and is_list(events) do
+    Repo.transaction(fn ->
+      Enum.each(events, fn %RoomEvent{} = event ->
+        attrs = %{
+          event_id: event.event_id,
+          room_id: room_id,
+          event_type: Atom.to_string(event.type),
+          causation_id: event.causation_id,
+          correlation_id: event.correlation_id,
+          payload: normalize(event.payload || %{})
+        }
+
+        %RoomEventRecord{}
+        |> RoomEventRecord.changeset(attrs)
+        |> Repo.insert!()
+      end)
+    end)
+    |> case do
+      {:ok, _value} -> :ok
+      {:error, error} -> {:error, error}
+    end
+  end
+
+  @spec list_room_events(String.t()) :: [RoomEvent.t()]
+  def list_room_events(room_id) when is_binary(room_id) do
+    from(record in RoomEventRecord,
+      where: record.room_id == ^room_id,
+      order_by: [asc: record.inserted_at, asc: record.id]
+    )
+    |> Repo.all()
+    |> Enum.map(&rehydrate_room_event/1)
+  end
+
   defp publication_run_snapshot(%PublicationRunRecord{} = record) do
     %{
       publication_run_id: record.publication_run_id,
@@ -185,12 +235,30 @@ defmodule JidoHiveServer.Persistence do
       disputes: snapshot_list(snapshot, "disputes", &rehydrate_dispute/1),
       current_turn: snapshot_map(snapshot, "current_turn", &rehydrate_turn_map/1),
       execution_plan: snapshot_map(snapshot, "execution_plan", &rehydrate_execution_plan/1),
+      workflow_id:
+        snapshot_value(
+          snapshot,
+          "workflow_id",
+          default_workflow_id()
+        ),
+      workflow_config: snapshot_map(snapshot, "workflow_config", & &1),
+      workflow_state:
+        snapshot_map(snapshot, "workflow_state", fn state ->
+          Map.new(state, fn
+            {key, value} when is_binary(key) -> {String.to_atom(key), value}
+            pair -> pair
+          end)
+        end),
       status: snapshot_value(snapshot, "status", "idle"),
       phase: snapshot_value(snapshot, "phase", "idle"),
       round: snapshot_value(snapshot, "round", 0),
       next_entry_seq: snapshot_value(snapshot, "next_entry_seq", 1),
       next_dispute_seq: snapshot_value(snapshot, "next_dispute_seq", 1)
     }
+  end
+
+  defp default_workflow_id do
+    Module.concat([JidoHiveServer, Collaboration, Workflows, DefaultRoundRobin]).id()
   end
 
   defp rehydrate_target(snapshot) when is_map(snapshot) do
@@ -260,6 +328,7 @@ defmodule JidoHiveServer.Persistence do
   defp rehydrate_execution_plan(plan) do
     %{
       strategy: plan["strategy"],
+      stages: snapshot_list(plan, "stages"),
       max_participants: plan["max_participants"],
       stage_count: plan["stage_count"],
       participant_count: plan["participant_count"],
@@ -298,6 +367,21 @@ defmodule JidoHiveServer.Persistence do
       resolved_by_entry_ref: dispute["resolved_by_entry_ref"],
       resolved_in_job_id: dispute["resolved_in_job_id"]
     }
+  end
+
+  defp rehydrate_room_event(%RoomEventRecord{} = record) do
+    {:ok, event} =
+      RoomEvent.new(%{
+        event_id: record.event_id,
+        room_id: record.room_id,
+        type: record.event_type,
+        payload: record.payload || %{},
+        causation_id: record.causation_id,
+        correlation_id: record.correlation_id,
+        recorded_at: record.inserted_at
+      })
+
+    event
   end
 
   defp rehydrate_status(nil), do: nil

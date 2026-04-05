@@ -3,7 +3,13 @@ defmodule JidoHiveServer.PersistenceCase do
 
   use ExUnit.CaseTemplate
 
-  alias JidoHiveServer.Persistence.{PublicationRunRecord, RoomSnapshotRecord, TargetRecord}
+  alias JidoHiveServer.Persistence.{
+    PublicationRunRecord,
+    RoomEventRecord,
+    RoomSnapshotRecord,
+    TargetRecord
+  }
+
   alias JidoHiveServer.Repo
 
   using do
@@ -17,6 +23,7 @@ defmodule JidoHiveServer.PersistenceCase do
 
   def reset_repo! do
     Repo.delete_all(PublicationRunRecord)
+    Repo.delete_all(RoomEventRecord)
     Repo.delete_all(RoomSnapshotRecord)
     Repo.delete_all(TargetRecord)
     :ok

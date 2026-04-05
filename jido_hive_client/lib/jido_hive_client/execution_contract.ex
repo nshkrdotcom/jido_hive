@@ -227,6 +227,7 @@ defmodule JidoHiveClient.ExecutionContract do
     end
   end
 
+  defp normalize_payload_value(value) when is_boolean(value), do: value
   defp normalize_payload_value(value) when is_map(value), do: stringify_keys(value)
   defp normalize_payload_value(value) when is_atom(value), do: Atom.to_string(value)
   defp normalize_payload_value(value), do: value

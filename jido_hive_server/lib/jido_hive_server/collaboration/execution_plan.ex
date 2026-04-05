@@ -17,7 +17,14 @@ defmodule JidoHiveServer.Collaboration.ExecutionPlan do
 
   @spec new([map()]) :: {:ok, map()} | {:error, atom()}
   def new(participants) when is_list(participants) do
+    new(participants, [])
+  end
+
+  @spec new([map()], keyword()) :: {:ok, map()} | {:error, atom()}
+  def new(participants, opts) when is_list(participants) and is_list(opts) do
     normalized = Enum.map(participants, &normalize_participant/1)
+    stages = Keyword.get(opts, :stages, @stages)
+    stage_count = length(stages)
 
     with :ok <- validate_count(normalized),
          :ok <- validate_uniqueness(normalized, :participant_id, :duplicate_participant_id),
@@ -28,9 +35,10 @@ defmodule JidoHiveServer.Collaboration.ExecutionPlan do
        %{
          strategy: "round_robin",
          max_participants: @max_participants,
-         stage_count: stage_count(),
+         stages: stages,
+         stage_count: stage_count,
          participant_count: participant_count,
-         planned_turn_count: participant_count * stage_count(),
+         planned_turn_count: participant_count * stage_count,
          completed_turn_count: 0,
          round_robin_index: 0,
          excluded_target_ids: [],
@@ -45,7 +53,12 @@ defmodule JidoHiveServer.Collaboration.ExecutionPlan do
     do: {:ok, snapshot}
 
   def ensure(%{participants: participants} = snapshot) when is_list(participants) do
-    with {:ok, plan} <- new(participants) do
+    stages =
+      snapshot
+      |> Map.get(:workflow_config, %{})
+      |> Map.get(:stages)
+
+    with {:ok, plan} <- new(participants, stages: stages || @stages) do
       {:ok, Map.put(snapshot, :execution_plan, plan)}
     end
   end
@@ -62,8 +75,9 @@ defmodule JidoHiveServer.Collaboration.ExecutionPlan do
     participant_count = max(Map.get(plan, :participant_count, 1), 1)
     completed_turn_count = Map.get(plan, :completed_turn_count, 0)
     index = turn_index || completed_turn_count
-    stage_index = min(div(index, participant_count), stage_count() - 1)
-    Enum.at(@stages, stage_index)
+    stages = Map.get(plan, :stages, @stages)
+    stage_index = min(div(index, participant_count), length(stages) - 1)
+    Enum.at(stages, stage_index)
   end
 
   @spec select_next_participant(map(), [String.t()]) ::
