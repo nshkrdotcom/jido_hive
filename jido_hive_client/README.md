@@ -42,6 +42,10 @@ These wrappers supply sensible defaults for:
 - provider selection
 - workspace root
 
+For the exact hosted production runbook with two workers and server log tailing, use:
+
+- [../README.md#production-smoke-test](../README.md#production-smoke-test)
+
 ## What the client does
 
 At runtime, the client:

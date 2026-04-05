@@ -164,6 +164,10 @@ Current deployed base:
 
 - `https://jido-hive-server-test.app.nsai.online`
 
+For the exact end-to-end production operator runbook, including log tailing and starting production workers, use the root production section:
+
+- [../README.md#production-smoke-test](../README.md#production-smoke-test)
+
 Deployments run through `coolify_ex` in `MIX_ENV=coolify`.
 
 Typical deploy path from repo root:

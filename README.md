@@ -250,6 +250,52 @@ setup/hive --prod targets
 setup/hive --prod server-info
 ```
 
+## Production smoke test
+
+Use this exact sequence when you want to confirm that the hosted production system is working end to end.
+
+1. Tail production server logs:
+
+```bash
+cd /home/home/p/g/n/jido_hive/jido_hive_server
+MIX_ENV=coolify mix coolify.app_logs --project server --lines 200 --follow
+```
+
+2. Start production worker 1:
+
+```bash
+cd /home/home/p/g/n/jido_hive
+bin/client-worker --prod --worker-index 1
+```
+
+3. Start production worker 2:
+
+```bash
+cd /home/home/p/g/n/jido_hive
+bin/client-worker --prod --worker-index 2
+```
+
+4. Wait for both workers to register:
+
+```bash
+cd /home/home/p/g/n/jido_hive
+setup/hive --prod wait-targets --count 2
+```
+
+5. Run the production flow:
+
+```bash
+cd /home/home/p/g/n/jido_hive
+setup/hive --prod live-demo --participant-count 2
+```
+
+Expected result:
+
+- the two workers connect and register targets
+- the server logs show relay activity and room execution
+- the live demo creates a room, runs the workflow, and prints the resulting room state
+- if production is unhealthy, this is the first runbook to use before deeper debugging
+
 ## Publishing to GitHub and Notion
 
 The setup toolkit wraps connector installation and publication execution.
