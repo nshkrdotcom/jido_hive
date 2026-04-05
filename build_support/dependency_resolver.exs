@@ -75,6 +75,15 @@ defmodule JidoHive.Build.DependencyResolver do
     )
   end
 
+  def external_runtime_transport(opts \\ []) do
+    resolve(
+      :external_runtime_transport,
+      ["../external_runtime_transport"],
+      [github: "nshkrdotcom/external_runtime_transport", branch: "main"],
+      opts
+    )
+  end
+
   def jido_integration(opts \\ []) do
     jido_integration_platform(opts)
   end

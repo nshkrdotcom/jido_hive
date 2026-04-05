@@ -38,6 +38,12 @@ defmodule JidoHive.Build.DependencyResolverTest do
     assert harness_opts[:github] == "nshkrdotcom/jido_harness"
     assert harness_opts[:branch] == "bridge/jido_os_compose"
 
+    assert {:external_runtime_transport, transport_opts} =
+             apply(isolated_resolver, :external_runtime_transport, [])
+
+    assert transport_opts[:github] == "nshkrdotcom/external_runtime_transport"
+    assert transport_opts[:branch] == "main"
+
     assert {:jido_integration_v2_runtime_asm_bridge, asm_bridge_opts} =
              apply(isolated_resolver, :jido_integration_runtime_asm_bridge, [])
 

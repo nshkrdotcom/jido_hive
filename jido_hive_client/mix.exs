@@ -49,6 +49,7 @@ defmodule JidoHiveClient.MixProject do
       DependencyResolver.jido_shell(override: true),
       DependencyResolver.jido_vfs(override: true),
       DependencyResolver.sprites(override: true),
+      DependencyResolver.external_runtime_transport(override: true),
       DependencyResolver.jido_integration_runtime_asm_bridge(override: true),
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
       {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false},
