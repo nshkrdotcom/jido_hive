@@ -1,0 +1,190 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg
+  xmlns="http://www.w3.org/2000/svg"
+  xmlns:xlink="http://www.w3.org/1999/xlink"
+  width="200"
+  height="200"
+  viewBox="0 0 200 200"
+  role="img"
+  aria-labelledby="title desc"
+>
+  <title id="title">jido_hive</title>
+  <desc id="desc">Hexagonal workflow coordinator for server-client worker execution.</desc>
+
+  <defs>
+    <linearGradient id="hiveBase" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0c2642"/>
+      <stop offset="52%" stop-color="#11385a"/>
+      <stop offset="100%" stop-color="#0a5f9e"/>
+    </linearGradient>
+    <linearGradient id="hiveStroke" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#58d7ff"/>
+      <stop offset="100%" stop-color="#8fbcff"/>
+    </linearGradient>
+    <linearGradient id="meshGlow" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#4fe0ff" stop-opacity="0.45"/>
+      <stop offset="100%" stop-color="#7a8bff" stop-opacity="0.12"/>
+    </linearGradient>
+    <linearGradient id="nodeCore" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#f4fbff"/>
+      <stop offset="100%" stop-color="#7be0ff"/>
+    </linearGradient>
+    <linearGradient id="nodeRing" x1="0%" y1="100%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#23c0ff" stop-opacity="0.95"/>
+      <stop offset="100%" stop-color="#5f6cff" stop-opacity="0.95"/>
+    </linearGradient>
+    <linearGradient id="cellShell" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#143e63"/>
+      <stop offset="100%" stop-color="#0a2442"/>
+    </linearGradient>
+    <linearGradient id="cellInset" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#d9fbff"/>
+      <stop offset="100%" stop-color="#57d5ff"/>
+    </linearGradient>
+    <radialGradient id="coreAura" cx="50%" cy="50%" r="60%">
+      <stop offset="0%" stop-color="#7be0ff" stop-opacity="0.34"/>
+      <stop offset="100%" stop-color="#7be0ff" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="outerGlow" x="-35%" y="-35%" width="170%" height="170%">
+      <feGaussianBlur in="SourceGraphic" stdDeviation="1.8" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <filter id="innerGlow" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="1.8" result="s"/>
+      <feMerge>
+        <feMergeNode in="s"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <pattern id="meshPattern" width="20" height="20" patternUnits="userSpaceOnUse" patternTransform="rotate(15)">
+      <path
+        d="M0 10 H20 M10 0 V20"
+        stroke="url(#meshGlow)"
+        stroke-width="0.65"
+        stroke-linecap="round"
+        fill="none"
+      />
+    </pattern>
+    <clipPath id="innerHexClip">
+      <polygon points="100,24 176,65.12 176,134.88 100,176 24,134.88 24,65.12"/>
+    </clipPath>
+    <symbol id="hiveTile" viewBox="-14 -14 28 28">
+      <polygon
+        points="0,-10.8 9.3,-5.4 9.3,5.4 0,10.8 -9.3,5.4 -9.3,-5.4"
+        fill="url(#cellShell)"
+        stroke="url(#nodeRing)"
+        stroke-width="1.5"
+        stroke-linejoin="round"
+      />
+      <polygon
+        points="0,-6 5.2,-3 5.2,3 0,6 -5.2,3 -5.2,-3"
+        fill="url(#cellInset)"
+        opacity="0.88"
+      />
+      <path
+        d="M-5.2 -3 L0 -6 L5.2 -3"
+        fill="none"
+        stroke="#e6fcff"
+        stroke-opacity="0.55"
+        stroke-width="0.75"
+        stroke-linecap="round"
+      />
+      <circle cx="0" cy="0" r="1.4" fill="#08243f"/>
+    </symbol>
+    <symbol id="ghostCell" viewBox="-14 -14 28 28">
+      <polygon
+        points="0,-10.8 9.3,-5.4 9.3,5.4 0,10.8 -9.3,5.4 -9.3,-5.4"
+        fill="none"
+        stroke="#95e6ff"
+        stroke-opacity="0.4"
+        stroke-width="0.95"
+        stroke-linejoin="round"
+      />
+    </symbol>
+    <symbol id="agentNode" viewBox="-16 -16 32 32">
+      <g filter="url(#innerGlow)">
+        <use xlink:href="#hiveTile"/>
+      </g>
+    </symbol>
+    <symbol id="hiveCluster" viewBox="-44 -36 88 72">
+      <circle cx="0" cy="6" r="28" fill="url(#coreAura)"/>
+      <g filter="url(#innerGlow)">
+        <use xlink:href="#hiveTile" x="-12" y="-15"/>
+        <use xlink:href="#hiveTile" x="12" y="-15"/>
+        <use xlink:href="#hiveTile" x="-24" y="6"/>
+        <use xlink:href="#hiveTile" x="0" y="6"/>
+        <use xlink:href="#hiveTile" x="24" y="6"/>
+        <use xlink:href="#hiveTile" x="-12" y="27"/>
+        <use xlink:href="#hiveTile" x="12" y="27"/>
+      </g>
+      <path
+        d="M-24 6 H24 M-12 -15 L12 -15 M-12 27 L12 27 M-12 -15 L-24 6 L-12 27 M12 -15 L24 6 L12 27"
+        fill="none"
+        stroke="url(#meshGlow)"
+        stroke-width="1.2"
+        stroke-linecap="round"
+        opacity="0.45"
+      />
+    </symbol>
+  </defs>
+
+  <polygon
+    points="100,8 190,52.98 190,147.02 100,192 10,147.02 10,52.98"
+    fill="url(#hiveBase)"
+    stroke="url(#hiveStroke)"
+    stroke-width="2.2"
+    filter="url(#outerGlow)"
+  />
+
+  <g clip-path="url(#innerHexClip)">
+    <rect width="200" height="200" fill="url(#meshPattern)" opacity="0.22"/>
+
+    <g fill="none" stroke="url(#nodeRing)" stroke-width="2">
+      <path
+        d="M100 24 L170 65.12 L170 134.88 L100 176 L30 134.88 L30 65.12 Z"
+        opacity="0.45"
+      />
+      <path
+        d="M100 24 L100 176 M30 65.12 L170 65.12 M30 134.88 L170 134.88"
+        opacity="0.22"
+      />
+      <path
+        d="M100 24 C145 50 145 150 100 176 C55 150 55 50 100 24 M30 65.12 C50 100 50 100 30 134.88 M170 65.12 C150 100 150 100 170 134.88"
+        opacity="0.18"
+      />
+    </g>
+
+    <g opacity="0.48">
+      <use xlink:href="#ghostCell" x="100" y="58"/>
+      <use xlink:href="#ghostCell" x="76" y="72"/>
+      <use xlink:href="#ghostCell" x="124" y="72"/>
+      <use xlink:href="#ghostCell" x="52" y="86"/>
+      <use xlink:href="#ghostCell" x="100" y="86"/>
+      <use xlink:href="#ghostCell" x="148" y="86"/>
+      <use xlink:href="#ghostCell" x="76" y="100"/>
+      <use xlink:href="#ghostCell" x="124" y="100"/>
+      <use xlink:href="#ghostCell" x="100" y="114"/>
+    </g>
+
+    <g fill="none" stroke="#95e6ff" stroke-opacity="0.28" stroke-width="1.1" stroke-linecap="round">
+      <path d="M76 72 H124 M52 86 H148 M76 100 H124"/>
+      <path d="M100 58 L76 72 L52 86 L76 100 L100 114"/>
+      <path d="M100 58 L124 72 L148 86 L124 100 L100 114"/>
+    </g>
+
+    <use xlink:href="#agentNode" x="100" y="24"/>
+    <use xlink:href="#agentNode" x="170" y="65.12"/>
+    <use xlink:href="#agentNode" x="170" y="134.88"/>
+    <use xlink:href="#agentNode" x="100" y="176"/>
+    <use xlink:href="#agentNode" x="30" y="134.88"/>
+    <use xlink:href="#agentNode" x="30" y="65.12"/>
+    <use xlink:href="#hiveCluster" x="100" y="93"/>
+
+    <path d="M100 24 L100 176" stroke="url(#meshGlow)" stroke-width="1.8" fill="none" opacity="0.3"/>
+    <path d="M30 65.12 L170 134.88" stroke="url(#meshGlow)" stroke-width="1.8" fill="none" opacity="0.3"/>
+    <path d="M170 65.12 L30 134.88" stroke="url(#meshGlow)" stroke-width="1.8" fill="none" opacity="0.3"/>
+  </g>
+</svg>

@@ -1,3 +1,14 @@
+<p align="center">
+  <img src="assets/jido_hive.svg" alt="jido_hive logo" width="200"/>
+  <br/>
+  <a href="https://github.com/nshkrdotcom/jido_hive">
+    <img src="https://img.shields.io/badge/GitHub-nshkrdotcom%2Fjido__hive-1f9cf0?logo=github&logoColor=white" alt="GitHub repository"/>
+  </a>
+  <a href="LICENSE">
+    <img src="https://img.shields.io/badge/License-MIT-0A8A2A?logo=spdx&logoColor=white" alt="MIT license"/>
+  </a>
+</p>
+
 # jido_hive
 
 `jido_hive` is a Phoenix coordination server plus local ASM-backed worker
@@ -235,7 +246,7 @@ The generated server docs now expose a dedicated Developer Guides section throug
 
 ## Deploy And Logs
 
-Deployments use `coolify_ex` from inside `jido_hive_server`, with the repo-root
+Deployments use `coolify_ex 0.4.0` from inside `jido_hive_server`, with the repo-root
 manifest at `.coolify_ex.exs`. Those tasks now run in the dedicated
 `MIX_ENV=coolify` lane so deploy-only tooling stays out of the normal
 dev/test/docs quality floor.

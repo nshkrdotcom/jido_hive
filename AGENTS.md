@@ -79,7 +79,7 @@ Root workspace prefers local `../blitz`; if not present, it uses Hex `~> 0.1.0`.
 
 ## Deployment Notes
 
-Coolify tasks run through the server app in `MIX_ENV=coolify`:
+Coolify tasks run through `coolify_ex 0.4.0` in the server app under `MIX_ENV=coolify`:
 
 ```bash
 scripts/deploy_coolify.sh
