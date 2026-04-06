@@ -58,4 +58,101 @@ defmodule JidoHiveClient.ResultDecoderTest do
 
     assert [%{"artifact_type" => "note", "title" => "operator"}] = decoded["artifacts"]
   end
+
+  test "unwraps a nested contribution object with legacy object fields" do
+    payload = """
+    {
+      "assignment_id": "asn-2",
+      "room_id": "room-1",
+      "participant_id": "worker-02",
+      "participant_role": "worker",
+      "phase": "analysis",
+      "contribution": {
+        "contribution_type": "reasoning",
+        "authority_level": "advisory",
+        "summary": "Proposes a minimal distributed collaboration protocol centered on explicit claims.",
+        "objects": [
+          {
+            "object_id": "belief-1",
+            "object_type": "belief",
+            "content": "A viable protocol should define shared state and worker contribution structure."
+          },
+          {
+            "object_id": "note-1",
+            "object_type": "note",
+            "content": "Require strict JSON output and stable identifiers."
+          }
+        ]
+      }
+    }
+    """
+
+    assert {:ok, decoded} = ResultDecoder.decode(payload)
+    assert decoded["contribution_type"] == "reasoning"
+    assert decoded["authority_level"] == "advisory"
+
+    assert [
+             %{
+               "object_type" => "belief",
+               "body" =>
+                 "A viable protocol should define shared state and worker contribution structure."
+             },
+             %{
+               "object_type" => "note",
+               "body" => "Require strict JSON output and stable identifiers."
+             }
+           ] = decoded["context_objects"]
+  end
+
+  test "infers a reasoning contribution from a legacy contributions list" do
+    payload = """
+    {
+      "assignment_id": "asn-1",
+      "room_id": "room-1",
+      "participant_id": "worker-01",
+      "phase": "analysis",
+      "contributions": [
+        {
+          "type": "belief",
+          "object": {
+            "id": "belief-1",
+            "kind": "belief",
+            "text": "Distributed collaboration needs explicit task allocation and shared state."
+          }
+        },
+        {
+          "type": "note",
+          "object": {
+            "id": "note-1",
+            "kind": "note",
+            "text": "Use an append-only contribution log."
+          },
+          "relations": [
+            {
+              "type": "references",
+              "target_id": "belief-1"
+            }
+          ]
+        }
+      ]
+    }
+    """
+
+    assert {:ok, decoded} = ResultDecoder.decode(payload)
+    assert decoded["contribution_type"] == "reasoning"
+    assert decoded["summary"] == "reasoning contribution"
+
+    assert [
+             %{
+               "object_type" => "belief",
+               "body" =>
+                 "Distributed collaboration needs explicit task allocation and shared state."
+             },
+             %{
+               "object_type" => "note",
+               "body" => "Use an append-only contribution log.",
+               "relations" => [%{"relation" => "references", "target_id" => "belief-1"}]
+             }
+           ] = decoded["context_objects"]
+  end
 end

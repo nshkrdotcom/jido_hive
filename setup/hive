@@ -111,7 +111,7 @@ build_room_payload() {
       participants:
         ($targets | map({
           participant_id: .participant_id,
-          role: (.participant_role // "worker"),
+          participant_role: (.participant_role // "worker"),
           target_id: .target_id,
           capability_id: .capability_id
         }))

@@ -12,19 +12,58 @@ defmodule JidoHiveClient.ResultDecoder do
   end
 
   defp normalize(%{} = decoded) do
-    contribution_type = Map.get(decoded, "contribution_type")
+    contribution = contribution_payload(decoded)
+    contribution_type = contribution_type(contribution, decoded)
 
     if is_binary(contribution_type) and String.trim(contribution_type) != "" do
       {:ok,
        %{
-         "summary" => normalize_summary(Map.get(decoded, "summary"), contribution_type),
+         "summary" => normalize_summary(value(contribution, "summary"), contribution_type),
          "contribution_type" => contribution_type,
-         "authority_level" => Map.get(decoded, "authority_level") || "advisory",
-         "context_objects" => normalize_context_objects(Map.get(decoded, "context_objects", [])),
-         "artifacts" => normalize_artifacts(Map.get(decoded, "artifacts", []))
+         "authority_level" => value(contribution, "authority_level") || "advisory",
+         "context_objects" =>
+           normalize_context_objects(context_object_source(contribution, decoded)),
+         "artifacts" => normalize_artifacts(value(contribution, "artifacts"))
        }}
     else
       {:error, :invalid_contract}
+    end
+  end
+
+  defp contribution_payload(%{} = decoded) do
+    case value(decoded, "contribution") do
+      %{} = contribution -> contribution
+      _other -> decoded
+    end
+  end
+
+  defp contribution_type(contribution, decoded) do
+    value(contribution, "contribution_type") || infer_contribution_type(contribution, decoded)
+  end
+
+  defp infer_contribution_type(contribution, decoded) do
+    contribution
+    |> context_object_source(decoded)
+    |> Enum.map(&legacy_object_type/1)
+    |> infer_from_object_types()
+  end
+
+  defp infer_from_object_types(object_types) do
+    cond do
+      Enum.any?(object_types, &(&1 == "decision")) -> "decision"
+      Enum.any?(object_types, &(&1 == "artifact")) -> "artifact"
+      Enum.any?(object_types, &(&1 == "constraint")) -> "constraint"
+      object_types != [] -> "reasoning"
+      true -> nil
+    end
+  end
+
+  defp context_object_source(contribution, decoded) do
+    cond do
+      is_list(value(contribution, "context_objects")) -> value(contribution, "context_objects")
+      is_list(value(contribution, "objects")) -> value(contribution, "objects")
+      is_list(value(decoded, "contributions")) -> value(decoded, "contributions")
+      true -> []
     end
   end
 
@@ -34,20 +73,28 @@ defmodule JidoHiveClient.ResultDecoder do
   defp normalize_summary(_summary, contribution_type), do: "#{contribution_type} contribution"
 
   defp normalize_context_objects(context_objects) when is_list(context_objects) do
-    Enum.map(context_objects, &normalize_context_object/1)
+    context_objects
+    |> Enum.map(&normalize_context_object/1)
+    |> Enum.reject(&empty_context_object?/1)
   end
 
   defp normalize_context_objects(_other), do: []
 
   defp normalize_context_object(context_object) when is_map(context_object) do
+    nested_object =
+      case value(context_object, "object") do
+        %{} = object -> object
+        _other -> %{}
+      end
+
     %{
-      "object_type" => Map.get(context_object, "object_type"),
-      "title" => Map.get(context_object, "title"),
-      "body" => Map.get(context_object, "body"),
-      "data" => normalize_map(Map.get(context_object, "data", %{})),
-      "scope" => normalize_scope(Map.get(context_object, "scope", %{})),
-      "uncertainty" => normalize_uncertainty(Map.get(context_object, "uncertainty", %{})),
-      "relations" => normalize_relations(Map.get(context_object, "relations", []))
+      "object_type" => legacy_object_type(context_object),
+      "title" => legacy_title(context_object, nested_object),
+      "body" => legacy_body(context_object, nested_object),
+      "data" => legacy_data(context_object, nested_object),
+      "scope" => normalize_scope(value(context_object, "scope")),
+      "uncertainty" => normalize_uncertainty(value(context_object, "uncertainty")),
+      "relations" => normalize_relations(value(context_object, "relations"))
     }
   end
 
@@ -63,10 +110,57 @@ defmodule JidoHiveClient.ResultDecoder do
     }
   end
 
+  defp empty_context_object?(%{"object_type" => nil, "title" => nil, "body" => nil}), do: true
+  defp empty_context_object?(_context_object), do: false
+
+  defp legacy_object_type(context_object) do
+    nested_object =
+      case value(context_object, "object") do
+        %{} = object -> object
+        _other -> %{}
+      end
+
+    value(context_object, "object_type") ||
+      value(context_object, "type") ||
+      value(nested_object, "object_type") ||
+      value(nested_object, "kind") ||
+      value(nested_object, "type")
+  end
+
+  defp legacy_title(context_object, nested_object) do
+    value(context_object, "title") ||
+      value(nested_object, "title") ||
+      compact_title(legacy_body(context_object, nested_object))
+  end
+
+  defp legacy_body(context_object, nested_object) do
+    body_candidate =
+      first_present([
+        value(context_object, "body"),
+        value(context_object, "text"),
+        value(context_object, "content"),
+        value(nested_object, "body"),
+        value(nested_object, "text"),
+        value(nested_object, "content")
+      ])
+
+    normalize_body(body_candidate)
+  end
+
+  defp legacy_data(context_object, nested_object) do
+    %{}
+    |> merge_map(value(context_object, "data"))
+    |> maybe_put("object_id", value(context_object, "object_id") || value(nested_object, "id"))
+    |> maybe_put(
+      "content",
+      map_content(value(context_object, "content"), value(nested_object, "content"))
+    )
+  end
+
   defp normalize_scope(scope) when is_map(scope) do
     %{
-      "read" => list_of_strings(Map.get(scope, "read", ["room"])),
-      "write" => list_of_strings(Map.get(scope, "write", ["author"]))
+      "read" => list_of_strings(value(scope, "read") || ["room"]),
+      "write" => list_of_strings(value(scope, "write") || ["author"])
     }
   end
 
@@ -74,9 +168,9 @@ defmodule JidoHiveClient.ResultDecoder do
 
   defp normalize_uncertainty(uncertainty) when is_map(uncertainty) do
     %{
-      "status" => Map.get(uncertainty, "status", "provisional"),
-      "confidence" => Map.get(uncertainty, "confidence"),
-      "rationale" => Map.get(uncertainty, "rationale")
+      "status" => value(uncertainty, "status") || "provisional",
+      "confidence" => value(uncertainty, "confidence"),
+      "rationale" => value(uncertainty, "rationale")
     }
   end
 
@@ -85,8 +179,10 @@ defmodule JidoHiveClient.ResultDecoder do
   defp normalize_relations(relations) when is_list(relations) do
     Enum.map(relations, fn relation ->
       %{
-        "relation" => Map.get(relation, "relation"),
-        "target_id" => Map.get(relation, "target_id")
+        "relation" =>
+          value(relation, "relation") || value(relation, "relation_type") ||
+            value(relation, "type"),
+        "target_id" => value(relation, "target_id") || value(relation, "to")
       }
     end)
   end
@@ -96,20 +192,85 @@ defmodule JidoHiveClient.ResultDecoder do
   defp normalize_artifacts(artifacts) when is_list(artifacts) do
     Enum.map(artifacts, fn artifact ->
       %{
-        "artifact_type" => Map.get(artifact, "artifact_type"),
-        "title" => Map.get(artifact, "title"),
-        "body" => Map.get(artifact, "body")
+        "artifact_type" =>
+          value(artifact, "artifact_type") || value(artifact, "object_type") ||
+            value(artifact, "type"),
+        "title" =>
+          value(artifact, "title") || compact_title(normalize_body(value(artifact, "body"))),
+        "body" =>
+          normalize_body(
+            first_present([
+              value(artifact, "body"),
+              value(artifact, "text"),
+              value(artifact, "content")
+            ])
+          )
       }
     end)
   end
 
   defp normalize_artifacts(_other), do: []
 
-  defp normalize_map(map) when is_map(map), do: map
-  defp normalize_map(_other), do: %{}
-
   defp list_of_strings(list) when is_list(list), do: Enum.filter(list, &is_binary/1)
   defp list_of_strings(_other), do: []
+
+  defp normalize_body(value) when is_binary(value), do: value
+
+  defp normalize_body(value) when is_map(value) do
+    first_present([
+      Map.get(value, "body"),
+      Map.get(value, "text"),
+      Map.get(value, "content"),
+      Map.get(value, "decision"),
+      Map.get(value, "summary"),
+      Map.get(value, "purpose"),
+      Map.get(value, "rationale")
+    ]) || Jason.encode!(value)
+  end
+
+  defp normalize_body(_other), do: nil
+
+  defp compact_title(nil), do: nil
+
+  defp compact_title(body) when is_binary(body) do
+    body
+    |> String.trim()
+    |> String.split(~r/\s+/, trim: true)
+    |> Enum.take(8)
+    |> Enum.join(" ")
+    |> case do
+      "" -> nil
+      title -> title
+    end
+  end
+
+  defp first_present(values) when is_list(values) do
+    Enum.find_value(values, fn
+      value when is_binary(value) and value != "" -> value
+      value when is_map(value) and value != %{} -> value
+      _other -> nil
+    end)
+  end
+
+  defp merge_map(map, %{} = incoming), do: Map.merge(map, incoming)
+  defp merge_map(map, _other), do: map
+
+  defp maybe_put(map, _key, nil), do: map
+  defp maybe_put(map, key, value), do: Map.put(map, key, value)
+
+  defp map_content(%{} = content, _fallback), do: content
+  defp map_content(_content, %{} = fallback), do: fallback
+  defp map_content(_content, _fallback), do: nil
+
+  defp value(map, key) when is_map(map) and is_binary(key) do
+    Map.get(map, key) || Map.get(map, existing_atom_key(key))
+  end
+
+  defp existing_atom_key(key) when is_binary(key) do
+    String.to_existing_atom(key)
+  rescue
+    ArgumentError -> nil
+  end
 
   defp extract_json(text) when is_binary(text) do
     trimmed = String.trim(text)
