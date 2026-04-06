@@ -1,79 +1,160 @@
-# JidoHiveClient: The Participant Runtime
+# JidoHiveClient
 
-`jido_hive_client` is the execution node for the `jido_hive` participation substrate.
+`jido_hive_client` is the participant runtime for `jido_hive`.
 
-The client acts as a **Participant Runtime**. It does not own the room state, it does not decide what workflow to execute, and it does not coordinate directly with other workers. Its sole responsibility is to:
+It serves two related use cases:
+- long-running worker processes connected to the server relay
+- embedded local runtimes used directly from Elixir applications such as the TUI example
 
-1. Declare its capabilities to the server.
-2. Receive a scoped **Context View**.
-3. Execute locally (e.g., via LLMs) to fulfill a strictly defined **Contribution Contract**.
-4. Return typed **Context Objects** with fulfilled provenance headers.
+If you are onboarding, start with the repo root [README](../README.md).
 
-If you are new to the architecture, read the top-level concepts in [../README.md](../README.md).
+## What the client does
 
-## The Execution Model
+The client is the execution and participation boundary. It:
+- connects to the server relay as a participant
+- receives structured assignments
+- executes local work against a contribution contract
+- returns structured contributions
+- exposes a local runtime/control surface when needed
+- now also supports direct in-process embedding for human-facing tools
 
-The client architecture reflects the substrate's shift away from monolithic prompts towards structured, contracted execution.
+## Two client modes
 
-When the server dispatches a turn to this worker, the worker receives an `assignment.start` payload containing:
-- `context_view`: A filtered, structured view of the room. It contains the brief, active rules, recent contributions, and relevant `context_objects`. The worker only sees what the server's dispatch policy allows it to see.
-- `contribution_contract`: A strict requirement of what must be produced. It defines `allowed_contribution_types` (e.g., reasoning vs. execution), `allowed_object_types` (e.g., belief, note, artifact), and relation constraints.
+### 1. Worker mode
 
-The client then:
-1. Normalizes the contract (`ProtocolCodec`).
-2. Generates a prompt ensuring the LLM understands the schema requirements (`CollaborationPrompt`).
-3. Executes the LLM call locally (`Jido.Harness -> asm`).
-4. Attempts to automatically repair the output if the LLM returns unstructured prose instead of JSON (`RepairPolicy`).
-5. Decodes and submits the final `contribution.submit` payload back to the server over the relay.
+Worker mode is the existing daemon-style execution flow used by:
+- `bin/client-worker`
+- `bin/hive-clients`
+- server-driven assignment execution
 
-## Quick Start
+In this mode the client:
+1. joins the Phoenix relay
+2. registers itself with `participant.upsert`
+3. waits for `assignment.start`
+4. executes locally through the configured executor
+5. submits `contribution.submit`
 
-Run a worker connected to the local development server:
+### 2. Embedded mode
+
+Embedded mode is the new direct Elixir API for local tools.
+
+The main entry point is:
+- `JidoHiveClient.Embedded`
+
+Current embedded operations are:
+- `start_link/1`
+- `snapshot/1`
+- `subscribe/1`
+- `submit_chat/2`
+- `accept_context/3`
+- `refresh/1`
+- `shutdown/1`
+
+This API is intentionally narrow. It is designed to be consumed by local tools without adding another orchestration layer.
+
+## Mock-first interception
+
+For human-first collaboration flows, the client now includes a narrow interceptor boundary and a deterministic mock backend.
+
+Key modules:
+- `JidoHiveClient.ChatInput`
+- `JidoHiveClient.InterceptedContribution`
+- `JidoHiveClient.Interceptor`
+- `JidoHiveClient.AgentBackend`
+- `JidoHiveClient.AgentBackends.Mock`
+
+The mock backend exists so UI and runtime development can move quickly without waiting on a real LLM every time a human submits text.
+
+Current mock heuristics intentionally stay simple:
+- chat message always yields a `message` object
+- `I think` tends to yield a `hypothesis`
+- `because` tends to yield `evidence`
+- `?` tends to yield a `question`
+- `no`, `actually`, or `broken` can yield a `contradiction`
+- `we should` or `let's` can yield a `decision_candidate`
+
+The result is a deterministic structured contribution that the room can store immediately.
+
+## Local control API
+
+The client can expose a local REST and SSE surface for diagnostics and isolated execution.
+
+Enable it with:
+
+```bash
+bin/client-worker --worker-index 1 --control-port 4101
+```
+
+Key routes:
+- `GET /api/runtime`
+- `GET /api/runtime/assignments`
+- `GET /api/runtime/events`
+- `GET /api/runtime/events?stream=true`
+- `POST /api/runtime/assignments/execute`
+
+This surface is local tooling only. The server remains the orchestration authority.
+
+## Worker quick start
+
+Run one worker:
+
 ```bash
 bin/client-worker --worker-index 1
 ```
 
 Run a second worker:
+
 ```bash
 bin/client-worker --worker-index 2
 ```
 
-These wrappers set up standard capabilities (e.g., `codex.exec.session`), target identities, and LLM provider defaults.
+## Embedded quick start
 
-## Local Control API
+A direct Elixir embedding flow looks like this conceptually:
 
-While the server is the orchestration authority, the client can optionally run a local `REST + SSE` control surface. This API is designed for local diagnostics, node-health dashboards, and **manual, isolated execution testing**.
+```elixir
+{:ok, embedded} =
+  JidoHiveClient.Embedded.start_link(
+    room_id: "room-123",
+    participant_id: "alice",
+    participant_role: "collaborator",
+    api_base_url: "http://127.0.0.1:4000/api"
+  )
 
-To enable it, pass `--control-port`:
-```bash
-bin/client-worker --worker-index 1 --control-port 4101
+:ok = JidoHiveClient.Embedded.subscribe(embedded)
+{:ok, _contribution} = JidoHiveClient.Embedded.submit_chat(embedded, %{text: "I think Redis is dropping connections"})
+snapshot = JidoHiveClient.Embedded.snapshot(embedded)
 ```
 
-### Key Local Routes
+That is the path used by `examples/jido_hive_termui_console`.
 
-- `GET /api/runtime`: View the current ephemeral snapshot of the worker (connection status, metrics).
-- `GET /api/runtime/assignments`: View the history of local assignments handled by this node.
-- `GET /api/runtime/events?stream=true`: SSE stream of local execution events.
-- **`POST /api/runtime/assignments/execute`**: A highly useful developer hook. You can `POST` a raw assignment payload directly to the worker to test its LLM execution, decoding, and repair logic *without* needing a server or room setup.
+## Example TUI consumer
 
-Example testing execution directly:
-```bash
-curl -X POST http://127.0.0.1:4101/api/runtime/assignments/execute \
-  -H 'Content-Type: application/json' \
-  -d '{
-        "assignment": {
-          "assignment_id": "test-1",
-          "objective": "Summarize the rules.",
-          "phase": "analysis",
-          "context_view": { "rules": ["Must return JSON"] },
-          "contribution_contract": { "allowed_contribution_types": ["reasoning"], "allowed_object_types": ["note"] }
-        }
-      }'
-```
+The first real embedded consumer is:
+- `../examples/jido_hive_termui_console`
 
-## Raw CLI Usage
+It is built with the local `term_ui` project at:
+- `/home/home/p/g/n/term_ui`
 
-If you need fine-grained control over participant capabilities and provider settings without using the `bin/` wrappers:
+The TUI renders:
+- a conversation pane from the room timeline
+- a context pane from the room context objects
+- a chat input that submits through the embedded runtime
+
+## Developer structure
+
+Important areas in this app:
+- `lib/jido_hive_client/relay_worker.ex`: relay-connected worker process
+- `lib/jido_hive_client/runtime/`: local runtime state and event recording
+- `lib/jido_hive_client/boundary/`: protocol and room API boundaries
+- `lib/jido_hive_client/embedded.ex`: embeddable runtime for local Elixir consumers
+- `lib/jido_hive_client/interceptor.ex`: chat-to-contribution pipeline
+- `lib/jido_hive_client/agent_backends/mock.ex`: deterministic backend for tests and UI work
+- `lib/jido_hive_client/control/`: local REST and SSE control server
+
+## Raw worker CLI usage
+
+If you need direct control instead of the `bin/` wrappers:
 
 ```bash
 mix run --no-halt -e 'JidoHiveClient.CLI.main(System.argv())' -- \
@@ -89,12 +170,8 @@ mix run --no-halt -e 'JidoHiveClient.CLI.main(System.argv())' -- \
   --reasoning-effort high
 ```
 
-## Developer Guidance
+## Related docs
 
-The client is highly decoupled:
-- **`lib/jido_hive_client/boundary/`**: The Protocol Codec translates between canonical JSON maps and internal Elixir structs.
-- **`lib/jido_hive_client/executor/`**: Handles the entire assignment lifecycle: building the session, generating the prompt, repairing faulty outputs, and projecting the result into a valid contribution.
-- **`lib/jido_hive_client/runtime/`**: An ephemeral `gen_server` state machine holding local observability data.
-- **`lib/jido_hive_client/control/`**: The local REST API (Bandit/Plug).
-
-This design allows you to easily plug in different `Jido` execution backends or target environments by swapping out the core `Executor` logic without rewriting the relay communication layer.
+- [Repo README](../README.md)
+- [Server README](../jido_hive_server/README.md)
+- [TUI example README](../examples/jido_hive_termui_console/README.md)

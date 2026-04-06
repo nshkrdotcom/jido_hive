@@ -69,6 +69,11 @@ defmodule JidoHiveClient.Runtime do
     GenServer.call(server, {:connection_changed, status, payload})
   end
 
+  @spec record_event(pid() | atom(), map()) :: :ok
+  def record_event(server \\ __MODULE__, attrs) when is_map(attrs) do
+    GenServer.call(server, {:record_event, attrs})
+  end
+
   @spec record_contribution_published(pid() | atom(), map(), map()) :: :ok
   def record_contribution_published(server \\ __MODULE__, assignment, contribution)
       when is_map(assignment) and is_map(contribution) do
@@ -139,6 +144,10 @@ defmodule JidoHiveClient.Runtime do
 
   def handle_call(:executor, _from, %__MODULE__{} = state) do
     {:reply, state.executor, state}
+  end
+
+  def handle_call({:record_event, attrs}, _from, %__MODULE__{} = state) do
+    {:reply, :ok, append_event(state, attrs)}
   end
 
   def handle_call({:connection_changed, status, payload}, _from, %__MODULE__{} = state) do

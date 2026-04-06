@@ -1,84 +1,166 @@
-# JidoHiveServer: Room Authority & Context Store
+# JidoHiveServer
 
-`jido_hive_server` is the authoritative coordinator for the `jido_hive` participation substrate.
+`jido_hive_server` is the authoritative room server for `jido_hive`.
 
-The server does **not** know about specific workflows, collaboration styles, or application semantics. It is purely responsible for:
-- Managing **Room** lifecycles (the shared epistemic space).
-- Executing pluggable **Dispatch Policies**.
-- Storing **Context Objects** with full provenance tracking.
-- Maintaining the registry of **Participants** (workers and humans).
-- Managing live worker coordination over the Phoenix WebSocket Relay.
-- Providing persistence (SQLite via Ecto) and publication execution (GitHub, Notion).
+It owns:
+- room lifecycle and persistence
+- dispatch policy execution
+- participant registration and relay presence
+- room event reduction into authoritative state
+- HTTP APIs for operators and human participants
+- Phoenix channel transport for worker execution
 
-If you are new to the architecture, read the top-level concepts in [../README.md](../README.md).
+If you are onboarding, start with the repo root [README](../README.md).
 
-## From Workflows to Dispatch Policies
+## What the server is responsible for
 
-Historically, the server hardcoded workflow steps (e.g., proposal, critique). Now, the server delegates all orchestration to **Dispatch Policies**. 
+The server is the source of truth for collaborative state. It accepts contributions, validates them, reduces them into room state, persists the result, and decides what assignment should happen next.
 
-A Dispatch Policy asks: *Given the current room state and the available participants, who should produce the next context object, and what should their input view be?*
+The server does not execute AI models itself. It coordinates participants that do.
 
-Built-in policies included in the library:
-- `round_robin/v2`: Sequential turns across a defined set of participants (collaborative reasoning).
-- `resource_pool/v1`: Matches pending tasks to participants based on available compute/capabilities (hands-off execution).
-- `human_gate/v1`: Pauses execution until a human participant produces a decision node.
+## Main concepts
 
-## Data Model & Provenance
+### Room
 
-The server maintains pure functional data structures representing the substrate:
+A room is the shared coordination container. It holds:
+- the room brief and status
+- participant registrations
+- room events
+- accumulated context objects
+- current dispatch state
 
-- **Assignments**: Created by the dispatch policy. They don't carry full mutable room state. They carry a scoped `context_view` (what the worker is allowed to see) and a `contribution_contract` (what the worker is allowed to output).
-- **Contributions**: Incoming payloads from participants. The server validates that the contribution satisfies the assignment's contract.
-- **Context Objects**: Extracted from validated contributions by the `EventReducer`. Every object (e.g., `belief`, `note`, `decision`) is persisted with strict **provenance**: who authored it, based on what relations, and with what authority level.
+### Dispatch policy
 
-## Key APIs & Boundaries
+Policies decide what happens next from the current room state. The built-in system is intentionally narrow and room-centric rather than workflow-framework heavy.
 
-### REST Control Plane
-The REST API is how operators (and UI clients) inspect the substrate and how human participants inject manual context objects.
+Current built-in policy surface includes room policies such as:
+- `round_robin/v2`
+- `resource_pool/v1`
+- `human_gate/v1`
 
-- `POST /api/rooms` - Create a room, attaching a `dispatch_policy_id` and config.
-- `GET /api/policies` - List available pluggable dispatch policies.
-- `GET /api/rooms/:id/context_objects` - View the typed knowledge objects accumulated in the room.
-- `POST /api/rooms/:id/contributions` - **How humans participate.** Submit a manual contribution matching the exact same schema as an LLM worker.
-- `GET /api/rooms/:id/events` - The raw, canonical event log.
-- `GET /api/rooms/:id/timeline` - A UI-friendly projection of the events (supports `?after=<cursor>` and `?stream=true` for SSE).
-- `POST /api/rooms/:id/run` - Trigger the dispatch policy loop.
+### Contribution and context
 
-### The Relay Transport
-Live workers use Phoenix WebSockets for low-latency coordination. State is **never** sent peer-to-peer.
-- Client pushes: `relay.hello`, `participant.upsert` (declaring capabilities), `contribution.submit`.
-- Server pushes: `assignment.start`.
+Participants submit structured contributions. The reducer extracts context objects such as:
+- `belief`
+- `note`
+- `question`
+- `hypothesis`
+- `evidence`
+- `contradiction`
+- `decision_candidate`
+- `decision`
 
-## Quick Start
+The server stores provenance and room history so the current context can be inspected later through API projections.
+
+## Server transports
+
+### REST API
+
+REST is the operator and UI control plane.
+
+Common routes include:
+- `POST /api/rooms`
+- `POST /api/rooms/:id/run`
+- `GET /api/rooms/:id/events`
+- `GET /api/rooms/:id/timeline`
+- `GET /api/rooms/:id/context_objects`
+- `POST /api/rooms/:id/contributions`
+- `GET /api/policies`
+- `GET /api/workflows`
+- `GET /api/targets`
+
+Important notes:
+- `timeline` is the UI-friendly projection
+- `events` is the canonical event log
+- `timeline` supports cursor polling and SSE variants used by local tools and future UIs
+
+### Phoenix relay
+
+Phoenix Channels carry the live worker execution plane.
+
+Typical flow:
+1. client connects to `/socket/websocket`
+2. client joins a relay topic
+3. client sends `relay.hello`
+4. client sends `participant.upsert`
+5. server sends `assignment.start`
+6. client sends `contribution.submit`
+
+## Local development
+
+Start the server from repo root:
 
 ```bash
-# Starts the server with Ecto creation & migration
 bin/server
 ```
-Local endpoint: `http://127.0.0.1:4000`
 
-## Developer Guidance
+Or use the demo wrapper:
 
-The server is built with a strict separation between pure logic and side-effects.
+```bash
+bin/live-demo-server
+```
 
-- **Functional Core (`lib/jido_hive_server/collaboration/`)**: This is the heart of the substrate. It contains the data schemas (`Schema/`), pure state transitions (`EventReducer`, `CommandHandler`), context projections (`ContextView`), and the `DispatchPolicy` behaviours.
-- **Boundaries (`lib/jido_hive_server_web/`)**: Controllers and the `RelayChannel`. They normalize HTTP/WS payloads and delegate to the core.
-- **Lifecycle / OTP (`lib/jido_hive_server/collaboration/room_server.ex`)**: Wraps the pure `RoomAgent` to handle concurrency and persistence.
+Local endpoints:
+- API: `http://127.0.0.1:4000/api`
+- WebSocket: `ws://127.0.0.1:4000/socket/websocket`
 
-**Rule of thumb:** Do not put room-state business logic in controllers or channels. Do not put Ecto queries or HTTP calls in the Collaboration core.
+`bin/server` runs `ecto.create` and `ecto.migrate` before starting Phoenix.
 
-## Production and Deployment
+## Human participation path
 
-The current deployed base is `https://jido-hive-server-test.app.nsai.online`.
-Deploys are managed via `coolify_ex`.
+Humans can participate through the same room model without impersonating a worker daemon.
 
-From the repo root:
+Today that path exists in two practical forms:
+- direct server REST contributions to `POST /api/rooms/:id/contributions`
+- the embedded client runtime used by `examples/jido_hive_termui_console`, which converts human chat text into structured contributions before posting them to the server
+
+## Persistence and migrations
+
+The server uses SQLite via Ecto.
+
+Migrations live under:
+- `priv/repo/migrations`
+
+Local migration path:
+
+```bash
+cd jido_hive_server
+mix ecto.create
+mix ecto.migrate
+```
+
+## Production deployment
+
+The current deployment target is:
+- `https://jido-hive-server-test.app.nsai.online`
+
+Deploy from repo root:
+
 ```bash
 scripts/deploy_coolify.sh
 ```
 
-Follow up by tailing the logs:
+Tail deployment logs:
+
 ```bash
 cd jido_hive_server
 MIX_ENV=coolify mix coolify.app_logs --project server --lines 200 --follow
 ```
+
+## Architecture notes for developers
+
+The code is split on purpose:
+- `lib/jido_hive_server/collaboration/`: pure room logic, reducers, schemas, policies, projections
+- `lib/jido_hive_server_web/`: Phoenix controllers, channel boundary, HTTP normalization
+- OTP processes wrap the pure core and persistence boundaries
+
+The design rule is simple:
+- keep room logic in the collaboration core
+- keep transport and persistence concerns at the boundary
+- treat the relay and controllers as thin adapters
+
+## Related docs
+
+- [Repo README](../README.md)
+- [Client README](../jido_hive_client/README.md)
+- [TUI example README](../examples/jido_hive_termui_console/README.md)

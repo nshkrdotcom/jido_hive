@@ -71,7 +71,11 @@ defmodule JidoHiveWorkspace.MixProject do
   defp blitz_workspace do
     [
       root: __DIR__,
-      projects: ["jido_hive_client", "jido_hive_server"],
+      projects: [
+        "jido_hive_client",
+        "jido_hive_server",
+        "examples/jido_hive_termui_console"
+      ],
       isolation: [
         deps_path: true,
         build_path: true,
