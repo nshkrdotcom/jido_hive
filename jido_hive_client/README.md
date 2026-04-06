@@ -2,11 +2,11 @@
 
 `jido_hive_client` is the local worker runtime for `jido_hive`.
 
-It connects outbound to the server relay, advertises one execution surface, receives assignments, executes them locally, and publishes structured contributions back to the server.
+It connects outbound to the server relay, advertises a runtime participant and target, receives assignments, executes them locally, and publishes structured contributions back to the server.
 
-If you are new to the repo, start with the root guide first: [../README.md](../README.md)
+Start with the root guide first if you are onboarding: [../README.md](../README.md)
 
-## What end users and operators should know
+## What this app is for
 
 From an operator point of view, a client is a worker node.
 
@@ -16,11 +16,12 @@ A worker:
 - advertises a participant and target
 - waits for `assignment.start`
 - executes locally through `Jido.Harness -> asm`
-- returns `contribution.submit`
+- publishes `contribution.submit`
+- optionally exposes a local control API for diagnostics or UI work
 
 Workers do not create rooms, choose policies, or own room state. The server does that.
 
-## Quick local start
+## Quick start
 
 From the repo root:
 
@@ -28,54 +29,132 @@ From the repo root:
 bin/client-worker --worker-index 1
 ```
 
-Start a second worker in another terminal:
+Start another worker in a second terminal:
 
 ```bash
 bin/client-worker --worker-index 2
 ```
 
-These wrappers supply sensible defaults for:
+These repo wrappers supply the usual runtime defaults for:
 
 - relay URL
+- workspace ID
 - participant identity
 - target identity
 - provider selection
 - workspace root
 
-For the exact hosted production runbook with workers and server log tailing, use:
+For the hosted smoke path, use [../README.md#production-smoke-test](../README.md#production-smoke-test).
 
-- [../README.md#production-smoke-test](../README.md#production-smoke-test)
+## Worker runtime model
 
-## What the client does
+The client is designed around a simple boundary.
 
-At runtime, the client:
+Input from server:
 
-- joins a relay topic over Phoenix channels
-- publishes `relay.hello`
-- publishes `participant.upsert`
-- normalizes incoming `assignment.start` payloads
-- builds an execution request from the assignment contract
-- executes the assignment locally
-- optionally performs a repair pass if the model returns prose instead of strict JSON
-- publishes `contribution.submit`
-- maintains a local runtime snapshot and event log
+- `assignment.start`
+
+Output to server:
+
+- `contribution.submit`
+
+Local responsibilities:
+
+- connect to the relay
+- normalize the assignment payload
+- render prompts from the assignment contract
+- execute through `Jido.Harness`
+- decode or repair model output into the canonical contribution shape
+- publish the contribution
+- record local runtime state and events
+
+## Relay behavior
+
+Canonical relay behavior:
+
+1. join `relay:<workspace_id>`
+2. push `relay.hello`
+3. push `participant.upsert`
+4. receive `assignment.start`
+5. execute locally
+6. push `contribution.submit`
+
+The client is intentionally a relay consumer, not a room orchestrator.
+
+## Assignment contract
+
+The client expects assignments to be self-contained enough to execute without pulling mutable room state from another source.
+
+Important assignment fields:
+
+- `assignment_id`
+- `room_id`
+- `participant_id`
+- `participant_role`
+- `phase`
+- `objective`
+- `context_view`
+- `contribution_contract`
+- `session`
+
+### `context_view`
+
+The filtered room view typically carries:
+
+- `brief`
+- `rules`
+- `context_objects`
+- `recent_contributions`
+- `status`
+
+### `contribution_contract`
+
+The contribution contract constrains what the worker should return.
+
+It typically carries:
+
+- `allowed_contribution_types`
+- `allowed_object_types`
+- `allowed_relation_types`
+- `authority_mode`
+- `format`
+
+## Contribution contract
+
+The client returns a normalized contribution map.
+
+Canonical fields include:
+
+- `summary`
+- `contribution_type`
+- `authority_level`
+- `context_objects`
+- `artifacts`
+- `execution`
+- `tool_events`
+- `events`
+- `status`
+
+The worker runtime now also normalizes common non-canonical model outputs into the canonical contract at the decoder boundary. That includes common wrapped `contribution` responses and legacy object-list variants, so the runtime is more tolerant of realistic model behavior without weakening the server-side contract.
 
 ## Local control API
 
-The client can expose an optional local control surface intended for:
+The client can expose an optional local control surface over `REST + SSE`.
+
+This surface is intended for:
 
 - local dashboards
-- node health views
+- worker health views
 - assignment history
-- SSE event streaming
+- local event inspection
 - manual local execution
-- operator debugging
+- SSE streaming into a UI
 
 It is not the orchestration authority.
 
 ### Routes
 
-When enabled, the local client exposes:
+When enabled, the local API exposes:
 
 - `GET /api/runtime`
 - `GET /api/runtime/assignments`
@@ -85,27 +164,27 @@ When enabled, the local client exposes:
 - `POST /api/runtime/assignments/execute`
 - `POST /api/runtime/shutdown`
 
-What these routes are for:
+### Route purpose
 
-- `GET /api/runtime`: current local runtime snapshot
-- `GET /api/runtime/assignments`: recent local assignment activity
-- `GET /api/runtime/events`: recent local runtime events with cursor support
-- `GET /api/runtime/events?stream=true`: SSE event stream for a UI
-- `GET /api/runtime/events?stream=true&once=true`: backlog-only SSE response for UI catch-up
-- `POST /api/runtime/assignments/execute`: manual local assignment execution hook
+- `GET /api/runtime`: current runtime snapshot
+- `GET /api/runtime/assignments`: recent local assignment records
+- `GET /api/runtime/events`: recent runtime event backlog
+- `GET /api/runtime/events?stream=true`: SSE stream for dashboards
+- `GET /api/runtime/events?stream=true&once=true`: one-shot SSE catch-up
+- `POST /api/runtime/assignments/execute`: manual local execution of an assignment-shaped payload
 - `POST /api/runtime/shutdown`: local process shutdown hook
 
-### How to enable it
+### Enabling the local API
 
 CLI flags:
 
-- `--control-port`
 - `--control-host`
+- `--control-port`
 
 Environment variables:
 
-- `JIDO_HIVE_CLIENT_CONTROL_PORT`
 - `JIDO_HIVE_CLIENT_CONTROL_HOST`
+- `JIDO_HIVE_CLIENT_CONTROL_PORT`
 
 Example:
 
@@ -113,7 +192,7 @@ Example:
 bin/client-worker --worker-index 1 --control-port 4101
 ```
 
-Then inspect it locally:
+Inspect it locally:
 
 ```bash
 curl http://127.0.0.1:4101/api/runtime
@@ -124,9 +203,9 @@ curl -N -H 'Accept: text/event-stream' 'http://127.0.0.1:4101/api/runtime/events
 
 ## Manual local execution
 
-The manual execution route accepts an assignment-shaped payload.
+The manual execution route accepts an assignment-shaped request body.
 
-Typical request body:
+Example:
 
 ```json
 {
@@ -159,36 +238,9 @@ Typical request body:
 }
 ```
 
-## Execution contract
-
-The client expects the assignment contract to carry enough information to execute without fetching mutable room state from somewhere else.
-
-Important assignment fields:
-
-- `assignment_id`
-- `room_id`
-- `participant_id`
-- `participant_role`
-- `objective`
-- `phase`
-- `context_view`
-- `contribution_contract`
-- `session`
-
-The contribution returned by the client is expected to include:
-
-- `summary`
-- `contribution_type`
-- `authority_level`
-- `context_objects`
-- `artifacts`
-- `execution`
-- `tool_events`
-- `events`
-
 ## Raw CLI usage
 
-The client is usually started through repo-level wrappers, but the raw CLI is:
+The repo-level wrappers are the normal entrypoint, but the raw CLI is:
 
 ```bash
 mix run --no-halt -e 'JidoHiveClient.CLI.main(System.argv())' -- \
@@ -197,7 +249,7 @@ mix run --no-halt -e 'JidoHiveClient.CLI.main(System.argv())' -- \
   --workspace-id workspace-local \
   --user-id user-worker \
   --participant-id worker-1 \
-  --participant-role analyst \
+  --participant-role worker \
   --target-id target-worker-1 \
   --capability-id codex.exec.session \
   --workspace-root /path/to/repo \
@@ -212,27 +264,42 @@ Useful optional flags:
 - `--reasoning-effort`
 - `--timeout-ms`
 - `--cli-path`
-- `--control-port`
 - `--control-host`
+- `--control-port`
 
-## What developers should know
+## What the client does internally
 
-The client is intentionally split into layers:
+The client is split into a few clear layers.
 
-- protocol codec for relay contract normalization
-- runtime snapshot and event log for local state
-- local control router for `REST + SSE`
-- executor modules for prompt generation, result decoding, projection, and repair
-- relay worker as the lifecycle boundary
+- protocol codec: normalize relay payloads
+- runtime state and event log: track local worker history
+- control router: expose local `REST + SSE`
+- prompt and execution modules: build the run request and execute locally
+- result decoder: normalize model output into canonical contributions
+- relay worker: own socket lifecycle and assignment handling
 
-That makes the client suitable for:
+This makes the client usable as:
 
-- local worker UIs
-- desktop tooling
-- node health and event inspection
-- alternate local execution backends
+- a plain terminal worker
+- a worker with a local dashboard
+- a node health endpoint for operator tooling
+- a substrate for a richer local UI
 
-The local API should remain local-first unless explicit authentication and remote exposure requirements are introduced.
+## Local-first design constraints
+
+The client local API should remain local-first unless a deliberate authenticated remote exposure design is added.
+
+Current intended use:
+
+- bind locally
+- expose to a desktop or browser UI on the same machine
+- inspect one worker node at a time
+
+Current non-goals:
+
+- remote orchestration
+- server authority duplication
+- a second distributed control plane
 
 ## Development
 

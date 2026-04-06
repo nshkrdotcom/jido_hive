@@ -1,36 +1,38 @@
 # JidoHiveServer
 
-`jido_hive_server` is the Phoenix application that owns the shared side of `jido_hive`.
+`jido_hive_server` is the Phoenix application that owns the shared coordination side of `jido_hive`.
 
 It is responsible for:
 
-- exposing the public `REST` API
-- accepting worker connections over Phoenix channels
-- tracking available runtime targets
-- creating and running rooms
-- dispatching assignments under a policy
-- persisting room snapshots and room events
-- exposing room history and timeline views
-- planning and executing publications
+- the public `REST` control plane
+- the Phoenix relay used by workers
+- target registration and availability tracking
+- room creation and room execution
+- dispatch policy selection and assignment dispatch
+- persistence of room snapshots and room events
+- room timeline and room event history surfaces
+- publication planning and publication execution
 
-If you are new to the repo, start with the root guide first: [../README.md](../README.md)
+Start with the root guide first if you are onboarding: [../README.md](../README.md)
 
-## What end users and operators should know
+## What this app is for
 
-From an operator point of view, the server is the source of truth.
+From an operator or end-user point of view, the server is the system of record.
 
 Use the server when you need to:
 
+- inspect connected workers
 - create a room
-- inspect targets
-- inspect or stream room history
+- run a room
+- inspect room state
+- inspect room timeline or raw events
 - submit a manual human contribution
-- run a room under a policy
-- inspect or execute publications
+- inspect publication drafts
+- execute publication actions
 
-Workers connect to the server, but workers do not own the collaboration lifecycle.
+Workers never own the collaboration lifecycle. They only execute assignments.
 
-## Quick local start
+## Quick start
 
 From the repo root:
 
@@ -54,161 +56,294 @@ mix ecto.migrate
 mix phx.server
 ```
 
-Default local endpoint:
+Default local base URL:
 
 - `http://127.0.0.1:4000`
 
-## What the server exposes
+## Runtime model
 
-### Phoenix relay
+The server coordinates collaboration through these primitives.
+
+### Room
+
+The room is the top-level shared container.
+
+A room tracks:
+
+- `room_id`
+- `brief`
+- `rules`
+- `participants`
+- `assignments`
+- `contributions`
+- `context_objects`
+- `dispatch_policy_id`
+- `dispatch_policy_config`
+- `dispatch_state`
+- publication status and runs
+
+### Participant
+
+Participants are room actors.
+
+Common participant classes:
+
+- runtime workers advertising a relay target
+- human reviewers or operators contributing over HTTP
+
+### Assignment
+
+Assignments are server-opened work items.
+
+The built-in relay packet includes:
+
+- `assignment_id`
+- `room_id`
+- `participant_id`
+- `participant_role`
+- `phase`
+- `objective`
+- `context_view`
+- `contribution_contract`
+- `session`
+
+### Contribution
+
+Contributions are server-ingested results from workers or humans.
+
+The canonical model carries:
+
+- `summary`
+- `contribution_type`
+- `authority_level`
+- `context_objects`
+- `artifacts`
+- `execution`
+- `events`
+- `tool_events`
+- `status`
+
+### Context object
+
+Context objects are typed room facts or artifacts.
+
+Built-in policies currently use:
+
+- `belief`
+- `note`
+- `question`
+- `constraint`
+- `decision`
+- `artifact`
+
+## Relay surface
 
 Local relay endpoint:
 
 - `ws://127.0.0.1:4000/socket/websocket`
 
-Canonical relay events:
+Canonical relay flow:
 
-- client joins relay topic
-- client pushes `relay.hello`
-- client pushes `participant.upsert`
-- server pushes `assignment.start`
-- client pushes `contribution.submit`
+1. worker joins `relay:<workspace_id>`
+2. worker sends `relay.hello`
+3. worker sends `participant.upsert`
+4. server sends `assignment.start`
+5. worker sends `contribution.submit`
 
-The relay is for live assignment delivery and contribution intake. Shared state still lives on the server.
+This relay transports assignments and contributions only. It does not move server authority off the server.
 
-### REST API
+## REST API
 
 Local base API:
 
 - `http://127.0.0.1:4000/api`
 
-Routes:
+### Discovery and runtime
 
 - `GET /api/targets`
 - `GET /api/policies`
-- `GET /api/policies/*id`
+- `GET /api/policies/:id`
+
+### Rooms
+
 - `POST /api/rooms`
 - `GET /api/rooms/:id`
+- `POST /api/rooms/:id/run`
+- `POST /api/rooms/:id/first_slice`
+
+### History and projections
+
 - `GET /api/rooms/:id/events`
 - `GET /api/rooms/:id/timeline`
 - `GET /api/rooms/:id/timeline?after=<cursor>`
 - `GET /api/rooms/:id/timeline?stream=true`
 - `GET /api/rooms/:id/timeline?stream=true&once=true`
+
+### Shared context and manual input
+
 - `GET /api/rooms/:id/context_objects`
 - `GET /api/rooms/:id/context_objects/:context_id`
 - `POST /api/rooms/:id/contributions`
-- `POST /api/rooms/:id/run`
-- `POST /api/rooms/:id/first_slice`
+
+### Publications
+
 - `GET /api/rooms/:id/publication_plan`
 - `GET /api/rooms/:id/publications`
 - `POST /api/rooms/:id/publications`
+
+### Connector installation and connection helpers
+
 - `GET /api/connectors/:connector_id/connections`
 - `POST /api/connectors/:connector_id/installs`
 - `GET /api/connectors/installs/:install_id`
 - `POST /api/connectors/installs/:install_id/complete`
 
-## Room execution model
+## Creating and running rooms
 
-The server runs collaboration through rooms, policies, assignments, and contributions.
+A room is created with:
 
-High-level flow:
+- a `room_id`
+- a `brief`
+- a list of `rules`
+- a set of participants, usually locked from currently connected targets
+- an optional dispatch policy selection
 
-1. workers connect and upsert participants/targets
-2. a room is created
-3. a dispatch policy is selected
-4. the server opens the next assignment
-5. a worker executes locally and publishes a contribution
-6. the server reduces that contribution into room state
-7. the room timeline and publication plan update from persisted events
+Recommended operator path:
 
-A room snapshot is built from generic collaboration primitives rather than workflow-specific state.
+```bash
+bin/hive-control
+bin/hive-clients
+```
 
-## Built-in policies
+Scripted path:
 
-Current built-in policies:
+```bash
+setup/hive wait-targets --count 2
+setup/hive create-room room-manual-1 --participant-count 2
+setup/hive run-room room-manual-1 --turn-timeout-ms 180000
+```
 
-- `round_robin/v2`: fixed structured collaboration across the locked participant set
-- `resource_pool/v1`: allocate assignments to the least-used available runtime participant
-- `human_gate/v1`: stop for human/manual contributions and completion gating
+Hosted test path:
 
-Use `GET /api/policies` to inspect the available policy definitions.
+```bash
+setup/hive --prod wait-targets --count 2
+setup/hive --prod live-demo --participant-count 2
+```
+
+## Built-in dispatch policies
+
+Current built-ins:
+
+- `round_robin/v2`
+- `resource_pool/v1`
+- `human_gate/v1`
+
+### `round_robin/v2`
+
+Runs ordered collaboration phases across the locked participant set.
+
+### `resource_pool/v1`
+
+Chooses the least-used available runtime participant for each assignment.
+
+### `human_gate/v1`
+
+Allows automated runtime work, then blocks on a binding human/manual contribution.
+
+Use `GET /api/policies` when you need the complete policy definitions.
 
 ## Manual contributions
 
-The server accepts human/manual contributions over HTTP.
+Manual contributions are first-class inputs to room state.
 
-Example use cases:
+Use `POST /api/rooms/:id/contributions` when you want to:
 
-- an operator injects a decision
-- a reviewer adds a question or constraint
-- a UI submits a binding approval step
+- inject a human decision
+- add a reviewer constraint or question
+- unblock a `human_gate` room
+- record an operator correction
 
-Route:
+The same contribution model is used for worker and human contributions.
 
-- `POST /api/rooms/:id/contributions`
+## History and UI surfaces
 
-That path uses the same canonical contribution model as worker-submitted contributions.
+The server intentionally exposes two history views.
 
-## History surfaces
+### Raw room events
 
-The server exposes two room history views:
+`GET /api/rooms/:id/events`
 
-- `GET /api/rooms/:id/events`: persisted room event records
-- `GET /api/rooms/:id/timeline`: UI-facing projection derived from those events
+Use this when you want the lower-level persisted event stream.
 
-Use the timeline when you want:
+### Room timeline
 
-- human-readable activity
+`GET /api/rooms/:id/timeline`
+
+Use this when you want:
+
+- a UI-friendly activity stream
 - incremental polling with `?after=<cursor>`
-- SSE streaming with `?stream=true`
+- server-sent events with `?stream=true`
 
-Use the raw event log when you want the lower-level event stream or debugging detail.
+The timeline is the preferred surface for dashboards and operator UIs.
 
 ## Persistence
 
-The server uses SQLite through Ecto.
+The server uses SQLite via Ecto.
 
-Persisted data includes:
+Persisted tables include:
 
 - room snapshots
 - room events
 - target registrations
 - publication runs
 
-Normal local startup runs migrations automatically through `bin/server`.
+Normal local startup migrates automatically through `bin/server`.
+
+Important migrations live in:
+
+- `priv/repo/migrations/20260326120000_create_jido_hive_persistence.exs`
+- `priv/repo/migrations/20260405093000_create_room_events.exs`
 
 ## Publications
 
 The server owns publication planning and execution.
 
-That includes:
+Today that includes:
 
-- GitHub publication actions
-- Notion publication actions
-- publication-run persistence
+- GitHub issue-style publication drafts and execution
+- Notion page-style publication drafts and execution
 
-The built-in publication integrations are registered through the integrations bootstrap process.
+Useful routes:
 
-## What developers should know
+- `GET /api/rooms/:id/publication_plan`
+- `GET /api/rooms/:id/publications`
+- `POST /api/rooms/:id/publications`
 
-The server design is intentionally layered:
+The publication plan is derived from accepted room state and available connector targets.
 
-- collaboration schema modules define the room primitives
-- reducer and command-handler modules own pure state transitions
-- dispatch policies select assignments without transport concerns
-- persistence and remote execution adapt the pure core to storage and relay boundaries
-- controllers and channels remain thin boundaries
+## Development and architecture notes
 
-Important server modules live under:
+The server is intentionally layered.
+
+- schema modules define collaboration data primitives
+- reducers and command handlers own state transition logic
+- policy modules decide assignment order
+- persistence and remote execution adapt storage and relay boundaries
+- controllers and channels stay thin
+
+Important code areas:
 
 - `lib/jido_hive_server/collaboration`
 - `lib/jido_hive_server/persistence.ex`
 - `lib/jido_hive_server/remote_exec.ex`
 - `lib/jido_hive_server/publications.ex`
+- `lib/jido_hive_server_web/controllers`
+- `lib/jido_hive_server_web/relay_channel.ex`
 
-## Production and deployment
+## Deployment
 
-Current deployed base:
+Current hosted test base:
 
 - `https://jido-hive-server-test.app.nsai.online`
 
@@ -230,11 +365,9 @@ MIX_ENV=coolify mix coolify.logs --project server --latest --tail 200
 MIX_ENV=coolify mix coolify.app_logs --project server --lines 200 --follow
 ```
 
-For the exact production operator sequence, use the root guide:
+For the canonical hosted smoke path, see [../README.md#production-smoke-test](../README.md#production-smoke-test).
 
-- [../README.md#production-smoke-test](../README.md#production-smoke-test)
-
-## Development
+## Development commands
 
 Inside this app:
 
