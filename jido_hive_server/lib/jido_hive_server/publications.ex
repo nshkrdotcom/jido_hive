@@ -54,7 +54,7 @@ defmodule JidoHiveServer.Publications do
     %{
       room_id: snapshot.room_id,
       requested: summary.publish_requests != [],
-      source_entries: Enum.map(snapshot.context_entries, & &1.entry_ref),
+      source_entries: Enum.map(snapshot.context_objects, & &1.context_id),
       publications: Enum.map(@publication_specs, &publication_plan(&1, snapshot, summary))
     }
   end
@@ -234,15 +234,22 @@ defmodule JidoHiveServer.Publications do
 
   defp summarize_room(snapshot) do
     %{
-      claims: entries_by_type(snapshot.context_entries, "claim"),
-      evidence: entries_by_type(snapshot.context_entries, "evidence"),
-      objections: entries_by_type(snapshot.context_entries, "objection"),
-      publish_requests: entries_by_type(snapshot.context_entries, "publish_request")
+      claims: objects_by_type(snapshot.context_objects, ["belief", "claim", "decision"]),
+      evidence: objects_by_type(snapshot.context_objects, ["evidence", "artifact"]),
+      objections: objects_by_type(snapshot.context_objects, ["question", "constraint"]),
+      publish_requests: publish_requests(snapshot)
     }
   end
 
-  defp entries_by_type(entries, entry_type) do
-    Enum.filter(entries, &(&1.entry_type == entry_type))
+  defp objects_by_type(entries, types) do
+    Enum.filter(entries, &(&1.object_type in types))
+  end
+
+  defp publish_requests(snapshot) do
+    Enum.filter(snapshot.contributions, fn contribution ->
+      contribution.contribution_type == "publish_request" or
+        contribution.authority_level == "binding"
+    end)
   end
 
   defp review_title(brief) do
@@ -260,16 +267,16 @@ defmodule JidoHiveServer.Publications do
       markdown_list(snapshot.rules),
       "",
       "## Claims",
-      markdown_entry_list(summary.claims),
+      markdown_context_list(summary.claims),
       "",
       "## Evidence",
-      markdown_entry_list(summary.evidence),
+      markdown_context_list(summary.evidence),
       "",
-      "## Open Objections",
-      markdown_entry_list(summary.objections),
+      "## Open Questions / Constraints",
+      markdown_context_list(summary.objections),
       "",
-      "## Publication Intent",
-      markdown_entry_list(summary.publish_requests)
+      "## Binding Publication Signals",
+      markdown_contribution_list(summary.publish_requests)
     ]
     |> Enum.join("\n")
     |> String.trim()
@@ -282,12 +289,21 @@ defmodule JidoHiveServer.Publications do
     |> Enum.map_join("\n", fn item -> "- #{item}" end)
   end
 
-  defp markdown_entry_list([]), do: "- None recorded."
+  defp markdown_context_list([]), do: "- None recorded."
 
-  defp markdown_entry_list(entries) do
+  defp markdown_context_list(entries) do
     entries
     |> Enum.map_join("\n", fn entry ->
-      "- #{entry.title}: #{entry.body}"
+      "- #{entry.object_type}: #{entry_line(entry)}"
+    end)
+  end
+
+  defp markdown_contribution_list([]), do: "- None recorded."
+
+  defp markdown_contribution_list(contributions) do
+    contributions
+    |> Enum.map_join("\n", fn contribution ->
+      "- #{contribution.participant_role}: #{contribution.summary}"
     end)
   end
 
@@ -300,16 +316,18 @@ defmodule JidoHiveServer.Publications do
       bulleted_list_block(Enum.map(summary.claims, &entry_line/1)),
       heading_block("Evidence"),
       bulleted_list_block(Enum.map(summary.evidence, &entry_line/1)),
-      heading_block("Open Objections"),
+      heading_block("Open Questions / Constraints"),
       bulleted_list_block(Enum.map(summary.objections, &entry_line/1)),
-      heading_block("Publication Intent"),
-      bulleted_list_block(Enum.map(summary.publish_requests, &entry_line/1))
+      heading_block("Binding Publication Signals"),
+      bulleted_list_block(Enum.map(summary.publish_requests, & &1.summary))
     ]
     |> List.flatten()
   end
 
   defp entry_line(entry) do
-    "#{entry.title}: #{entry.body}"
+    [entry.title, entry.body]
+    |> Enum.reject(&is_nil/1)
+    |> Enum.join(": ")
   end
 
   defp paragraph_block(content) do
@@ -370,6 +388,7 @@ defmodule JidoHiveServer.Publications do
 
   defp normalize(list) when is_list(list), do: Enum.map(list, &normalize/1)
   defp normalize(value) when is_atom(value), do: Atom.to_string(value)
+  defp normalize(%DateTime{} = value), do: DateTime.to_iso8601(value)
   defp normalize(value), do: value
 
   defp normalize_key(key) when is_atom(key), do: Atom.to_string(key)

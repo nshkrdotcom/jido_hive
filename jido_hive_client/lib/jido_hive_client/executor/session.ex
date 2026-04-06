@@ -5,32 +5,40 @@ defmodule JidoHiveClient.Executor.Session do
 
   alias Jido.Harness
   alias Jido.Harness.ExecutionEvent
-  alias JidoHiveClient.{CollaborationPrompt, ExecutionContract, ResultDecoder, Status}
+
+  alias JidoHiveClient.{
+    Boundary.ProtocolCodec,
+    CollaborationPrompt,
+    ExecutionContract,
+    ResultDecoder,
+    Status
+  }
+
   alias JidoHiveClient.Executor.{Projection, RepairPolicy}
 
   @runtime_id :asm
 
   @impl true
-  def run(job, opts) when is_map(job) and is_list(opts) do
-    opts = ExecutionContract.apply_session_defaults(job, opts)
-    provider = Keyword.get(opts, :provider, provider(job))
+  def run(assignment, opts) when is_map(assignment) and is_list(opts) do
+    opts = ExecutionContract.apply_session_defaults(assignment, opts)
+    provider = Keyword.get(opts, :provider, provider(assignment))
     model = Keyword.get(opts, :model) || default_model(provider)
     reasoning_effort = Keyword.get(opts, :reasoning_effort, :low)
 
     request =
       CollaborationPrompt.to_run_request(
-        job,
-        run_request_opts(job, Keyword.put(opts, :model, model))
+        assignment,
+        run_request_opts(assignment, Keyword.put(opts, :model, model))
       )
 
-    session_id = Keyword.get(opts, :session_id, default_session_id(job))
-    run_id = Keyword.get(opts, :run_id, default_run_id(job))
+    session_id = Keyword.get(opts, :session_id, default_session_id(assignment))
+    run_id = Keyword.get(opts, :run_id, default_run_id(assignment))
 
     start_opts =
-      ExecutionContract.start_session_opts(job, opts, provider, session_id)
+      ExecutionContract.start_session_opts(assignment, opts, provider, session_id)
 
     Status.execution_started(
-      job,
+      assignment,
       Keyword.merge(opts, provider: provider, model: model, reasoning_effort: reasoning_effort),
       request
     )
@@ -40,54 +48,67 @@ defmodule JidoHiveClient.Executor.Session do
            Harness.stream_run(session, request,
              run_id: run_id,
              driver: Keyword.get(opts, :driver),
-             driver_opts: driver_opts(job, Keyword.put(opts, :reasoning_effort, reasoning_effort))
+             driver_opts:
+               driver_opts(assignment, Keyword.put(opts, :reasoning_effort, reasoning_effort))
            ) do
-      result =
+      contribution =
         stream
         |> Enum.to_list()
-        |> build_response(job, session, run, opts)
+        |> build_response(assignment, session, run, opts)
 
-      Status.execution_finished(job, result)
+      Status.execution_finished(assignment, contribution)
       :ok = Harness.stop_session(session)
-      {:ok, result}
+      {:ok, contribution}
     else
       {:error, _} = error ->
-        Status.execution_failed(job, error)
+        Status.execution_failed(assignment, error)
         error
     end
   end
 
-  defp build_response(events, job, session, run, opts) do
+  defp build_response(events, assignment, session, run, opts) do
     projection = Projection.build(events, run, session)
 
     case ResultDecoder.decode(projection.execution["text"]) do
       {:ok, decoded_payload} ->
-        finalize_response(job, decoded_payload, projection, events)
+        finalize_response(assignment, decoded_payload, projection, events)
 
       {:error, reason} ->
-        build_repaired_or_invalid_response(events, job, session, run, opts, projection, reason)
+        build_repaired_or_invalid_response(
+          events,
+          assignment,
+          session,
+          run,
+          opts,
+          projection,
+          reason
+        )
     end
   end
 
-  defp finalize_response(job, decoded_payload, projection, events) do
-    %{
-      "job_id" => Map.get(job, "job_id"),
-      "status" => projection.execution["status"],
-      "summary" => decoded_payload["summary"],
-      "actions" => decoded_payload["actions"],
-      "artifacts" => decoded_payload["artifacts"],
-      "events" => Enum.map(events, &normalize_event/1),
-      "tool_events" => projection.tool_events,
-      "approvals" => projection.approvals,
-      "execution" => projection.execution
-    }
+  defp finalize_response(assignment, decoded_payload, projection, events) do
+    ProtocolCodec.normalize_contribution(decoded_payload, assignment)
+    |> Map.put("status", projection.execution["status"] || "completed")
+    |> Map.put("artifacts", decoded_payload["artifacts"] || [])
+    |> Map.put("events", Enum.map(events, &normalize_event/1))
+    |> Map.put("tool_events", projection.tool_events)
+    |> Map.put("approvals", projection.approvals)
+    |> Map.put("execution", projection.execution)
   end
 
-  defp build_repaired_or_invalid_response(events, job, session, run, opts, projection, reason) do
-    case repair_response(session, job, run, opts, projection.execution["text"]) do
+  defp build_repaired_or_invalid_response(
+         events,
+         assignment,
+         session,
+         run,
+         opts,
+         projection,
+         reason
+       ) do
+    case repair_response(session, assignment, run, opts, projection.execution["text"]) do
       {:ok, repair_events, repair_projection, decoded_payload} ->
         finalize_response(
-          job,
+          assignment,
           decoded_payload,
           Projection.merge_repair(projection, repair_projection, reason),
           events ++ repair_events
@@ -95,7 +116,7 @@ defmodule JidoHiveClient.Executor.Session do
 
       :error ->
         finalize_response(
-          job,
+          assignment,
           invalid_json_response(reason),
           projection
           |> put_in([:execution, "status"], "failed")
@@ -121,30 +142,33 @@ defmodule JidoHiveClient.Executor.Session do
     }
   end
 
-  defp provider(job) do
-    case get_in(job, ["session", "provider"]) || Map.get(job, "provider") do
-      value when is_binary(value) -> String.to_atom(value)
+  defp provider(assignment) do
+    case get_in(assignment, ["session", "provider"]) || Map.get(assignment, "provider") do
+      "claude" -> :claude
+      value when is_binary(value) and value != "" -> :codex
       value when is_atom(value) -> value
       _other -> :codex
     end
   end
 
-  defp workspace_root(job, opts) do
-    ExecutionContract.workspace_root(job, opts)
+  defp workspace_root(assignment, opts) do
+    ExecutionContract.workspace_root(assignment, opts)
   end
 
-  defp default_session_id(job) do
-    "session-#{job["room_id"]}-#{job["participant_id"]}"
+  defp default_session_id(assignment) do
+    "session-#{assignment["room_id"]}-#{assignment["participant_id"]}"
   end
 
-  defp default_run_id(job) do
-    "run-#{job["job_id"]}"
+  defp default_run_id(assignment) do
+    "run-#{assignment["assignment_id"]}"
   end
 
   defp invalid_json_response(reason) do
     %{
-      "summary" => "execution produced invalid collaboration JSON",
-      "actions" => [],
+      "summary" => "execution produced invalid contribution JSON",
+      "contribution_type" => "reasoning",
+      "authority_level" => "advisory",
+      "context_objects" => [],
       "artifacts" => [
         %{
           "artifact_type" => "note",
@@ -155,26 +179,27 @@ defmodule JidoHiveClient.Executor.Session do
     }
   end
 
-  defp run_request_opts(job, opts) do
+  defp run_request_opts(assignment, opts) do
     [
-      cwd: workspace_root(job, opts),
+      cwd: workspace_root(assignment, opts),
       model: Keyword.get(opts, :model),
       timeout_ms: Keyword.get(opts, :timeout_ms),
-      allowed_tools: ExecutionContract.allowed_tools(job, opts)
+      allowed_tools: ExecutionContract.allowed_tools(assignment, opts)
     ]
   end
 
-  defp driver_opts(job, opts) do
+  defp driver_opts(assignment, opts) do
     opts
     |> Keyword.get(:driver_opts, [])
-    |> Keyword.put_new(:scenario, scenario_from_job(job))
+    |> Keyword.put_new(:scenario, scenario_from_assignment(assignment))
     |> Keyword.put_new(:reasoning_effort, Keyword.get(opts, :reasoning_effort, :low))
   end
 
-  defp scenario_from_job(job) do
-    case get_in(job, ["collaboration_envelope", "turn", "phase"]) do
-      "resolution" -> :resolver
+  defp scenario_from_assignment(assignment) do
+    case Map.get(assignment, "phase") do
       "critique" -> :skeptic
+      "resolution" -> :resolver
+      "analysis" -> :analyst
       _other -> :architect
     end
   end
@@ -182,51 +207,51 @@ defmodule JidoHiveClient.Executor.Session do
   defp default_model(:codex), do: "gpt-5.4"
   defp default_model(_provider), do: nil
 
-  defp repair_response(session, job, run, opts, text) do
+  defp repair_response(session, assignment, run, opts, text) do
     case RepairPolicy.attempt_repair?(opts, text) do
       true ->
-        Status.repair_started(job, :invalid_collaboration_json, text)
+        Status.repair_started(assignment, :invalid_contribution_json, text)
 
         request =
           CollaborationPrompt.to_repair_run_request(
             text,
-            job,
-            RepairPolicy.request_opts(job, opts)
+            assignment,
+            RepairPolicy.request_opts(assignment, opts)
           )
 
-        run_repair(session, request, run, job, opts)
+        run_repair(session, request, run, assignment, opts)
 
       false ->
         :error
     end
   end
 
-  defp run_repair(session, request, run, job, opts) do
+  defp run_repair(session, request, run, assignment, opts) do
     case Harness.stream_run(session, request,
            run_id: "#{run.run_id}-repair",
            driver: Keyword.get(opts, :driver),
-           driver_opts: driver_opts(job, opts)
+           driver_opts: driver_opts(assignment, opts)
          ) do
       {:ok, repair_run, repair_stream} ->
         repair_events = Enum.to_list(repair_stream)
         repair_projection = Projection.build(repair_events, repair_run, session)
 
-        Status.repair_finished(job, repair_projection.execution["text"])
-        decode_repair_projection(job, repair_events, repair_projection)
+        Status.repair_finished(assignment, repair_projection.execution["text"])
+        decode_repair_projection(assignment, repair_events, repair_projection)
 
       {:error, _} = error ->
-        Status.repair_failed(job, error)
+        Status.repair_failed(assignment, error)
         :error
     end
   end
 
-  defp decode_repair_projection(job, repair_events, repair_projection) do
+  defp decode_repair_projection(assignment, repair_events, repair_projection) do
     case ResultDecoder.decode(repair_projection.execution["text"]) do
       {:ok, decoded_payload} ->
         {:ok, repair_events, repair_projection, decoded_payload}
 
       {:error, reason} ->
-        Status.repair_failed(job, reason)
+        Status.repair_failed(assignment, reason)
         :error
     end
   end

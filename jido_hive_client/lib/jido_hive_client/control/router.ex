@@ -21,9 +21,9 @@ defmodule JidoHiveClient.Control.Router do
     send_json(conn, 200, Runtime.snapshot(runtime(conn)))
   end
 
-  get "/api/runtime/jobs" do
+  get "/api/runtime/assignments" do
     snapshot = Runtime.snapshot(runtime(conn))
-    send_json(conn, 200, %{recent_jobs: snapshot.recent_jobs})
+    send_json(conn, 200, %{recent_assignments: snapshot.recent_assignments})
   end
 
   get "/api/runtime/events" do
@@ -41,17 +41,17 @@ defmodule JidoHiveClient.Control.Router do
     end
   end
 
-  post "/api/runtime/execute" do
+  post "/api/runtime/assignments/execute" do
     payload =
       case conn.body_params do
-        %{"job" => %{} = job} -> job
-        %{} = job -> job
+        %{"assignment" => %{} = assignment} -> assignment
+        %{} = assignment -> assignment
         _other -> %{}
       end
 
-    case Runtime.run_job(runtime(conn), payload) do
-      {:ok, result} ->
-        send_json(conn, 200, result)
+    case Runtime.run_assignment(runtime(conn), payload) do
+      {:ok, contribution} ->
+        send_json(conn, 200, contribution)
 
       {:error, reason} ->
         send_json(conn, 422, %{error: inspect(reason)})

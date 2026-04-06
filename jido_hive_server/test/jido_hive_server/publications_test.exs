@@ -86,74 +86,65 @@ defmodule JidoHiveServer.PublicationsTest do
       brief: "Design a client-server collaboration protocol for AI agents.",
       rules: ["Every objection must target a claim."],
       participants: [],
-      turns: [
+      current_assignment: %{},
+      assignments: [
         %{
-          job_id: "job-architect-1",
+          assignment_id: "asn-1",
+          phase: "analysis",
           participant_role: "architect",
-          phase: "proposal",
-          result_summary: "architect proposed a shared mutable packet",
-          tool_events: [
-            %{"event_type" => "tool_call", "payload" => %{"tool_name" => "context.read"}}
-          ],
-          artifacts: []
+          status: "completed",
+          result_summary: "architect proposed a shared mutable packet"
         },
         %{
-          job_id: "job-skeptic-1",
-          participant_role: "skeptic",
+          assignment_id: "asn-2",
           phase: "critique",
-          result_summary: "skeptic opened one concrete objection",
-          tool_events: [
-            %{"event_type" => "tool_call", "payload" => %{"tool_name" => "critique.scan"}}
-          ],
-          artifacts: []
+          participant_role: "skeptic",
+          status: "completed",
+          result_summary: "skeptic opened one concrete objection"
         }
       ],
-      context_entries: [
+      context_objects: [
         %{
-          entry_ref: "claim:1",
-          entry_type: "claim",
-          participant_role: "architect",
-          title: "Shared packet",
-          body: "The server should own a shared packet of instructions, context, and refs."
-        },
-        %{
-          entry_ref: "evidence:2",
-          entry_type: "evidence",
-          participant_role: "architect",
-          title: "Packet lineage",
-          body: "Each turn should carry the prior structured actions and tool traces forward."
-        },
-        %{
-          entry_ref: "publish_request:3",
-          entry_type: "publish_request",
-          participant_role: "architect",
+          context_id: "ctx-1",
+          object_type: "belief",
           title: "Publish the reviewed protocol",
           body: "Prepare both a GitHub issue and a Notion page from the room."
         },
         %{
-          entry_ref: "objection:4",
-          entry_type: "objection",
-          participant_role: "skeptic",
+          context_id: "ctx-2",
+          object_type: "belief",
+          title: "Shared packet",
+          body: "The server should own a shared packet of instructions, context, and refs."
+        },
+        %{
+          context_id: "ctx-3",
+          object_type: "evidence",
+          title: "Packet lineage",
+          body: "Each turn should carry the prior structured actions and tool traces forward."
+        },
+        %{
+          context_id: "ctx-4",
+          object_type: "question",
           title: "Conflict handling is underspecified",
           body: "The packet flow does not yet define how contradictory tool output is preserved."
         }
       ],
-      disputes: [
+      contributions: [
         %{
-          dispute_id: "dispute:1",
-          title: "Conflict handling is underspecified",
-          severity: "high",
-          status: :resolved,
-          opened_by_entry_ref: "objection:4",
-          target_entry_refs: ["claim:1"]
+          contribution_id: "contrib-1",
+          participant_role: "architect",
+          contribution_type: "publish_request",
+          authority_level: "binding",
+          summary: "Publish the reviewed protocol"
         }
       ],
-      current_turn: %{},
       status: "publication_ready",
-      phase: "publication_ready",
-      round: 3,
-      next_entry_seq: 5,
-      next_dispute_seq: 2
+      dispatch_policy_id: "round_robin/v2",
+      dispatch_policy_config: %{},
+      dispatch_state: %{completed_slots: 2, total_slots: 2},
+      next_context_seq: 5,
+      next_assignment_seq: 3,
+      next_contribution_seq: 2
     }
   end
 end

@@ -21,8 +21,8 @@ defmodule JidoHiveServer.Persistence.RoomEventsTest do
       RoomEvent.new(%{
         event_id: "evt-room-2",
         room_id: "room-1",
-        type: :turn_opened,
-        payload: %{job_id: "job-1"},
+        type: :assignment_opened,
+        payload: %{assignment: %{assignment_id: "asn-1", phase: "analysis"}},
         recorded_at: recorded_at
       })
 
@@ -32,6 +32,6 @@ defmodule JidoHiveServer.Persistence.RoomEventsTest do
     assert listed_first.event_id == "evt-room-1"
     assert listed_first.type == :room_created
     assert listed_second.event_id == "evt-room-2"
-    assert listed_second.type == :turn_opened
+    assert listed_second.type == :assignment_opened
   end
 end

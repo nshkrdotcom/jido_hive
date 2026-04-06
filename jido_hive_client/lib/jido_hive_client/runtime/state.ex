@@ -1,22 +1,22 @@
 defmodule JidoHiveClient.Runtime.State do
   @moduledoc false
 
-  @default_recent_job_limit 20
+  @default_recent_assignment_limit 20
 
   defstruct client_id: nil,
             connection_status: :starting,
             identity: %{},
-            current_job: nil,
-            recent_jobs: [],
+            current_assignment: nil,
+            recent_assignments: [],
             metrics: %{
-              jobs_received: 0,
-              jobs_completed: 0,
-              jobs_failed: 0,
+              assignments_received: 0,
+              assignments_completed: 0,
+              assignments_failed: 0,
               reconnect_count: 0
             },
             last_error: nil,
             updated_at: nil,
-            recent_job_limit: @default_recent_job_limit
+            recent_assignment_limit: @default_recent_assignment_limit
 
   @type t :: %__MODULE__{}
 
@@ -29,7 +29,8 @@ defmodule JidoHiveClient.Runtime.State do
       client_id: client_id,
       identity: identity,
       updated_at: DateTime.utc_now(),
-      recent_job_limit: Keyword.get(opts, :recent_job_limit, @default_recent_job_limit)
+      recent_assignment_limit:
+        Keyword.get(opts, :recent_assignment_limit, @default_recent_assignment_limit)
     }
   end
 
@@ -39,8 +40,8 @@ defmodule JidoHiveClient.Runtime.State do
       client_id: state.client_id,
       connection_status: state.connection_status,
       identity: state.identity,
-      current_job: state.current_job,
-      recent_jobs: state.recent_jobs,
+      current_assignment: state.current_assignment,
+      recent_assignments: state.recent_assignments,
       metrics: state.metrics,
       last_error: state.last_error,
       updated_at: state.updated_at
@@ -62,82 +63,86 @@ defmodule JidoHiveClient.Runtime.State do
     |> touch()
   end
 
-  @spec job_received(t(), map()) :: t()
-  def job_received(%__MODULE__{} = state, job) when is_map(job) do
+  @spec assignment_received(t(), map()) :: t()
+  def assignment_received(%__MODULE__{} = state, assignment) when is_map(assignment) do
     state
-    |> update_metric(:jobs_received)
-    |> Map.put(:current_job, current_job(job, "received"))
+    |> update_metric(:assignments_received)
+    |> Map.put(:current_assignment, current_assignment(assignment, "received"))
     |> touch()
   end
 
-  @spec job_started(t(), map()) :: t()
-  def job_started(%__MODULE__{} = state, job) when is_map(job) do
+  @spec assignment_started(t(), map()) :: t()
+  def assignment_started(%__MODULE__{} = state, assignment) when is_map(assignment) do
     state
     |> Map.put(:connection_status, :executing)
-    |> Map.put(:current_job, current_job(job, "running"))
+    |> Map.put(:current_assignment, current_assignment(assignment, "running"))
     |> touch()
   end
 
-  @spec job_finished(t(), map(), map()) :: t()
-  def job_finished(%__MODULE__{} = state, job, result) when is_map(job) and is_map(result) do
+  @spec assignment_finished(t(), map(), map()) :: t()
+  def assignment_finished(%__MODULE__{} = state, assignment, contribution)
+      when is_map(assignment) and is_map(contribution) do
     state
-    |> update_metric(:jobs_completed)
+    |> update_metric(:assignments_completed)
     |> Map.put(:connection_status, :ready)
-    |> Map.put(:current_job, nil)
+    |> Map.put(:current_assignment, nil)
     |> Map.put(:last_error, nil)
-    |> put_recent_job(recent_job(job, result))
+    |> put_recent_assignment(recent_assignment(assignment, contribution))
     |> touch()
   end
 
-  @spec job_failed(t(), map(), term()) :: t()
-  def job_failed(%__MODULE__{} = state, job, reason) when is_map(job) do
+  @spec assignment_failed(t(), map(), term()) :: t()
+  def assignment_failed(%__MODULE__{} = state, assignment, reason) when is_map(assignment) do
     state
-    |> update_metric(:jobs_failed)
+    |> update_metric(:assignments_failed)
     |> Map.put(:connection_status, :ready)
-    |> Map.put(:current_job, nil)
-    |> Map.put(:last_error, last_error(job, reason))
-    |> put_recent_job(recent_job(job, %{"status" => "failed"}))
+    |> Map.put(:current_assignment, nil)
+    |> Map.put(:last_error, last_error(assignment, reason))
+    |> put_recent_assignment(recent_assignment(assignment, %{"status" => "failed"}))
     |> touch()
   end
 
-  defp put_recent_job(%__MODULE__{} = state, job) do
-    jobs =
-      [job | state.recent_jobs]
-      |> Enum.take(state.recent_job_limit)
+  defp put_recent_assignment(%__MODULE__{} = state, assignment) do
+    assignments =
+      [assignment | state.recent_assignments]
+      |> Enum.take(state.recent_assignment_limit)
 
-    %{state | recent_jobs: jobs}
+    %{state | recent_assignments: assignments}
   end
 
   defp update_metric(%__MODULE__{} = state, key) do
     update_in(state.metrics, &Map.update!(&1, key, fn value -> value + 1 end))
   end
 
-  defp current_job(job, status) do
+  defp current_assignment(assignment, status) do
     %{
-      job_id: Map.get(job, "job_id"),
-      room_id: Map.get(job, "room_id"),
-      participant_id: Map.get(job, "participant_id"),
-      participant_role: Map.get(job, "participant_role"),
+      assignment_id: Map.get(assignment, "assignment_id"),
+      room_id: Map.get(assignment, "room_id"),
+      participant_id: Map.get(assignment, "participant_id"),
+      participant_role: Map.get(assignment, "participant_role"),
+      phase: Map.get(assignment, "phase"),
       status: status
     }
   end
 
-  defp recent_job(job, result) do
+  defp recent_assignment(assignment, contribution) do
     %{
-      job_id: Map.get(job, "job_id"),
-      room_id: Map.get(job, "room_id"),
-      participant_id: Map.get(job, "participant_id"),
-      participant_role: Map.get(job, "participant_role"),
-      status: Map.get(result, "status", "completed"),
-      summary: Map.get(result, "summary"),
+      assignment_id: Map.get(assignment, "assignment_id"),
+      room_id: Map.get(assignment, "room_id"),
+      participant_id: Map.get(assignment, "participant_id"),
+      participant_role: Map.get(assignment, "participant_role"),
+      phase: Map.get(assignment, "phase"),
+      status: Map.get(contribution, "status", "completed"),
+      summary: Map.get(contribution, "summary"),
+      contribution_type: Map.get(contribution, "contribution_type"),
       completed_at: DateTime.utc_now()
     }
   end
 
-  defp last_error(job, reason) do
+  defp last_error(assignment, reason) do
     %{
-      job_id: Map.get(job, "job_id"),
-      room_id: Map.get(job, "room_id"),
+      assignment_id: Map.get(assignment, "assignment_id"),
+      room_id: Map.get(assignment, "room_id"),
       reason: inspect(reason),
       occurred_at: DateTime.utc_now()
     }

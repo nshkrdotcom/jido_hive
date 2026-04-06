@@ -3,48 +3,53 @@ defmodule JidoHiveClient.Boundary.ProtocolCodec do
 
   alias JidoHiveClient.ExecutionContract
 
-  @job_start_v2 "jido_hive/job_start.v2"
-  @job_result_v1 "jido_hive/job_result.v1"
+  @assignment_start_v1 "jido_hive/assignment.start.v1"
+  @contribution_submit_v1 "jido_hive/contribution.submit.v1"
+  @required_assignment_fields ~w(assignment_id room_id)
 
-  @required_job_fields ~w(job_id room_id)
-
-  @spec normalize_job_start(map()) :: {:ok, map()} | {:error, term()}
-  def normalize_job_start(payload) when is_map(payload) do
-    with {:ok, job} <- unwrap_job(payload),
-         job <- normalize_value(job),
-         :ok <- require_fields(job, @required_job_fields),
-         :ok <- validate_map_field(job, "session"),
-         :ok <- validate_map_field(job, "collaboration_envelope"),
-         :ok <- validate_nested_session(job) do
+  @spec normalize_assignment_start(map()) :: {:ok, map()} | {:error, term()}
+  def normalize_assignment_start(payload) when is_map(payload) do
+    with {:ok, assignment} <- unwrap_assignment(payload),
+         assignment <- normalize_value(assignment),
+         :ok <- validate_map_field(assignment, "session"),
+         :ok <- validate_map_field(assignment, "contribution_contract"),
+         :ok <- validate_map_field(assignment, "context_view"),
+         :ok <- validate_nested_session(assignment),
+         :ok <- require_fields(assignment, @required_assignment_fields) do
       {:ok,
-       job
+       assignment
        |> Map.put_new("session", %{})
-       |> Map.put_new("collaboration_envelope", %{})}
+       |> Map.put_new("contribution_contract", %{})
+       |> Map.put_new("context_view", %{})
+       |> Map.put_new("status", "running")}
     end
   end
 
-  def normalize_job_start(_other), do: {:error, :invalid_payload}
+  def normalize_assignment_start(_other), do: {:error, :invalid_payload}
 
-  @spec normalize_job_result(map(), map()) :: map()
-  def normalize_job_result(result, defaults \\ %{}) when is_map(result) and is_map(defaults) do
+  @spec normalize_contribution(map(), map()) :: map()
+  def normalize_contribution(result, defaults \\ %{}) when is_map(result) and is_map(defaults) do
     defaults = normalize_value(defaults)
 
     result
     |> normalize_value()
-    |> Map.put_new("schema_version", @job_result_v1)
-    |> Map.put_new("job_id", defaults["job_id"])
+    |> Map.put_new("schema_version", @contribution_submit_v1)
     |> Map.put_new("room_id", defaults["room_id"])
-    |> Map.put_new("target_id", defaults["target_id"])
-    |> Map.put_new("capability_id", defaults["capability_id"])
+    |> Map.put_new("assignment_id", defaults["assignment_id"])
     |> Map.put_new("participant_id", defaults["participant_id"])
     |> Map.put_new("participant_role", defaults["participant_role"])
-    |> Map.put_new("status", "completed")
+    |> Map.put_new("target_id", defaults["target_id"])
+    |> Map.put_new("capability_id", defaults["capability_id"])
+    |> Map.put_new("contribution_type", "reasoning")
+    |> Map.put_new("authority_level", "advisory")
     |> Map.put_new("summary", "")
-    |> Map.put_new("actions", [])
-    |> Map.put_new("tool_events", [])
-    |> Map.put_new("events", [])
-    |> Map.put_new("approvals", [])
+    |> Map.put_new("context_objects", [])
     |> Map.put_new("artifacts", [])
+    |> Map.put_new("events", [])
+    |> Map.put_new("tool_events", [])
+    |> Map.put_new("approvals", [])
+    |> Map.put_new("execution", %{})
+    |> Map.put_new("status", "completed")
     |> Map.update("execution", %{}, fn
       execution when is_map(execution) -> execution
       _other -> %{}
@@ -63,8 +68,8 @@ defmodule JidoHiveClient.Boundary.ProtocolCodec do
     |> compact_map()
   end
 
-  @spec target_payload(map()) :: map()
-  def target_payload(attrs) when is_map(attrs) do
+  @spec participant_payload(map()) :: map()
+  def participant_payload(attrs) when is_map(attrs) do
     executor_opts =
       case value(attrs, :executor) do
         {_module, opts} when is_list(opts) -> opts
@@ -86,25 +91,30 @@ defmodule JidoHiveClient.Boundary.ProtocolCodec do
     |> compact_map()
   end
 
-  defp unwrap_job(payload) when is_map(payload) do
+  defp unwrap_assignment(payload) when is_map(payload) do
     payload = normalize_value(payload)
 
     case payload do
-      %{"schema_version" => @job_start_v2, "job" => %{} = job} -> {:ok, job}
-      %{"job" => %{} = job} -> {:ok, job}
-      %{} = job -> {:ok, job}
+      %{"schema_version" => @assignment_start_v1, "assignment" => %{} = assignment} ->
+        {:ok, assignment}
+
+      %{"assignment" => %{} = assignment} ->
+        {:ok, assignment}
+
+      %{} = assignment ->
+        {:ok, assignment}
     end
   end
 
-  defp require_fields(job, fields) when is_map(job) do
-    case Enum.find(fields, &missing_field?(job, &1)) do
+  defp require_fields(assignment, fields) when is_map(assignment) do
+    case Enum.find(fields, &missing_field?(assignment, &1)) do
       nil -> :ok
       field -> {:error, {:missing_field, field}}
     end
   end
 
-  defp validate_nested_session(job) do
-    session = Map.get(job, "session", %{})
+  defp validate_nested_session(assignment) do
+    session = Map.get(assignment, "session", %{})
 
     validate_map_fields(session, [
       "execution_surface",
@@ -130,8 +140,8 @@ defmodule JidoHiveClient.Boundary.ProtocolCodec do
     end)
   end
 
-  defp missing_field?(job, field) do
-    case Map.get(job, field) do
+  defp missing_field?(assignment, field) do
+    case Map.get(assignment, field) do
       value when is_binary(value) -> String.trim(value) == ""
       nil -> true
       _other -> false

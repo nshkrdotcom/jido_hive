@@ -25,7 +25,7 @@ defmodule JidoHiveServer.Persistence do
       conflict_target: :room_id
     )
     |> case do
-      {:ok, record} -> {:ok, record.snapshot}
+      {:ok, record} -> {:ok, rehydrate_room_snapshot(record.snapshot)}
       {:error, _} = error -> error
     end
   end
@@ -88,7 +88,7 @@ defmodule JidoHiveServer.Persistence do
       conflict_target: :target_id
     )
     |> case do
-      {:ok, record} -> {:ok, record.snapshot}
+      {:ok, record} -> {:ok, rehydrate_target(record.snapshot)}
       {:error, _} = error -> error
     end
   end
@@ -230,35 +230,18 @@ defmodule JidoHiveServer.Persistence do
       brief: snapshot_value(snapshot, "brief"),
       rules: snapshot_list(snapshot, "rules"),
       participants: snapshot_list(snapshot, "participants", &rehydrate_participant/1),
-      turns: snapshot_list(snapshot, "turns", &rehydrate_turn/1),
-      context_entries: snapshot_list(snapshot, "context_entries", &rehydrate_context_entry/1),
-      disputes: snapshot_list(snapshot, "disputes", &rehydrate_dispute/1),
-      current_turn: snapshot_map(snapshot, "current_turn", &rehydrate_turn_map/1),
-      execution_plan: snapshot_map(snapshot, "execution_plan", &rehydrate_execution_plan/1),
-      workflow_id:
-        snapshot_value(
-          snapshot,
-          "workflow_id",
-          default_workflow_id()
-        ),
-      workflow_config: snapshot_map(snapshot, "workflow_config", & &1),
-      workflow_state:
-        snapshot_map(snapshot, "workflow_state", fn state ->
-          Map.new(state, fn
-            {key, value} when is_binary(key) -> {String.to_atom(key), value}
-            pair -> pair
-          end)
-        end),
+      current_assignment: snapshot_map(snapshot, "current_assignment", &rehydrate_assignment/1),
+      assignments: snapshot_list(snapshot, "assignments", &rehydrate_assignment/1),
+      context_objects: snapshot_list(snapshot, "context_objects", &rehydrate_context_object/1),
+      contributions: snapshot_list(snapshot, "contributions", &rehydrate_contribution/1),
+      dispatch_policy_id: snapshot_value(snapshot, "dispatch_policy_id", "round_robin/v2"),
+      dispatch_policy_config: snapshot_map(snapshot, "dispatch_policy_config", & &1),
+      dispatch_state: rehydrate_dispatch_state(snapshot_map(snapshot, "dispatch_state", & &1)),
       status: snapshot_value(snapshot, "status", "idle"),
-      phase: snapshot_value(snapshot, "phase", "idle"),
-      round: snapshot_value(snapshot, "round", 0),
-      next_entry_seq: snapshot_value(snapshot, "next_entry_seq", 1),
-      next_dispute_seq: snapshot_value(snapshot, "next_dispute_seq", 1)
+      next_context_seq: snapshot_value(snapshot, "next_context_seq", 1),
+      next_assignment_seq: snapshot_value(snapshot, "next_assignment_seq", 1),
+      next_contribution_seq: snapshot_value(snapshot, "next_contribution_seq", 1)
     }
-  end
-
-  defp default_workflow_id do
-    Module.concat([JidoHiveServer, Collaboration, Workflows, DefaultRoundRobin]).id()
   end
 
   defp rehydrate_target(snapshot) when is_map(snapshot) do
@@ -282,90 +265,103 @@ defmodule JidoHiveServer.Persistence do
   defp rehydrate_participant(participant) do
     %{
       participant_id: participant["participant_id"],
-      role: participant["role"],
+      participant_role: participant["participant_role"],
+      participant_kind: participant["participant_kind"],
+      authority_level: participant["authority_level"],
       target_id: participant["target_id"],
-      capability_id: participant["capability_id"]
+      capability_id: participant["capability_id"],
+      provider: participant["provider"],
+      runtime_driver: participant["runtime_driver"],
+      workspace_root: participant["workspace_root"],
+      metadata: participant["metadata"] || %{}
     }
   end
 
-  defp rehydrate_turn(turn) do
-    turn
-    |> rehydrate_turn_map()
-    |> Map.merge(%{
-      collaboration_envelope: turn["collaboration_envelope"] || %{},
-      session: turn["session"] || %{},
-      actions: turn["actions"] || [],
-      tool_events: turn["tool_events"] || [],
-      events: turn["events"] || [],
-      approvals: turn["approvals"] || [],
-      artifacts: turn["artifacts"] || [],
-      execution: turn["execution"] || %{}
-    })
-  end
+  defp rehydrate_assignment(assignment) when map_size(assignment) == 0, do: %{}
 
-  defp rehydrate_turn_map(turn) when map_size(turn) == 0, do: %{}
-
-  defp rehydrate_turn_map(turn) do
+  defp rehydrate_assignment(assignment) do
     %{
-      job_id: turn["job_id"],
-      plan_slot_index: turn["plan_slot_index"],
-      participant_id: turn["participant_id"],
-      participant_role: turn["participant_role"],
-      target_id: turn["target_id"],
-      capability_id: turn["capability_id"],
-      phase: turn["phase"],
-      objective: turn["objective"],
-      round: turn["round"],
-      status: rehydrate_status(turn["status"]),
-      started_at: turn["started_at"],
-      completed_at: turn["completed_at"],
-      result_summary: turn["result_summary"]
+      assignment_id: assignment["assignment_id"],
+      room_id: assignment["room_id"],
+      participant_id: assignment["participant_id"],
+      participant_role: assignment["participant_role"],
+      target_id: assignment["target_id"],
+      capability_id: assignment["capability_id"],
+      phase: assignment["phase"],
+      objective: assignment["objective"],
+      contribution_contract: assignment["contribution_contract"] || %{},
+      context_view: assignment["context_view"] || %{},
+      plan_slot_index: assignment["plan_slot_index"] || 0,
+      status: assignment["status"],
+      opened_at: datetime_value(assignment["opened_at"]),
+      completed_at: datetime_value(assignment["completed_at"]),
+      session: assignment["session"] || %{},
+      result_summary: assignment["result_summary"]
     }
   end
 
-  defp rehydrate_execution_plan(plan) when map_size(plan) == 0, do: %{}
-
-  defp rehydrate_execution_plan(plan) do
+  defp rehydrate_context_object(context_object) do
     %{
-      strategy: plan["strategy"],
-      stages: snapshot_list(plan, "stages"),
-      max_participants: plan["max_participants"],
-      stage_count: plan["stage_count"],
-      participant_count: plan["participant_count"],
-      planned_turn_count: plan["planned_turn_count"],
-      completed_turn_count: plan["completed_turn_count"],
-      round_robin_index: plan["round_robin_index"],
-      excluded_target_ids: plan["excluded_target_ids"] || [],
-      started_at: plan["started_at"],
-      locked_participants: snapshot_list(plan, "locked_participants", &rehydrate_participant/1)
+      context_id: context_object["context_id"],
+      object_type: context_object["object_type"],
+      title: context_object["title"],
+      body: context_object["body"],
+      data: context_object["data"] || %{},
+      authored_by: context_object["authored_by"] || %{},
+      provenance: context_object["provenance"] || %{},
+      scope: rehydrate_scope(context_object["scope"] || %{}),
+      uncertainty: rehydrate_uncertainty(context_object["uncertainty"] || %{}),
+      relations: context_object["relations"] || [],
+      inserted_at: datetime_value(context_object["inserted_at"])
     }
   end
 
-  defp rehydrate_context_entry(entry) do
+  defp rehydrate_contribution(contribution) do
     %{
-      entry_ref: entry["entry_ref"],
-      entry_type: entry["entry_type"],
-      job_id: entry["job_id"],
-      participant_id: entry["participant_id"],
-      participant_role: entry["participant_role"],
-      title: entry["title"],
-      body: entry["body"],
-      severity: entry["severity"],
-      targets: entry["targets"] || [],
-      tool_events: entry["tool_events"] || []
+      contribution_id: contribution["contribution_id"],
+      room_id: contribution["room_id"],
+      assignment_id: contribution["assignment_id"],
+      participant_id: contribution["participant_id"],
+      participant_role: contribution["participant_role"],
+      target_id: contribution["target_id"],
+      capability_id: contribution["capability_id"],
+      contribution_type: contribution["contribution_type"],
+      authority_level: contribution["authority_level"],
+      summary: contribution["summary"],
+      consumed_context_ids: contribution["consumed_context_ids"] || [],
+      context_objects: contribution["context_objects"] || [],
+      artifacts: contribution["artifacts"] || [],
+      events: contribution["events"] || [],
+      tool_events: contribution["tool_events"] || [],
+      approvals: contribution["approvals"] || [],
+      execution: contribution["execution"] || %{},
+      status: contribution["status"],
+      schema_version: contribution["schema_version"]
     }
   end
 
-  defp rehydrate_dispute(dispute) do
+  defp rehydrate_dispatch_state(dispatch_state) do
     %{
-      dispute_id: dispute["dispute_id"],
-      title: dispute["title"],
-      severity: dispute["severity"],
-      status: rehydrate_status(dispute["status"]),
-      opened_by_entry_ref: dispute["opened_by_entry_ref"],
-      target_entry_refs: dispute["target_entry_refs"] || [],
-      resolved_by_entry_ref: dispute["resolved_by_entry_ref"],
-      resolved_in_job_id: dispute["resolved_in_job_id"]
+      applied_event_ids: dispatch_state["applied_event_ids"] || [],
+      completed_slots: dispatch_state["completed_slots"] || 0,
+      total_slots: dispatch_state["total_slots"] || 0,
+      participant_ids: dispatch_state["participant_ids"] || [],
+      phases: dispatch_state["phases"] || []
+    }
+  end
+
+  defp rehydrate_scope(scope) do
+    %{
+      read: scope["read"] || [],
+      write: scope["write"] || []
+    }
+  end
+
+  defp rehydrate_uncertainty(uncertainty) do
+    %{
+      status: uncertainty["status"],
+      confidence: uncertainty["confidence"],
+      rationale: uncertainty["rationale"]
     }
   end
 
@@ -383,10 +379,6 @@ defmodule JidoHiveServer.Persistence do
 
     event
   end
-
-  defp rehydrate_status(nil), do: nil
-  defp rehydrate_status(value) when is_atom(value), do: value
-  defp rehydrate_status(value) when is_binary(value), do: String.to_atom(value)
 
   defp snapshot_value(snapshot, key, default \\ nil), do: Map.get(snapshot, key, default)
 
@@ -407,6 +399,18 @@ defmodule JidoHiveServer.Persistence do
   defp maybe_filter_status(query, status),
     do: from(record in query, where: record.status == ^status)
 
+  defp datetime_value(nil), do: nil
+  defp datetime_value(%DateTime{} = value), do: value
+
+  defp datetime_value(value) when is_binary(value) do
+    case DateTime.from_iso8601(value) do
+      {:ok, datetime, _offset} -> datetime
+      _other -> nil
+    end
+  end
+
+  defp datetime_value(_value), do: nil
+
   defp normalize(%_{} = struct) do
     struct
     |> Map.from_struct()
@@ -419,6 +423,7 @@ defmodule JidoHiveServer.Persistence do
 
   defp normalize(list) when is_list(list), do: Enum.map(list, &normalize/1)
   defp normalize(value) when is_atom(value), do: Atom.to_string(value)
+  defp normalize(%DateTime{} = value), do: DateTime.to_iso8601(value)
   defp normalize(value), do: value
 
   defp normalize_key(key) when is_atom(key), do: Atom.to_string(key)

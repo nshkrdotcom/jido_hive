@@ -96,52 +96,59 @@ defmodule JidoHiveClient.RelayWorker do
   def handle_info(:ensure_joined, state), do: {:noreply, state}
 
   @impl true
-  def handle_info(%Message{event: "job.start", payload: job}, %{channel: channel} = state) do
-    normalized_job =
-      case ProtocolCodec.normalize_job_start(job) do
-        {:ok, normalized_job} ->
-          normalized_job
+  def handle_info(
+        %Message{event: "assignment.start", payload: assignment},
+        %{channel: channel} = state
+      ) do
+    case ProtocolCodec.normalize_assignment_start(assignment) do
+      {:ok, normalized_assignment} ->
+        Status.assignment_received(normalized_assignment, state)
 
-        {:error, reason} ->
-          Map.put(ProtocolCodec.normalize_job_result(%{}, %{}), "invalid_reason", inspect(reason))
-      end
+        publish_signal("client.assignment.received", %{
+          assignment_id: normalized_assignment["assignment_id"],
+          participant_id: state.participant_id,
+          target_id: state.target_id
+        })
 
-    Status.job_received(normalized_job, state)
+        contribution =
+          case execute_assignment(normalized_assignment, state) do
+            {:ok, contribution} -> contribution
+            {:error, reason} -> failed_contribution(normalized_assignment, reason)
+          end
+          |> Map.put_new("room_id", normalized_assignment["room_id"])
+          |> Map.put_new("assignment_id", normalized_assignment["assignment_id"])
+          |> Map.put_new("target_id", state.target_id)
+          |> Map.put_new("capability_id", state.capability_id)
+          |> Map.put_new(
+            "participant_id",
+            normalized_assignment["participant_id"] || state.participant_id
+          )
+          |> Map.put_new(
+            "participant_role",
+            normalized_assignment["participant_role"] || state.participant_role
+          )
 
-    publish_signal("client.job.received", %{
-      job_id: normalized_job["job_id"],
-      participant_id: state.participant_id,
-      target_id: state.target_id
-    })
+        {:ok, _} = state.channel_module.push(channel, "contribution.submit", contribution)
+        Status.result_published(normalized_assignment, contribution)
 
-    outbound =
-      case execute_job(normalized_job, state) do
-        {:ok, result} ->
-          result
+        safe_runtime_record_contribution_published(
+          state.runtime,
+          normalized_assignment,
+          contribution
+        )
 
-        {:error, reason} ->
-          failed_result(normalized_job, reason)
-      end
-      |> Map.put_new("room_id", normalized_job["room_id"])
-      |> Map.put_new("target_id", state.target_id)
-      |> Map.put_new("capability_id", state.capability_id)
-      |> Map.put_new("participant_id", normalized_job["participant_id"] || state.participant_id)
-      |> Map.put_new(
-        "participant_role",
-        normalized_job["participant_role"] || state.participant_role
-      )
+        publish_signal("client.assignment.completed", %{
+          assignment_id: normalized_assignment["assignment_id"],
+          participant_id: state.participant_id,
+          target_id: state.target_id
+        })
 
-    {:ok, _} = state.channel_module.push(channel, "job.result", outbound)
-    Status.result_published(normalized_job, outbound)
-    safe_runtime_record_result_published(state.runtime, normalized_job, outbound)
+        {:noreply, state}
 
-    publish_signal("client.job.completed", %{
-      job_id: normalized_job["job_id"],
-      participant_id: state.participant_id,
-      target_id: state.target_id
-    })
-
-    {:noreply, state}
+      {:error, reason} ->
+        Status.execution_failed(%{"room_id" => "unknown", "phase" => "unknown"}, reason)
+        {:noreply, state}
+    end
   end
 
   def handle_info(%Message{event: event}, state) when event in ["phx_close", "phx_error"] do
@@ -193,7 +200,11 @@ defmodule JidoHiveClient.RelayWorker do
           state.channel_module.push(channel, "relay.hello", ProtocolCodec.hello_payload(state))
 
         {:ok, _} =
-          state.channel_module.push(channel, "target.upsert", ProtocolCodec.target_payload(state))
+          state.channel_module.push(
+            channel,
+            "participant.upsert",
+            ProtocolCodec.participant_payload(state)
+          )
 
         Status.relay_ready(state)
 
@@ -237,22 +248,17 @@ defmodule JidoHiveClient.RelayWorker do
     %{state | connection_state: new_state}
   end
 
-  defp failed_result(job, reason) do
-    ProtocolCodec.normalize_job_result(
+  defp failed_contribution(assignment, reason) do
+    ProtocolCodec.normalize_contribution(
       %{
         "status" => "failed",
         "summary" => "runtime execution failed",
-        "actions" => [],
-        "tool_events" => [],
-        "events" => [],
-        "approvals" => [],
-        "artifacts" => [],
         "execution" => %{
           "status" => "failed",
           "error" => %{"reason" => inspect(reason)}
         }
       },
-      job
+      assignment
     )
   end
 
@@ -286,32 +292,52 @@ defmodule JidoHiveClient.RelayWorker do
   end
 
   defp maybe_disconnect_runtime(runtime) when is_pid(runtime) do
-    if Process.alive?(runtime), do: Runtime.disconnect(runtime)
+    if Process.alive?(runtime), do: safe_runtime_call(fn -> Runtime.disconnect(runtime) end)
     :ok
   end
 
   defp maybe_disconnect_runtime(runtime) when is_atom(runtime) do
-    if Process.whereis(runtime), do: Runtime.disconnect(runtime)
+    if Process.whereis(runtime), do: safe_runtime_call(fn -> Runtime.disconnect(runtime) end)
     :ok
   end
 
-  defp execute_job(job, %{runtime: runtime, executor: {module, executor_opts}})
-       when is_map(job) and is_atom(module) and is_list(executor_opts) do
-    if runtime_available?(runtime) do
-      Runtime.run_job(runtime, job)
-    else
-      module.run(job, executor_opts)
-    end
+  defp execute_assignment(assignment, %{runtime: runtime, executor: {module, executor_opts}})
+       when is_map(assignment) and is_atom(module) and is_list(executor_opts) do
+    runtime_result(runtime, assignment) || module.run(assignment, executor_opts)
   end
 
   defp safe_runtime_update_connection(runtime, status, payload) do
-    if runtime_available?(runtime), do: Runtime.update_connection(runtime, status, payload)
+    if runtime_available?(runtime) do
+      _ = safe_runtime_call(fn -> Runtime.update_connection(runtime, status, payload) end)
+    end
+
     :ok
   end
 
-  defp safe_runtime_record_result_published(runtime, job, result) do
-    if runtime_available?(runtime), do: Runtime.record_result_published(runtime, job, result)
+  defp safe_runtime_record_contribution_published(runtime, assignment, contribution) do
+    if runtime_available?(runtime) do
+      _ =
+        safe_runtime_call(fn ->
+          Runtime.record_contribution_published(runtime, assignment, contribution)
+        end)
+    end
+
     :ok
+  end
+
+  defp safe_runtime_call(fun) when is_function(fun, 0) do
+    {:ok, fun.()}
+  catch
+    :exit, reason -> {:error, reason}
+  end
+
+  defp runtime_result(runtime, assignment) do
+    with true <- runtime_available?(runtime),
+         {:ok, result} <- safe_runtime_call(fn -> Runtime.run_assignment(runtime, assignment) end) do
+      result
+    else
+      _other -> nil
+    end
   end
 
   defp runtime_available?(runtime) when is_pid(runtime), do: Process.alive?(runtime)

@@ -10,9 +10,9 @@ defmodule JidoHiveClient.StatusTest do
     output =
       capture_io(fn ->
         Status.client_start(
-          participant_id: "skeptic",
-          participant_role: "skeptic",
-          target_id: "target-skeptic",
+          participant_id: "analyst",
+          participant_role: "analyst",
+          target_id: "target-analyst",
           executor: {JidoHiveClient.Executor.Session, [provider: :codex]},
           relay_topic: "relay:workspace-prod",
           workspace_id: "workspace-prod",
@@ -20,19 +20,19 @@ defmodule JidoHiveClient.StatusTest do
         )
       end)
 
-    assert output =~ "participant=skeptic"
+    assert output =~ "participant=analyst"
     assert output =~ "relay=relay:workspace-prod"
     assert output =~ "workspace=workspace-prod"
     assert output =~ "url=wss://jido-hive-server-test.app.nsai.online/socket/websocket"
   end
 
-  test "relay_ready says the client is waiting for relay work" do
+  test "relay_ready says the client is waiting for assignment relay work" do
     output =
       capture_io(fn ->
         Status.relay_ready(%{
-          participant_id: "architect",
-          participant_role: "architect",
-          target_id: "target-architect",
+          participant_id: "analyst",
+          participant_role: "analyst",
+          target_id: "target-analyst",
           capability_id: "codex.exec.session",
           relay_topic: "relay:workspace-prod",
           workspace_id: "workspace-prod",
@@ -41,16 +41,16 @@ defmodule JidoHiveClient.StatusTest do
         })
       end)
 
-    assert output =~ "ready participant=architect"
+    assert output =~ "ready participant=analyst"
     assert output =~ "relay=relay:workspace-prod"
-    assert output =~ "waiting_for=job.start"
+    assert output =~ "waiting_for=assignment.start"
     assert output =~ "url=wss://jido-hive-server-test.app.nsai.online/socket/websocket"
   end
 
   test "execution_started prints prompt previews for the pending llm call" do
     request =
       RunRequest.new!(%{
-        prompt: "Execute the current collaboration turn.\n{\"room_id\":\"room-1\"}",
+        prompt: "Execute the current assignment.\n{\"room_id\":\"room-1\"}",
         system_prompt: "Return strict JSON only.",
         allowed_tools: [],
         metadata: %{}
@@ -61,7 +61,7 @@ defmodule JidoHiveClient.StatusTest do
         Status.execution_started(
           %{
             "room_id" => "room-1",
-            "collaboration_envelope" => %{"turn" => %{"phase" => "proposal"}}
+            "phase" => "analysis"
           },
           [
             provider: :codex,
@@ -71,9 +71,9 @@ defmodule JidoHiveClient.StatusTest do
             relay_topic: "relay:workspace-prod",
             workspace_id: "workspace-prod",
             url: "wss://jido-hive-server-test.app.nsai.online/socket/websocket",
-            target_id: "target-architect",
-            participant_id: "architect",
-            participant_role: "architect",
+            target_id: "target-analyst",
+            participant_id: "analyst",
+            participant_role: "analyst",
             socket_url: "wss://jido-hive-server-test.app.nsai.online/socket/websocket",
             capability_id: "codex.exec.session"
           ],
@@ -82,11 +82,11 @@ defmodule JidoHiveClient.StatusTest do
       end)
 
     assert output =~
-             "executing room=room-1 phase=proposal provider=codex assigned_role=architect model=gpt-5.4"
+             "executing room=room-1 phase=analysis provider=codex assigned_role=analyst model=gpt-5.4"
 
-    assert output =~ "system prompt preview room=room-1 phase=proposal"
+    assert output =~ "system prompt preview room=room-1 phase=analysis"
     assert output =~ "Return strict JSON only."
-    assert output =~ "user prompt preview room=room-1 phase=proposal"
+    assert output =~ "user prompt preview room=room-1 phase=analysis"
     assert output =~ "{\"room_id\":\"room-1\"}"
   end
 
@@ -96,21 +96,21 @@ defmodule JidoHiveClient.StatusTest do
         Status.execution_finished(
           %{
             "room_id" => "room-1",
-            "collaboration_envelope" => %{"turn" => %{"phase" => "proposal"}}
+            "phase" => "analysis"
           },
           %{
             "status" => "failed",
-            "actions" => [],
+            "context_objects" => [],
             "execution" => %{
               "text" =>
-                ~s({"summary":"bad json path","actions":[],"artifacts":[],"extra":"still visible"})
+                ~s({"summary":"bad json path","contribution_type":"reasoning","context_objects":[],"extra":"still visible"})
             }
           }
         )
       end)
 
-    assert output =~ "response preview room=room-1 phase=proposal"
+    assert output =~ "response preview room=room-1 phase=analysis"
     assert output =~ "\"summary\":\"bad json path\""
-    assert output =~ "completed room=room-1 phase=proposal status=failed actions=none"
+    assert output =~ "completed room=room-1 phase=analysis status=failed contribution=none"
   end
 end

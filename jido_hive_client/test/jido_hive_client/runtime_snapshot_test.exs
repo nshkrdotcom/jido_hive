@@ -8,7 +8,7 @@ defmodule JidoHiveClient.RuntimeSnapshotTest do
       workspace_id: "workspace-1",
       user_id: "user-1",
       participant_id: "participant-1",
-      participant_role: "architect",
+      participant_role: "analyst",
       target_id: "target-1",
       capability_id: "capability-1",
       workspace_root: "/workspace",
@@ -27,7 +27,7 @@ defmodule JidoHiveClient.RuntimeSnapshotTest do
     assert snapshot.identity.participant_id == "participant-1"
     assert snapshot.identity.provider == "codex"
     assert snapshot.identity.runtime_id == "asm"
-    assert snapshot.recent_jobs == []
+    assert snapshot.recent_assignments == []
   end
 
   test "tracks connection state transitions and reconnect counts" do
@@ -43,15 +43,15 @@ defmodule JidoHiveClient.RuntimeSnapshotTest do
     assert snapshot.metrics.reconnect_count == 1
   end
 
-  test "tracks job lifecycle transitions" do
-    job = %{
-      "job_id" => "job-1",
+  test "tracks assignment lifecycle transitions" do
+    assignment = %{
+      "assignment_id" => "asn-1",
       "room_id" => "room-1",
       "participant_id" => "participant-1",
-      "participant_role" => "architect"
+      "participant_role" => "analyst"
     }
 
-    result = %{
+    contribution = %{
       "status" => "completed",
       "summary" => "completed",
       "execution" => %{"status" => "completed"}
@@ -61,34 +61,34 @@ defmodule JidoHiveClient.RuntimeSnapshotTest do
       runtime_opts()
       |> State.new()
       |> State.connection_changed(:ready)
-      |> State.job_received(job)
-      |> State.job_started(job)
-      |> State.job_finished(job, result)
+      |> State.assignment_received(assignment)
+      |> State.assignment_started(assignment)
+      |> State.assignment_finished(assignment, contribution)
       |> State.snapshot()
 
     assert snapshot.connection_status == :ready
-    assert snapshot.current_job == nil
-    assert snapshot.metrics.jobs_received == 1
-    assert snapshot.metrics.jobs_completed == 1
-    assert [%{job_id: "job-1", status: "completed"}] = snapshot.recent_jobs
+    assert snapshot.current_assignment == nil
+    assert snapshot.metrics.assignments_received == 1
+    assert snapshot.metrics.assignments_completed == 1
+    assert [%{assignment_id: "asn-1", status: "completed"}] = snapshot.recent_assignments
     assert snapshot.last_error == nil
   end
 
-  test "tracks failed jobs and last_error" do
-    job = %{"job_id" => "job-2", "room_id" => "room-1"}
+  test "tracks failed assignments and last_error" do
+    assignment = %{"assignment_id" => "asn-2", "room_id" => "room-1"}
 
     snapshot =
       runtime_opts()
       |> State.new()
       |> State.connection_changed(:ready)
-      |> State.job_received(job)
-      |> State.job_started(job)
-      |> State.job_failed(job, {:runtime_error, :boom})
+      |> State.assignment_received(assignment)
+      |> State.assignment_started(assignment)
+      |> State.assignment_failed(assignment, {:runtime_error, :boom})
       |> State.snapshot()
 
     assert snapshot.connection_status == :ready
-    assert snapshot.metrics.jobs_failed == 1
-    assert snapshot.last_error.job_id == "job-2"
+    assert snapshot.metrics.assignments_failed == 1
+    assert snapshot.last_error.assignment_id == "asn-2"
     assert String.contains?(snapshot.last_error.reason, "runtime_error")
   end
 end

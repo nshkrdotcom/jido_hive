@@ -47,7 +47,7 @@ defmodule JidoHiveClient.TestSupport.ScriptedRunModule do
     scenario =
       context
       |> scripted_opts()
-      |> Keyword.get(:scenario, :architect)
+      |> Keyword.get(:scenario, :analyst)
 
     response = response_for(scenario, context)
     encoded = Jason.encode!(response)
@@ -113,6 +113,7 @@ defmodule JidoHiveClient.TestSupport.ScriptedRunModule do
         [
           {:tool_call,
            %{
+             "event_type" => "tool_call",
              "tool_name" => scenario_tool(scenario),
              "status" => "ok",
              "input" => %{"scope" => "shared_room"},
@@ -148,7 +149,7 @@ defmodule JidoHiveClient.TestSupport.ScriptedRunModule do
          %{
            "role" => "assistant",
            "content" => [
-             "Submitted a claim, evidence, and publish recommendation for the shared packet."
+             "analysis pass found two substrate insights and one note, but this is not JSON"
            ],
            "metadata" => %{},
            "model" => "gpt-5.4"
@@ -167,9 +168,9 @@ defmodule JidoHiveClient.TestSupport.ScriptedRunModule do
   defp unrepairable_script(context) do
     content =
       if String.ends_with?(to_string(context.run_id), "-repair") do
-        "Architect summary: claim shared packet, evidence tool lineage, publish after review."
+        "analysis pass still not returning valid contribution json"
       else
-        "I propose a shared packet with a claim, supporting evidence, and a publish request."
+        "I found some useful ideas but I am not returning JSON"
       end
 
     [
@@ -190,133 +191,100 @@ defmodule JidoHiveClient.TestSupport.ScriptedRunModule do
     ]
   end
 
-  defp response_for(:architect, context) do
-    participant_id = prompt_value(context, ["turn", "participant_id"]) || "worker"
+  defp response_for(:analyst, context) do
+    participant_id = prompt_value(context, "participant_id") || "worker"
 
     %{
-      "summary" => "proposal pass added claim and evidence from #{participant_id}",
-      "actions" => [
+      "summary" => "analysis pass added substrate beliefs and notes from #{participant_id}",
+      "contribution_type" => "reasoning",
+      "authority_level" => "advisory",
+      "context_objects" => [
         %{
-          "op" => "CLAIM",
-          "title" => "Shared packet envelope #{participant_id}",
-          "body" =>
-            "The server should carry a shared turn envelope across clients and keep the distributed turn budget explicit.",
-          "targets" => []
+          "object_type" => "belief",
+          "title" => "Server-owned room state",
+          "body" => "The server should own room state and dispatch explicit assignments.",
+          "data" => %{},
+          "scope" => %{"read" => ["room"], "write" => ["author"]},
+          "uncertainty" => %{"status" => "provisional", "confidence" => 0.8},
+          "relations" => []
         },
         %{
-          "op" => "EVIDENCE",
-          "title" => "Tool lineage #{participant_id}",
-          "body" =>
-            "Each turn should forward prompt, tool, and artifact lineage so later workers can continue the shared build-up.",
-          "targets" => []
-        },
-        %{
-          "op" => "PUBLISH",
-          "title" => "Publish after review",
-          "body" => "Prepare GitHub and Notion publication payloads from the final room.",
-          "targets" => []
+          "object_type" => "note",
+          "title" => "Filtered context views",
+          "body" => "Assignments should include filtered context instead of a mutable packet.",
+          "data" => %{},
+          "scope" => %{"read" => ["room"], "write" => ["author"]},
+          "uncertainty" => %{"status" => "provisional", "confidence" => 0.7},
+          "relations" => []
         }
       ],
       "artifacts" => []
     }
   end
 
-  defp response_for(:codex_like, context), do: response_for(:architect, context)
-  defp response_for(:repairable, context), do: response_for(:architect, context)
-  defp response_for(:unrepairable, context), do: response_for(:architect, context)
+  defp response_for(:architect, context), do: response_for(:analyst, context)
+  defp response_for(:codex_like, context), do: response_for(:analyst, context)
+  defp response_for(:repairable, context), do: response_for(:analyst, context)
+  defp response_for(:unrepairable, context), do: response_for(:analyst, context)
 
-  defp response_for(:skeptic, context) do
-    participant_id = prompt_value(context, ["turn", "participant_id"]) || "worker"
-    target_entry_ref = first_entry_ref(context) || "claim:1"
-
+  defp response_for(:skeptic, _context) do
     %{
-      "summary" => "critique pass opened one objection from #{participant_id}",
-      "actions" => [
+      "summary" => "critique pass added one open question",
+      "contribution_type" => "reasoning",
+      "authority_level" => "advisory",
+      "context_objects" => [
         %{
-          "op" => "OBJECT",
-          "title" => "Conflict retention needs more structure",
-          "body" =>
-            "The shared packet should preserve contradictory tool output and distributed turn ownership explicitly.",
-          "severity" => "high",
-          "targets" => [%{"entry_ref" => target_entry_ref}]
+          "object_type" => "question",
+          "title" => "Human approval path",
+          "body" => "The binding human approval path still needs a crisp contract.",
+          "data" => %{},
+          "scope" => %{"read" => ["room"], "write" => ["author"]},
+          "uncertainty" => %{"status" => "provisional", "confidence" => 0.9},
+          "relations" => []
         }
       ],
       "artifacts" => []
     }
   end
 
-  defp response_for(:resolver, context) do
-    dispute_id = first_open_dispute_id(context) || "dispute:1"
-
+  defp response_for(:resolver, _context) do
     %{
-      "summary" => "resolution pass resolved #{dispute_id}",
-      "actions" => [
+      "summary" => "resolution pass added one decision",
+      "contribution_type" => "decision",
+      "authority_level" => "advisory",
+      "context_objects" => [
         %{
-          "op" => "REVISE",
-          "title" => "Conflict ledger",
-          "body" =>
-            "Keep a contradiction ledger in the shared envelope and cite it in each turn.",
-          "targets" => [%{"dispute_id" => dispute_id}]
-        },
-        %{
-          "op" => "DECIDE",
-          "title" => "Publishable",
-          "body" => "The room is ready for publication after the contradiction ledger revision.",
-          "targets" => [%{"dispute_id" => dispute_id}]
+          "object_type" => "decision",
+          "title" => "Room timeline as system of record",
+          "body" => "The room timeline should be the canonical UI-facing audit trail.",
+          "data" => %{},
+          "scope" => %{"read" => ["room"], "write" => ["author"]},
+          "uncertainty" => %{"status" => "provisional", "confidence" => 0.85},
+          "relations" => []
         }
       ],
       "artifacts" => []
     }
   end
 
+  defp scenario_tool(:analyst), do: "context.read"
   defp scenario_tool(:architect), do: "context.read"
   defp scenario_tool(:skeptic), do: "critique.scan"
   defp scenario_tool(:resolver), do: "revision.apply"
 
-  defp first_open_dispute_id(context) do
-    prompt_values(context, ["referee", "open_disputes"])
-    |> List.wrap()
-    |> Enum.find_value(fn dispute ->
-      Map.get(dispute, "dispute_id") || Map.get(dispute, :dispute_id)
-    end)
-  end
-
-  defp first_entry_ref(context) do
-    prompt_values(context, ["shared", "entries"])
-    |> List.wrap()
-    |> Enum.find_value(fn entry ->
-      case Map.get(entry, "entry_type") || Map.get(entry, :entry_type) do
-        "claim" ->
-          Map.get(entry, "entry_ref") || Map.get(entry, :entry_ref)
-
-        _other ->
-          nil
-      end
-    end)
-  end
-
-  defp prompt_value(context, path) do
-    context
-    |> prompt_values(path)
-    |> case do
-      value when is_binary(value) -> value
-      _other -> nil
-    end
-  end
-
-  defp prompt_values(context, path) when is_list(path) do
+  defp prompt_value(context, key) do
     with prompt when is_binary(prompt) <- Map.get(context, :prompt),
-         {:ok, envelope} <- decode_envelope(prompt) do
-      get_in(envelope, Enum.map(path, &to_string/1))
+         {:ok, payload} <- decode_packet(prompt) do
+      Map.get(payload, key)
     else
       _other -> nil
     end
   end
 
-  defp decode_envelope(prompt) when is_binary(prompt) do
-    case Regex.run(~r/Shared envelope JSON:\s*(\{.*\})\s*\z/s, prompt, capture: :all_but_first) do
+  defp decode_packet(prompt) when is_binary(prompt) do
+    case Regex.run(~r/Assignment packet JSON:\s*(\{.*\})\s*\z/s, prompt, capture: :all_but_first) do
       [json] -> Jason.decode(json)
-      _other -> {:error, :envelope_not_found}
+      _other -> {:error, :packet_not_found}
     end
   end
 

@@ -2,8 +2,11 @@ defmodule JidoHiveServer.IntegrationsBootstrapTest do
   use ExUnit.Case, async: false
 
   alias Jido.Integration.V2
+  alias JidoHiveServer.IntegrationsBootstrap
 
   test "registers GitHub and Notion publication connectors with compatible direct targets" do
+    :ok = IntegrationsBootstrap.bootstrap!()
+
     assert {:ok, github} = V2.fetch_connector("github")
     assert github.runtime_families == [:direct]
     assert {:ok, _capability} = V2.fetch_capability("github.issue.create")

@@ -3,65 +3,55 @@ defmodule JidoHiveClient.CollaborationPromptTest do
 
   alias JidoHiveClient.CollaborationPrompt
 
-  test "collaboration turns default to no tools and reinforce strict json output" do
-    request = CollaborationPrompt.to_run_request(sample_job())
+  test "assignments default to no tools and reinforce strict json output" do
+    request = CollaborationPrompt.to_run_request(sample_assignment())
 
     assert request.allowed_tools == []
 
     assert request.system_prompt =~
              "Return exactly one JSON object that starts with { and ends with }."
 
+    assert request.system_prompt =~ "Allowed contribution types: reasoning, artifact"
+    assert request.system_prompt =~ "\"contribution_type\": \"reasoning|artifact\""
+
     assert request.system_prompt =~
-             "Allowed action ops for this turn: CLAIM, EVIDENCE, OBJECT, REVISE, DECIDE, PUBLISH"
+             "Do not return wrapper keys like schema_version, room_id, participant_id"
 
     assert request.prompt =~ "Return the JSON object only."
-    assert request.prompt =~ "\"summary\": \"string\""
-
-    assert request.prompt =~
-             "Do not return wrapper keys like schema_version, room_id, participant_id,"
+    assert request.prompt =~ "Assignment packet JSON:"
+    assert request.prompt =~ "\"allowed_contribution_types\""
+    assert request.prompt =~ "\"reasoning\""
   end
 
   test "explicit allowed tools still pass through when requested" do
-    request = CollaborationPrompt.to_run_request(sample_job(), allowed_tools: ["shell.command"])
+    request =
+      CollaborationPrompt.to_run_request(sample_assignment(), allowed_tools: ["shell.command"])
 
     assert request.allowed_tools == ["shell.command"]
   end
 
-  defp sample_job do
+  defp sample_assignment do
     %{
-      "job_id" => "job-client-1",
+      "assignment_id" => "asn-client-1",
       "room_id" => "room-client-1",
-      "participant_id" => "architect",
-      "participant_role" => "architect",
+      "participant_id" => "analyst",
+      "participant_role" => "analyst",
       "session" => %{
         "workspace_root" => "/tmp/jido-hive-client-test",
         "provider" => "codex"
       },
-      "collaboration_envelope" => %{
-        "schema_version" => "jido_hive/collab_envelope.v1",
-        "room" => %{
-          "room_id" => "room-client-1",
-          "brief" => "Design a shared collaboration envelope.",
-          "rules" => ["Every objection must target a claim or dispute."]
-        },
-        "referee" => %{
-          "phase" => "proposal",
-          "directives" => ["Propose one concrete collaboration envelope and one publish path."]
-        },
-        "turn" => %{
-          "round" => 1,
-          "participant_role" => "architect",
-          "objective" => "Produce the first proposal.",
-          "response_contract" => %{
-            "allowed_ops" => ["CLAIM", "EVIDENCE", "OBJECT", "REVISE", "DECIDE", "PUBLISH"]
-          }
-        },
-        "shared" => %{
-          "entries" => [],
-          "instruction_log" => [],
-          "tool_call_log" => []
-        }
-      }
+      "contribution_contract" => %{
+        "allowed_contribution_types" => ["reasoning", "artifact"],
+        "allowed_object_types" => ["belief", "note", "question"],
+        "allowed_relation_types" => ["derives_from", "references"]
+      },
+      "context_view" => %{
+        "brief" => "Design a shared participation substrate.",
+        "rules" => ["Return structured contributions only."],
+        "context_objects" => []
+      },
+      "phase" => "analysis",
+      "objective" => "Produce the first reasoning contribution."
     }
   end
 end

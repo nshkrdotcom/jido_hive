@@ -1,8 +1,8 @@
 defmodule JidoHiveServer.Collaboration.EventReducer do
   @moduledoc false
 
-  alias JidoHiveServer.Collaboration.{ExecutionPlan, Referee}
-  alias JidoHiveServer.Collaboration.Schema.RoomEvent
+  alias JidoHiveServer.Collaboration.DispatchPolicy.Registry, as: PolicyRegistry
+  alias JidoHiveServer.Collaboration.Schema.{Assignment, ContextObject, Contribution, RoomEvent}
 
   @max_tracked_event_ids 256
 
@@ -26,242 +26,173 @@ defmodule JidoHiveServer.Collaboration.EventReducer do
     Map.merge(snapshot, payload)
   end
 
-  defp reduce_event(snapshot, %RoomEvent{type: :turn_opened, payload: payload}) do
-    execution_plan = ExecutionPlan.record_open(snapshot.execution_plan, payload.plan_slot_index)
+  defp reduce_event(snapshot, %RoomEvent{type: :assignment_opened, payload: payload}) do
+    assignment_payload = map_value(payload, "assignment")
 
-    turn = %{
-      job_id: payload.job_id,
-      plan_slot_index: payload.plan_slot_index,
-      participant_id: payload.participant_id,
-      participant_role: payload.participant_role,
-      target_id: payload.target_id,
-      capability_id: payload.capability_id,
-      phase: payload.phase,
-      objective: payload.objective,
-      round: payload.round,
-      session: payload.session || %{},
-      collaboration_envelope: payload.collaboration_envelope || %{},
-      status: :running,
-      started_at:
-        Map.get(payload, :started_at) || Map.get(payload, "started_at") || DateTime.utc_now()
-    }
+    case Assignment.new(assignment_payload) do
+      {:ok, assignment} ->
+        assignment_map = Map.from_struct(assignment)
 
-    %{
-      snapshot
-      | current_turn: turn,
-        turns: snapshot.turns ++ [turn],
-        execution_plan: execution_plan,
-        round: payload.round,
-        phase: payload.phase,
-        status: "running"
-    }
-  end
+        %{
+          snapshot
+          | current_assignment: assignment_map,
+            assignments: snapshot.assignments ++ [assignment_map],
+            next_assignment_seq: snapshot.next_assignment_seq + 1,
+            status: "running"
+        }
 
-  defp reduce_event(snapshot, %RoomEvent{type: type, payload: payload})
-       when type in [:turn_completed, :turn_failed] do
-    current_turn = Map.get(snapshot, :current_turn, %{})
-
-    if current_turn == %{} or current_turn.job_id != payload.job_id do
-      snapshot
-    else
-      apply_turn_result(snapshot, normalize_result_payload(type, payload))
+      {:error, _reason} ->
+        snapshot
     end
   end
 
-  defp reduce_event(snapshot, %RoomEvent{type: :turn_abandoned, payload: payload}) do
-    abandoned_turn = Enum.find(snapshot.turns, &(&1.job_id == payload.job_id))
+  defp reduce_event(snapshot, %RoomEvent{} = event) when event.type == :contribution_recorded do
+    contribution_payload =
+      event.payload
+      |> map_value("contribution")
+      |> Map.put_new("contribution_id", "contrib-#{snapshot.next_contribution_seq}")
 
-    turns =
-      Enum.map(snapshot.turns, fn turn ->
-        if turn.job_id == payload.job_id do
-          Map.merge(turn, %{
-            status: :abandoned,
-            result_summary: payload.reason,
-            execution: %{
-              "status" => "abandoned",
-              "error" => %{"reason" => payload.reason}
-            },
-            completed_at: DateTime.utc_now()
-          })
-        else
-          turn
-        end
-      end)
+    case Contribution.new(contribution_payload) do
+      {:ok, contribution} ->
+        contribution_map = Map.from_struct(contribution)
 
-    execution_plan =
-      case abandoned_turn do
-        %{target_id: target_id} when is_binary(target_id) ->
-          ExecutionPlan.record_abandon(snapshot.execution_plan, target_id)
+        {context_objects, next_context_seq} =
+          materialize_context_objects(snapshot, contribution_map, event)
 
-        _other ->
-          snapshot.execution_plan
-      end
+        assignments = complete_assignment(snapshot.assignments, contribution_map)
 
-    updated_state = %{snapshot | current_turn: %{}, turns: turns, execution_plan: execution_plan}
+        updated =
+          snapshot
+          |> Map.put(
+            :current_assignment,
+            clear_current_assignment(snapshot.current_assignment, contribution_map.assignment_id)
+          )
+          |> Map.put(:assignments, assignments)
+          |> Map.put(:contributions, snapshot.contributions ++ [contribution_map])
+          |> Map.put(:context_objects, snapshot.context_objects ++ context_objects)
+          |> Map.put(:next_context_seq, next_context_seq)
+          |> Map.put(:next_contribution_seq, snapshot.next_contribution_seq + 1)
+          |> increment_completed_slots(contribution_map.assignment_id)
 
-    %{
-      updated_state
-      | phase: Referee.phase(updated_state),
-        status: Referee.room_status(updated_state)
-    }
+        %{updated | status: policy_status(updated)}
+
+      {:error, _reason} ->
+        snapshot
+    end
+  end
+
+  defp reduce_event(snapshot, %RoomEvent{type: :assignment_abandoned, payload: payload}) do
+    assignment_id = value(payload, "assignment_id")
+    reason = value(payload, "reason")
+
+    updated =
+      snapshot
+      |> Map.put(
+        :current_assignment,
+        clear_current_assignment(snapshot.current_assignment, assignment_id)
+      )
+      |> Map.put(:assignments, abandon_assignment(snapshot.assignments, assignment_id, reason))
+      |> increment_completed_slots(assignment_id)
+
+    %{updated | status: policy_status(updated)}
   end
 
   defp reduce_event(snapshot, %RoomEvent{type: :runtime_state_changed, payload: payload}) do
-    %{
-      snapshot
-      | status: payload.status,
-        phase: payload.phase,
-        current_turn: Map.get(snapshot, :current_turn, %{})
-    }
+    %{snapshot | status: value(payload, "status") || snapshot.status}
   end
 
   defp reduce_event(snapshot, _event), do: snapshot
 
-  defp apply_turn_result(snapshot, payload) do
-    {entries, next_entry_seq} =
-      Enum.map_reduce(payload.actions, snapshot.next_entry_seq, fn action, seq ->
-        entry_type = map_entry_type(action["op"])
-        entry_ref = "#{entry_type}:#{seq}"
+  defp materialize_context_objects(snapshot, contribution, event) do
+    drafts = Map.get(contribution, :context_objects, [])
 
-        entry = %{
-          entry_ref: entry_ref,
-          entry_type: entry_type,
-          job_id: payload.job_id,
-          participant_id: payload.participant_id,
-          participant_role: payload.participant_role,
-          title: action["title"],
-          body: action["body"],
-          severity: action["severity"],
-          targets: action["targets"] || [],
-          tool_events: payload.tool_events
-        }
+    Enum.map_reduce(drafts, snapshot.next_context_seq, fn draft, seq ->
+      attrs = %{
+        context_id: "ctx-#{seq}",
+        authored_by: %{
+          participant_id: contribution.participant_id,
+          participant_role: contribution.participant_role,
+          target_id: contribution.target_id,
+          capability_id: contribution.capability_id
+        },
+        provenance: %{
+          contribution_id: contribution.contribution_id,
+          assignment_id: contribution.assignment_id,
+          consumed_context_ids: contribution.consumed_context_ids,
+          source_event_ids: [event.event_id],
+          authority_level: contribution.authority_level,
+          contribution_type: contribution.contribution_type
+        },
+        inserted_at: event.recorded_at
+      }
 
-        {entry, seq + 1}
-      end)
-
-    {new_disputes, next_dispute_seq} =
-      Enum.reduce(entries, {[], snapshot.next_dispute_seq}, fn entry, {disputes, seq} ->
-        if entry.entry_type == "objection" do
-          dispute = %{
-            dispute_id: "dispute:#{seq}",
-            title: entry.title,
-            severity: entry.severity,
-            status: :open,
-            opened_by_entry_ref: entry.entry_ref,
-            target_entry_refs: Enum.map(entry.targets, &Map.get(&1, "entry_ref"))
-          }
-
-          {[dispute | disputes], seq + 1}
-        else
-          {disputes, seq}
+      context_object =
+        case ContextObject.from_draft(draft, attrs) do
+          {:ok, context_object} -> Map.from_struct(context_object)
+          {:error, _reason} -> nil
         end
-      end)
 
-    updated_turns = complete_turns(snapshot.turns, payload)
-
-    updated_disputes =
-      resolve_disputes(snapshot.disputes ++ Enum.reverse(new_disputes), entries, payload.job_id)
-
-    execution_plan = ExecutionPlan.record_completion(snapshot.execution_plan)
-
-    updated_state = %{
-      snapshot
-      | current_turn: %{},
-        turns: updated_turns,
-        context_entries: snapshot.context_entries ++ entries,
-        disputes: updated_disputes,
-        execution_plan: execution_plan,
-        next_entry_seq: next_entry_seq,
-        next_dispute_seq: next_dispute_seq
-    }
-
-    %{
-      updated_state
-      | phase: Referee.phase(updated_state),
-        status: room_status(updated_state, payload.status)
-    }
+      {context_object, seq + 1}
+    end)
+    |> then(fn {context_objects, next_seq} ->
+      {Enum.reject(context_objects, &is_nil/1), next_seq}
+    end)
   end
 
-  defp normalize_result_payload(:turn_failed, payload), do: Map.put(payload, :status, "failed")
-  defp normalize_result_payload(_type, payload), do: payload
-
-  defp complete_turns(turns, payload) do
-    Enum.map(turns, fn turn ->
-      if turn.job_id == payload.job_id do
-        Map.merge(turn, %{
-          status: turn_status(payload.status),
-          result_summary: payload.summary,
-          actions: payload.actions,
-          tool_events: payload.tool_events,
-          events: payload.events,
-          approvals: payload.approvals,
-          artifacts: payload.artifacts,
-          execution: payload.execution,
-          completed_at: DateTime.utc_now()
-        })
+  defp complete_assignment(assignments, contribution) do
+    Enum.map(assignments, fn assignment ->
+      if assignment.assignment_id == contribution.assignment_id do
+        assignment
+        |> Map.put(:status, contribution.status || "completed")
+        |> Map.put(:completed_at, DateTime.utc_now())
+        |> Map.put(:result_summary, contribution.summary)
       else
-        turn
+        assignment
       end
     end)
   end
 
-  defp resolve_disputes(disputes, entries, job_id) do
-    Enum.reduce(entries, disputes, fn entry, acc ->
-      case entry.entry_type do
-        type when type in ["revision", "decision"] ->
-          resolve_targeted_disputes(acc, entry, job_id)
-
-        _other ->
-          acc
+  defp abandon_assignment(assignments, assignment_id, reason) do
+    Enum.map(assignments, fn assignment ->
+      if assignment.assignment_id == assignment_id do
+        assignment
+        |> Map.put(:status, "abandoned")
+        |> Map.put(:completed_at, DateTime.utc_now())
+        |> Map.put(:result_summary, reason)
+      else
+        assignment
       end
     end)
   end
 
-  defp resolve_targeted_disputes(disputes, entry, job_id) do
-    targeted_disputes =
-      entry.targets
-      |> Enum.map(&Map.get(&1, "dispute_id"))
-      |> Enum.reject(&is_nil/1)
-
-    Enum.map(disputes, &resolve_dispute(&1, targeted_disputes, entry, job_id))
-  end
-
-  defp resolve_dispute(
-         %{status: :open, dispute_id: dispute_id} = dispute,
-         targeted,
-         entry,
-         job_id
-       ) do
-    if dispute_id in targeted do
-      Map.merge(dispute, %{
-        status: :resolved,
-        resolved_by_entry_ref: entry.entry_ref,
-        resolved_in_job_id: job_id
-      })
+  defp clear_current_assignment(current_assignment, assignment_id) do
+    if current_assignment == %{} or current_assignment.assignment_id != assignment_id do
+      current_assignment
     else
-      dispute
+      %{}
     end
   end
 
-  defp resolve_dispute(dispute, _targeted, _entry, _job_id), do: dispute
+  defp increment_completed_slots(snapshot, nil), do: snapshot
 
-  defp map_entry_type("CLAIM"), do: "claim"
-  defp map_entry_type("EVIDENCE"), do: "evidence"
-  defp map_entry_type("OBJECT"), do: "objection"
-  defp map_entry_type("REVISE"), do: "revision"
-  defp map_entry_type("DECIDE"), do: "decision"
-  defp map_entry_type("PUBLISH"), do: "publish_request"
-  defp map_entry_type(_), do: "system_note"
+  defp increment_completed_slots(snapshot, assignment_id) do
+    if Enum.any?(snapshot.assignments, &(&1.assignment_id == assignment_id)) do
+      update_in(snapshot, [:dispatch_state, :completed_slots], fn value -> (value || 0) + 1 end)
+    else
+      snapshot
+    end
+  end
 
-  defp room_status(_updated_state, "failed"), do: "failed"
-  defp room_status(updated_state, _status), do: Referee.room_status(updated_state)
-
-  defp turn_status("failed"), do: :failed
-  defp turn_status(_status), do: :completed
+  defp policy_status(snapshot) do
+    case PolicyRegistry.fetch_module(snapshot.dispatch_policy_id) do
+      {:ok, module} -> module.status(snapshot)
+      {:error, _reason} -> snapshot.status || "idle"
+    end
+  end
 
   defp applied_event?(snapshot, event_id) when is_binary(event_id) do
     snapshot
-    |> workflow_state()
+    |> Map.get(:dispatch_state, %{})
     |> Map.get(:applied_event_ids, [])
     |> Enum.member?(event_id)
   end
@@ -273,21 +204,29 @@ defmodule JidoHiveServer.Collaboration.EventReducer do
   defp remember_event_id(snapshot, event_id) do
     ids =
       snapshot
-      |> workflow_state()
+      |> Map.get(:dispatch_state, %{})
       |> Map.get(:applied_event_ids, [])
       |> Kernel.++([event_id])
       |> Enum.uniq()
       |> Enum.take(-@max_tracked_event_ids)
 
-    put_in(snapshot, [:workflow_state, :applied_event_ids], ids)
+    put_in(snapshot, [:dispatch_state, :applied_event_ids], ids)
   end
 
-  defp workflow_state(snapshot) do
-    snapshot
-    |> Map.get(:workflow_state, %{})
-    |> Map.new(fn
-      {key, value} when is_binary(key) -> {String.to_atom(key), value}
-      pair -> pair
-    end)
+  defp map_value(map, key) do
+    case value(map, key) do
+      %{} = value -> value
+      _other -> %{}
+    end
+  end
+
+  defp value(map, key) when is_map(map) and is_binary(key) do
+    Map.get(map, key) || Map.get(map, existing_atom_key(key))
+  end
+
+  defp existing_atom_key(key) when is_binary(key) do
+    String.to_existing_atom(key)
+  rescue
+    ArgumentError -> nil
   end
 end

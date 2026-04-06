@@ -17,12 +17,15 @@ defmodule JidoHiveServerWeb.Router do
     get "/connectors/installs/:install_id", ConnectorController, :show_install
     post "/connectors/installs/:install_id/complete", ConnectorController, :complete_install
     get "/targets", TargetController, :index
-    get "/workflows", WorkflowsController, :index
-    get "/workflows/*id", WorkflowsController, :show
+    get "/policies", PoliciesController, :index
+    get "/policies/*id", PoliciesController, :show
     post "/rooms", RoomController, :create
     get "/rooms/:id", RoomController, :show
     get "/rooms/:id/events", RoomEventsController, :index
     get "/rooms/:id/timeline", RoomTimelineController, :index
+    get "/rooms/:id/context_objects", RoomContextController, :index
+    get "/rooms/:id/context_objects/:context_id", RoomContextController, :show
+    post "/rooms/:id/contributions", RoomContributionController, :create
     post "/rooms/:id/run", RoomController, :run
     get "/rooms/:id/publication_plan", RoomController, :publication_plan
     get "/rooms/:id/publications", RoomController, :publication_runs

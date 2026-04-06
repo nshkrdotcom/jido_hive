@@ -3,53 +3,59 @@ defmodule JidoHiveClient.ResultDecoderTest do
 
   alias JidoHiveClient.ResultDecoder
 
-  test "extracts fenced json and normalizes the collaboration contract" do
+  test "extracts fenced json and normalizes the contribution contract" do
     payload = """
     Here is the result.
 
     ```json
-    {"summary":"ok","actions":[{"op":"CLAIM","title":"A","body":"B","targets":[]}],"artifacts":[]}
+    {"summary":"ok","contribution_type":"reasoning","authority_level":"advisory","context_objects":[{"object_type":"belief","title":"A","body":"B","data":{"k":"v"},"scope":{"read":["room"],"write":["author"]},"uncertainty":{"status":"provisional","confidence":0.7},"relations":[]}],"artifacts":[]}
     ```
     """
 
     assert {:ok, decoded} = ResultDecoder.decode(payload)
     assert decoded["summary"] == "ok"
-    assert [%{"op" => "CLAIM", "title" => "A", "body" => "B"}] = decoded["actions"]
-  end
-
-  test "normalizes codex-style actions when summary is omitted" do
-    payload = """
-    {"actions":[{"op":"claim","ref":"claim-shared-ledger","body":"Use an append-only log."},{"op":"evidence","body":"It keeps a durable history."}]}
-    """
-
-    assert {:ok, decoded} = ResultDecoder.decode(payload)
-    assert decoded["summary"] == "collaboration response with actions: CLAIM, EVIDENCE"
+    assert decoded["contribution_type"] == "reasoning"
 
     assert [
              %{
-               "op" => "CLAIM",
-               "title" => "claim-shared-ledger",
-               "body" => "Use an append-only log."
-             },
-             %{"op" => "EVIDENCE", "title" => "EVIDENCE", "body" => "It keeps a durable history."}
-           ] = decoded["actions"]
-  end
-
-  test "normalizes codex wrapper ops into collaboration actions" do
-    payload = """
-    {"schema_version":"jido_hive/collab_envelope.v1","room_id":"room-123","participant_id":"architect","phase":"proposal","ops":[{"op":"CLAIM","id":"c1","text":"Use explicit turn envelopes.","grounding":"room.brief"},{"op":"EVIDENCE","id":"e1","text":"The shared envelope already carries durable shared state.","grounding":"shared envelope"}]}
-    """
-
-    assert {:ok, decoded} = ResultDecoder.decode(payload)
-    assert decoded["summary"] == "collaboration response with actions: CLAIM, EVIDENCE"
-
-    assert [
-             %{"op" => "CLAIM", "title" => "c1", "body" => "Use explicit turn envelopes."},
-             %{
-               "op" => "EVIDENCE",
-               "title" => "e1",
-               "body" => "The shared envelope already carries durable shared state."
+               "object_type" => "belief",
+               "title" => "A",
+               "body" => "B",
+               "data" => %{"k" => "v"}
              }
-           ] = decoded["actions"]
+           ] = decoded["context_objects"]
+  end
+
+  test "defaults the summary when contribution type is present but summary is omitted" do
+    payload = """
+    {"contribution_type":"reasoning","context_objects":[{"object_type":"note","title":"Shared ledger","body":"Use an append-only log."}],"artifacts":[]}
+    """
+
+    assert {:ok, decoded} = ResultDecoder.decode(payload)
+    assert decoded["summary"] == "reasoning contribution"
+    assert decoded["authority_level"] == "advisory"
+    assert [%{"object_type" => "note", "title" => "Shared ledger"}] = decoded["context_objects"]
+  end
+
+  test "extracts the first contribution object from surrounding wrapper text" do
+    payload = """
+    prefix text {"schema_version":"ignored","summary":"Use explicit assignments","contribution_type":"decision","authority_level":"binding","context_objects":[{"object_type":"decision","title":"Assignment transport","body":"Use assignment.start and contribution.submit","relations":[{"relation":"derives_from","target_id":"ctx-1"}]}],"artifacts":[{"artifact_type":"note","title":"operator","body":"Binding decision"}]} suffix text
+    """
+
+    assert {:ok, decoded} = ResultDecoder.decode(payload)
+    assert decoded["summary"] == "Use explicit assignments"
+    assert decoded["contribution_type"] == "decision"
+    assert decoded["authority_level"] == "binding"
+
+    assert [
+             %{
+               "object_type" => "decision",
+               "title" => "Assignment transport",
+               "body" => "Use assignment.start and contribution.submit",
+               "relations" => [%{"relation" => "derives_from", "target_id" => "ctx-1"}]
+             }
+           ] = decoded["context_objects"]
+
+    assert [%{"artifact_type" => "note", "title" => "operator"}] = decoded["artifacts"]
   end
 end

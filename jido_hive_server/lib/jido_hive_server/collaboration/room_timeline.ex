@@ -7,12 +7,9 @@ defmodule JidoHiveServer.Collaboration.RoomTimeline do
 
   @spec project([RoomEvent.t()], keyword()) :: [map()]
   def project(events, opts \\ []) when is_list(events) and is_list(opts) do
-    entries =
-      events
-      |> Enum.map(&to_entry/1)
-      |> filter_after(Keyword.get(opts, :after))
-
-    entries
+    events
+    |> Enum.map(&to_entry/1)
+    |> filter_after(Keyword.get(opts, :after))
   end
 
   @spec next_cursor([map()]) :: String.t() | nil
@@ -32,7 +29,7 @@ defmodule JidoHiveServer.Collaboration.RoomTimeline do
 
   defp to_entry(%RoomEvent{} = event) do
     payload = normalize(event.payload)
-    {kind, title, body, status} = classify(event.type, payload)
+    {kind, title, body, metadata, status} = classify(event.type, payload)
 
     %{
       entry_id: event.event_id,
@@ -42,58 +39,49 @@ defmodule JidoHiveServer.Collaboration.RoomTimeline do
       kind: kind,
       title: title,
       body: body,
-      phase: payload["phase"],
-      participant_id: payload["participant_id"],
-      participant_role: payload["participant_role"],
-      target_id: payload["target_id"],
-      job_id: payload["job_id"],
-      status: status || payload["status"],
+      assignment_id: metadata["assignment_id"],
+      phase: metadata["phase"],
+      participant_id: metadata["participant_id"],
+      participant_role: metadata["participant_role"],
+      target_id: metadata["target_id"],
+      status: status,
       schema_version: @schema_version,
       timestamp: DateTime.to_iso8601(event.recorded_at),
-      metadata: payload
+      metadata: metadata
     }
   end
 
   defp classify(:room_created, payload) do
-    {"room.created", "Room created", payload["brief"], "completed"}
+    {"room.created", "Room created", payload["brief"], payload, "completed"}
   end
 
-  defp classify(:turn_opened, payload) do
-    title =
-      case payload["phase"] do
-        phase when is_binary(phase) and phase != "" ->
-          "#{String.capitalize(phase)} turn dispatched"
+  defp classify(:assignment_opened, payload) do
+    assignment = payload["assignment"] || %{}
 
-        _other ->
-          "Turn dispatched"
-      end
-
-    {"turn.dispatched", title, payload["objective"], "running"}
+    {"assignment.started", "Assignment started", assignment["objective"], assignment, "running"}
   end
 
-  defp classify(:turn_completed, payload) do
-    {"turn.completed", "Turn completed", payload["summary"], payload["status"] || "completed"}
+  defp classify(:contribution_recorded, payload) do
+    contribution = payload["contribution"] || %{}
+
+    {"contribution.recorded", "Contribution recorded", contribution["summary"], contribution,
+     contribution["status"] || "completed"}
   end
 
-  defp classify(:turn_failed, payload) do
-    {"turn.failed", "Turn failed", payload["summary"] || payload["reason"],
-     payload["status"] || "failed"}
+  defp classify(:assignment_abandoned, payload) do
+    {"assignment.abandoned", "Assignment abandoned", payload["reason"], payload, "abandoned"}
   end
 
-  defp classify(:turn_abandoned, payload) do
-    {"turn.failed", "Turn abandoned", payload["reason"], "abandoned"}
+  defp classify(:runtime_state_changed, payload) do
+    {"room.status.changed", "Room status changed", payload["status"], payload, payload["status"]}
   end
 
   defp classify(type, payload) do
     type_string = Atom.to_string(type)
+    title = type_string |> String.split("_") |> Enum.map_join(" ", &String.capitalize/1)
 
-    title =
-      type_string
-      |> String.split("_")
-      |> Enum.map_join(" ", &String.capitalize/1)
-
-    {String.replace(type_string, "_", "."), title, payload["summary"] || payload["reason"],
-     payload["status"]}
+    {String.replace(type_string, "_", "."), title, payload["summary"] || payload["status"],
+     payload, payload["status"]}
   end
 
   defp normalize(map) when is_map(map) do

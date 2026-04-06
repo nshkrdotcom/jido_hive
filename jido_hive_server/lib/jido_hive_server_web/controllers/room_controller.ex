@@ -10,9 +10,6 @@ defmodule JidoHiveServerWeb.RoomController do
         |> put_status(:created)
         |> json(%{data: snapshot})
 
-      {:error, {:already_started, _pid}} ->
-        render_error(conn, :conflict, :room_already_started)
-
       {:error, reason} ->
         render_error(conn, :unprocessable_entity, reason)
     end
@@ -45,19 +42,14 @@ defmodule JidoHiveServerWeb.RoomController do
   end
 
   def run(conn, %{"id" => room_id} = params) do
-    max_turns =
-      params
-      |> Map.get("max_turns")
-      |> parse_optional_integer()
+    max_assignments = parse_optional_integer(Map.get(params, "max_assignments"))
 
-    turn_timeout_ms =
-      params
-      |> Map.get("turn_timeout_ms", 180_000)
-      |> parse_integer(180_000)
+    assignment_timeout_ms =
+      parse_integer(Map.get(params, "assignment_timeout_ms", 180_000), 180_000)
 
     run_opts =
-      [turn_timeout_ms: turn_timeout_ms]
-      |> maybe_put_max_turns(max_turns)
+      [assignment_timeout_ms: assignment_timeout_ms]
+      |> maybe_put_max_assignments(max_assignments)
 
     case Collaboration.run_room(room_id, run_opts) do
       {:ok, snapshot} ->
@@ -110,10 +102,16 @@ defmodule JidoHiveServerWeb.RoomController do
     end
   end
 
-  defp render_error(conn, status, reason) do
+  defp render_error(conn, status, reason) when is_atom(reason) do
     conn
     |> put_status(status)
     |> json(%{error: Atom.to_string(reason)})
+  end
+
+  defp render_error(conn, status, reason) do
+    conn
+    |> put_status(status)
+    |> json(%{error: inspect(reason)})
   end
 
   defp parse_integer(value, _default) when is_integer(value), do: value
@@ -132,6 +130,8 @@ defmodule JidoHiveServerWeb.RoomController do
   defp parse_optional_integer(value) when is_binary(value), do: parse_integer(value, nil)
   defp parse_optional_integer(_value), do: nil
 
-  defp maybe_put_max_turns(opts, nil), do: opts
-  defp maybe_put_max_turns(opts, max_turns), do: Keyword.put(opts, :max_turns, max_turns)
+  defp maybe_put_max_assignments(opts, nil), do: opts
+
+  defp maybe_put_max_assignments(opts, max_assignments),
+    do: Keyword.put(opts, :max_assignments, max_assignments)
 end

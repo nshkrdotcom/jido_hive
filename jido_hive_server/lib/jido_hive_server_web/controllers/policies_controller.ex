@@ -1,27 +1,27 @@
-defmodule JidoHiveServerWeb.WorkflowsController do
+defmodule JidoHiveServerWeb.PoliciesController do
   use JidoHiveServerWeb, :controller
 
-  alias JidoHiveServer.Collaboration.Workflow.Registry
+  alias JidoHiveServer.Collaboration.DispatchPolicy.Registry
 
   def index(conn, _params) do
     json(conn, %{data: Enum.map(Registry.list(), &normalize/1)})
   end
 
-  def show(conn, %{"id" => workflow_id_segments}) do
-    workflow_id =
-      case workflow_id_segments do
+  def show(conn, %{"id" => policy_id_segments}) do
+    policy_id =
+      case policy_id_segments do
         segments when is_list(segments) -> Enum.join(segments, "/")
         segment when is_binary(segment) -> segment
       end
 
-    case Registry.fetch(workflow_id) do
+    case Registry.fetch(policy_id) do
       {:ok, definition} ->
         json(conn, %{data: normalize(definition)})
 
-      {:error, :unknown_workflow} ->
+      {:error, :unknown_policy} ->
         conn
         |> put_status(:not_found)
-        |> json(%{error: "unknown_workflow"})
+        |> json(%{error: "unknown_policy"})
     end
   end
 

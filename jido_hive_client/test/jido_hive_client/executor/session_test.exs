@@ -4,16 +4,17 @@ defmodule JidoHiveClient.Executor.SessionTest do
   alias JidoHiveClient.Executor.Session
   alias JidoHiveClient.TestSupport.ScriptedRunModule
 
-  test "runs a collaboration turn through harness and decodes structured actions" do
+  test "runs an assignment through harness and decodes structured contributions" do
     assert {:ok, result} =
-             Session.run(sample_job(),
+             Session.run(sample_assignment(),
                provider: :claude,
                driver: ScriptedRunModule,
-               driver_opts: [scenario: :architect]
+               driver_opts: [scenario: :analyst]
              )
 
-    assert result["summary"] =~ "proposal pass added claim and evidence"
-    assert Enum.map(result["actions"], & &1["op"]) == ["CLAIM", "EVIDENCE", "PUBLISH"]
+    assert result["summary"] =~ "analysis pass"
+    assert result["contribution_type"] == "reasoning"
+    assert Enum.map(result["context_objects"], & &1["object_type"]) == ["belief", "note"]
     assert result["execution"]["status"] == "completed"
     assert result["execution"]["provider"] == "claude"
     assert [%{"event_type" => "tool_call"}] = result["tool_events"]
@@ -22,42 +23,41 @@ defmodule JidoHiveClient.Executor.SessionTest do
 
   test "extracts assistant_message content and raw tool lineage from codex-like events" do
     assert {:ok, result} =
-             Session.run(sample_job(),
+             Session.run(sample_assignment(),
                provider: :codex,
                driver: ScriptedRunModule,
                driver_opts: [scenario: :codex_like]
              )
 
-    assert result["summary"] =~ "proposal pass added claim and evidence"
-    assert Enum.map(result["actions"], & &1["op"]) == ["CLAIM", "EVIDENCE", "PUBLISH"]
+    assert result["summary"] =~ "analysis pass"
+    assert result["contribution_type"] == "reasoning"
     assert result["execution"]["status"] == "completed"
     assert result["execution"]["provider"] == "codex"
     assert result["execution"]["text"] =~ "\"summary\""
     assert result["execution"]["cost"] == %{"input_tokens" => 10, "output_tokens" => 20}
-
     assert Enum.map(result["tool_events"], & &1["event_type"]) == ["tool_call", "tool_result"]
     assert Enum.any?(result["events"], &(&1["type"] == "assistant_message"))
   end
 
   test "repairs non-json assistant output with a second strict contract pass" do
     assert {:ok, result} =
-             Session.run(sample_job(),
+             Session.run(sample_assignment(),
                provider: :codex,
                driver: ScriptedRunModule,
                driver_opts: [scenario: :repairable]
              )
 
-    assert result["summary"] =~ "proposal pass added claim and evidence"
-    assert Enum.map(result["actions"], & &1["op"]) == ["CLAIM", "EVIDENCE", "PUBLISH"]
+    assert result["summary"] =~ "analysis pass"
+    assert result["contribution_type"] == "reasoning"
     assert result["execution"]["status"] == "completed"
     assert result["execution"]["metadata"]["repair_attempted"] == true
     assert result["execution"]["cost"] == %{"input_tokens" => 10, "output_tokens" => 20}
     assert Enum.count(result["events"], &(&1["type"] == "assistant_message")) == 2
   end
 
-  test "returns a failed turn with raw execution text when repair still cannot produce json" do
+  test "returns a failed contribution with raw execution text when repair still cannot produce json" do
     assert {:ok, result} =
-             Session.run(sample_job(),
+             Session.run(sample_assignment(),
                provider: :codex,
                driver: ScriptedRunModule,
                driver_opts: [scenario: :unrepairable]
@@ -65,7 +65,7 @@ defmodule JidoHiveClient.Executor.SessionTest do
 
     assert result["status"] == "failed"
     assert result["execution"]["status"] == "failed"
-    assert result["execution"]["text"] =~ "shared packet"
+    assert result["execution"]["text"] =~ "not returning JSON"
     assert get_in(result, ["execution", "error", "reason"]) =~ "json_not_found"
 
     assert Enum.any?(result["artifacts"], fn artifact ->
@@ -73,40 +73,30 @@ defmodule JidoHiveClient.Executor.SessionTest do
            end)
   end
 
-  defp sample_job do
+  defp sample_assignment do
     %{
-      "job_id" => "job-client-1",
+      "assignment_id" => "asn-client-1",
       "room_id" => "room-client-1",
-      "participant_id" => "architect",
-      "participant_role" => "architect",
+      "participant_id" => "analyst",
+      "participant_role" => "analyst",
       "session" => %{
         "workspace_root" => "/tmp/jido-hive-client-test",
         "provider" => "claude"
       },
-      "collaboration_envelope" => %{
-        "schema_version" => "jido_hive/collab_envelope.v1",
-        "room" => %{
-          "room_id" => "room-client-1",
-          "brief" => "Design a shared collaboration envelope.",
-          "rules" => ["Every objection must target a claim or dispute."]
-        },
-        "referee" => %{
-          "phase" => "proposal",
-          "directives" => ["Propose one concrete collaboration envelope and one publish path."]
-        },
-        "turn" => %{
-          "phase" => "proposal",
-          "round" => 1,
-          "participant_id" => "architect",
-          "participant_role" => "architect",
-          "objective" => "Produce the first proposal."
-        },
-        "shared" => %{
-          "entries" => [],
-          "instruction_log" => [],
-          "tool_call_log" => []
-        }
-      }
+      "contribution_contract" => %{
+        "allowed_contribution_types" => ["reasoning", "artifact"],
+        "allowed_object_types" => ["belief", "note", "question"],
+        "allowed_relation_types" => ["derives_from", "references"],
+        "authority_mode" => "advisory_only",
+        "format" => "json_object"
+      },
+      "context_view" => %{
+        "brief" => "Design a shared participation substrate.",
+        "rules" => ["Return structured contributions only."],
+        "context_objects" => []
+      },
+      "phase" => "analysis",
+      "objective" => "Produce the first reasoning contribution."
     }
   end
 end

@@ -5,24 +5,9 @@ defmodule JidoHiveServerWeb.RoomTimelineControllerTest do
   alias JidoHiveServer.Persistence
 
   test "returns the room timeline for a created room", %{conn: conn} do
-    create_conn =
-      post(conn, ~p"/api/rooms", %{
-        "room_id" => "room-timeline-1",
-        "brief" => "Design a generalized substrate.",
-        "rules" => ["Track all mutations as events."],
-        "participants" => [
-          %{
-            "participant_id" => "worker-01",
-            "role" => "worker",
-            "target_id" => "target-worker-01",
-            "capability_id" => "codex.exec.session"
-          }
-        ]
-      })
+    create_room(conn, "room-timeline-1")
 
-    assert %{"data" => %{"room_id" => "room-timeline-1"}} = json_response(create_conn, 201)
-
-    timeline_conn = get(recycle(create_conn), ~p"/api/rooms/room-timeline-1/timeline")
+    timeline_conn = get(recycle(conn), ~p"/api/rooms/room-timeline-1/timeline")
 
     assert %{
              "data" => [
@@ -39,37 +24,25 @@ defmodule JidoHiveServerWeb.RoomTimelineControllerTest do
   end
 
   test "filters the room timeline by cursor", %{conn: conn} do
-    create_conn =
-      post(conn, ~p"/api/rooms", %{
-        "room_id" => "room-timeline-2",
-        "brief" => "Design a generalized substrate.",
-        "rules" => [],
-        "participants" => [
-          %{
-            "participant_id" => "worker-01",
-            "role" => "worker",
-            "target_id" => "target-worker-01",
-            "capability_id" => "codex.exec.session"
-          }
-        ]
-      })
-
-    assert %{"data" => %{"room_id" => "room-timeline-2"}} = json_response(create_conn, 201)
+    create_room(conn, "room-timeline-2")
 
     [%{"event_id" => first_event_id}] =
-      json_response(get(recycle(create_conn), ~p"/api/rooms/room-timeline-2/events"), 200)["data"]
+      json_response(get(recycle(conn), ~p"/api/rooms/room-timeline-2/events"), 200)["data"]
 
     {:ok, event} =
       RoomEvent.new(%{
-        event_id: "evt-turn-opened-room-timeline-2",
+        event_id: "evt-assignment-opened-room-timeline-2",
         room_id: "room-timeline-2",
-        type: :turn_opened,
+        type: :assignment_opened,
         payload: %{
-          job_id: "job-room-timeline-2",
-          phase: "proposal",
-          participant_id: "worker-01",
-          participant_role: "proposer",
-          target_id: "target-worker-01"
+          assignment: %{
+            assignment_id: "asn-room-timeline-2",
+            phase: "analysis",
+            participant_id: "worker-01",
+            participant_role: "worker",
+            target_id: "target-worker-01",
+            objective: "Analyze the brief."
+          }
         },
         recorded_at: DateTime.utc_now()
       })
@@ -77,13 +50,13 @@ defmodule JidoHiveServerWeb.RoomTimelineControllerTest do
     assert :ok = Persistence.append_room_events("room-timeline-2", [event])
 
     timeline_conn =
-      get(recycle(create_conn), ~p"/api/rooms/room-timeline-2/timeline?after=#{first_event_id}")
+      get(recycle(conn), ~p"/api/rooms/room-timeline-2/timeline?after=#{first_event_id}")
 
     assert %{
              "data" => [
                %{
-                 "kind" => "turn.dispatched",
-                 "job_id" => "job-room-timeline-2",
+                 "kind" => "assignment.started",
+                 "assignment_id" => "asn-room-timeline-2",
                  "room_id" => "room-timeline-2",
                  "schema_version" => "jido_hive/room_timeline_entry.v1"
                }
@@ -92,22 +65,7 @@ defmodule JidoHiveServerWeb.RoomTimelineControllerTest do
   end
 
   test "streams the room timeline backlog over SSE", %{conn: conn} do
-    create_conn =
-      post(conn, ~p"/api/rooms", %{
-        "room_id" => "room-timeline-3",
-        "brief" => "Design a generalized substrate.",
-        "rules" => [],
-        "participants" => [
-          %{
-            "participant_id" => "worker-01",
-            "role" => "worker",
-            "target_id" => "target-worker-01",
-            "capability_id" => "codex.exec.session"
-          }
-        ]
-      })
-
-    assert %{"data" => %{"room_id" => "room-timeline-3"}} = json_response(create_conn, 201)
+    create_room(conn, "room-timeline-3")
 
     conn =
       build_conn(:get, "/api/rooms/room-timeline-3/timeline?stream=true&once=true")
@@ -118,5 +76,19 @@ defmodule JidoHiveServerWeb.RoomTimelineControllerTest do
     assert List.first(get_resp_header(conn, "content-type")) =~ "text/event-stream"
     assert conn.resp_body =~ "event: room.created"
     assert conn.resp_body =~ "\"kind\":\"room.created\""
+  end
+
+  defp create_room(conn, room_id) do
+    create_conn =
+      post(conn, ~p"/api/rooms", %{
+        "room_id" => room_id,
+        "brief" => "Design a generalized substrate.",
+        "rules" => [],
+        "dispatch_policy_id" => "human_gate/v1",
+        "participants" => []
+      })
+
+    assert %{"data" => %{"room_id" => ^room_id}} = json_response(create_conn, 201)
+    create_conn
   end
 end

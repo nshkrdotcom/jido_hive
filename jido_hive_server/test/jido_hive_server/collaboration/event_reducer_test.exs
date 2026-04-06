@@ -2,224 +2,176 @@ defmodule JidoHiveServer.Collaboration.EventReducerTest do
   use ExUnit.Case, async: true
 
   alias JidoHiveServer.Collaboration.EventReducer
-  alias JidoHiveServer.Collaboration.ExecutionPlan
   alias JidoHiveServer.Collaboration.Schema.RoomEvent
-  alias JidoHiveServer.Collaboration.Workflows.DefaultRoundRobin
 
-  test "turn_opened updates current_turn, turns, and workflow counters" do
-    {:ok, plan} = ExecutionPlan.new(participants())
-
-    snapshot =
-      room_snapshot(%{
-        execution_plan: plan,
-        workflow_id: DefaultRoundRobin.id(),
-        workflow_config: %{},
-        workflow_state: %{applied_event_ids: []}
-      })
-
+  test "assignment_opened updates current_assignment and assignments" do
     {:ok, event} =
       RoomEvent.new(%{
         event_id: "evt-open-1",
         room_id: "room-1",
-        type: :turn_opened,
+        type: :assignment_opened,
         payload: %{
-          job_id: "job-1",
-          plan_slot_index: 0,
-          participant_id: "worker-01",
-          participant_role: "proposer",
-          target_id: "target-worker-01",
-          capability_id: "codex.exec.session",
-          phase: "proposal",
-          objective: "Open the first turn.",
-          round: 1,
-          session: %{"provider" => "codex"},
-          collaboration_envelope: %{"turn" => %{"phase" => "proposal"}}
+          assignment: %{
+            assignment_id: "asn-1",
+            room_id: "room-1",
+            participant_id: "worker-01",
+            participant_role: "analyst",
+            target_id: "target-worker-01",
+            capability_id: "codex.exec.session",
+            phase: "analysis",
+            objective: "Analyze the brief.",
+            contribution_contract: %{"allowed_contribution_types" => ["reasoning"]},
+            context_view: %{"brief" => "Design a substrate.", "context_objects" => []},
+            status: "running",
+            opened_at: DateTime.utc_now()
+          }
         },
         recorded_at: DateTime.utc_now()
       })
 
-    updated = EventReducer.apply_event(snapshot, event)
+    updated = EventReducer.apply_event(snapshot(), event)
 
-    assert updated.current_turn.job_id == "job-1"
-    assert List.last(updated.turns).job_id == "job-1"
-    assert updated.execution_plan.round_robin_index == 1
-    assert updated.phase == "proposal"
+    assert updated.current_assignment.assignment_id == "asn-1"
+    assert List.last(updated.assignments).assignment_id == "asn-1"
     assert updated.status == "running"
-    assert updated.workflow_state.applied_event_ids == ["evt-open-1"]
+    assert updated.dispatch_state.completed_slots == 0
   end
 
-  test "turn_completed materializes entries and resolves targeted disputes" do
-    {:ok, plan} = ExecutionPlan.new(participants())
-
-    snapshot =
-      room_snapshot(%{
-        execution_plan: ExecutionPlan.record_open(plan, 0),
-        workflow_id: DefaultRoundRobin.id(),
-        workflow_config: %{},
-        workflow_state: %{applied_event_ids: []},
-        phase: "critique",
-        status: "running",
-        next_entry_seq: 2,
-        next_dispute_seq: 2,
-        current_turn: %{
-          job_id: "job-critique-1",
-          target_id: "target-worker-01",
-          phase: "critique"
-        },
-        turns: [
-          %{
-            job_id: "job-critique-1",
-            participant_id: "worker-01",
-            participant_role: "critic",
-            target_id: "target-worker-01",
-            capability_id: "codex.exec.session",
-            phase: "critique",
-            round: 1,
-            status: :running
-          }
-        ],
-        disputes: [
-          %{
-            dispute_id: "dispute:1",
-            title: "Existing dispute",
-            severity: "high",
-            status: :open,
-            opened_by_entry_ref: "objection:1",
-            target_entry_refs: ["claim:1"]
-          }
-        ]
-      })
+  test "contribution_recorded appends contributions and context objects" do
+    opened_at = DateTime.utc_now()
 
     {:ok, event} =
       RoomEvent.new(%{
-        event_id: "evt-complete-1",
+        event_id: "evt-contrib-1",
         room_id: "room-1",
-        type: :turn_completed,
+        type: :contribution_recorded,
         payload: %{
-          job_id: "job-critique-1",
-          participant_id: "worker-01",
-          participant_role: "critic",
-          status: "completed",
-          summary: "resolved dispute",
-          actions: [
-            %{
-              "op" => "REVISE",
-              "title" => "Ledger",
-              "body" => "Introduce contradiction ledger.",
-              "targets" => [%{"dispute_id" => "dispute:1"}]
-            }
-          ],
-          tool_events: [],
-          events: [],
-          approvals: [],
-          artifacts: [],
-          execution: %{"status" => "completed"}
+          contribution: %{
+            contribution_id: "contrib-1",
+            room_id: "room-1",
+            assignment_id: "asn-1",
+            participant_id: "worker-01",
+            participant_role: "analyst",
+            target_id: "target-worker-01",
+            capability_id: "codex.exec.session",
+            contribution_type: "reasoning",
+            authority_level: "advisory",
+            summary: "Added a substrate belief.",
+            consumed_context_ids: [],
+            context_objects: [
+              %{
+                object_type: "belief",
+                title: "Shared state",
+                body: "The server should own room state.",
+                data: %{},
+                scope: %{"read" => ["room"], "write" => ["author"]},
+                uncertainty: %{"status" => "provisional", "confidence" => 0.8},
+                relations: []
+              }
+            ],
+            artifacts: [],
+            events: [],
+            tool_events: [],
+            approvals: [],
+            execution: %{"status" => "completed"},
+            status: "completed",
+            schema_version: "jido_hive/contribution.submit.v1"
+          }
         },
         recorded_at: DateTime.utc_now()
       })
 
-    updated = EventReducer.apply_event(snapshot, event)
+    updated =
+      snapshot(%{
+        status: "running",
+        current_assignment: %{
+          assignment_id: "asn-1",
+          room_id: "room-1",
+          participant_id: "worker-01",
+          participant_role: "analyst",
+          target_id: "target-worker-01",
+          capability_id: "codex.exec.session",
+          phase: "analysis",
+          objective: "Analyze the brief.",
+          contribution_contract: %{"allowed_contribution_types" => ["reasoning"]},
+          context_view: %{"brief" => "Design a substrate.", "context_objects" => []},
+          status: "running",
+          opened_at: opened_at
+        },
+        assignments: [
+          %{
+            assignment_id: "asn-1",
+            room_id: "room-1",
+            participant_id: "worker-01",
+            participant_role: "analyst",
+            target_id: "target-worker-01",
+            capability_id: "codex.exec.session",
+            phase: "analysis",
+            objective: "Analyze the brief.",
+            contribution_contract: %{"allowed_contribution_types" => ["reasoning"]},
+            context_view: %{"brief" => "Design a substrate.", "context_objects" => []},
+            status: "running",
+            opened_at: opened_at
+          }
+        ],
+        dispatch_state: %{applied_event_ids: [], completed_slots: 0, total_slots: 1}
+      })
+      |> EventReducer.apply_event(event)
 
-    assert updated.current_turn == %{}
-    assert updated.execution_plan.completed_turn_count == 1
-    assert [%{entry_type: "revision", entry_ref: "revision:2"}] = updated.context_entries
-    assert Enum.all?(updated.disputes, &(&1.status == :resolved))
-    assert updated.workflow_state.applied_event_ids == ["evt-complete-1"]
+    assert updated.current_assignment == %{}
+    assert updated.dispatch_state.completed_slots == 1
+    assert updated.status == "publication_ready"
+    assert [%{contribution_id: "contrib-1"}] = updated.contributions
+    assert [%{context_id: "ctx-1", object_type: "belief"}] = updated.context_objects
+    assert [%{assignment_id: "asn-1", status: "completed"}] = updated.assignments
   end
 
-  test "turn_abandoned excludes the target without consuming completion budget" do
-    {:ok, plan} = ExecutionPlan.new(participants())
-
-    snapshot =
-      room_snapshot(%{
-        execution_plan: ExecutionPlan.record_open(plan, 0),
-        workflow_id: DefaultRoundRobin.id(),
-        workflow_config: %{},
-        workflow_state: %{applied_event_ids: []},
-        current_turn: %{job_id: "job-1"},
-        turns: [
-          %{
-            job_id: "job-1",
-            target_id: "target-worker-01",
-            status: :running
-          }
-        ]
-      })
-
+  test "assignment_abandoned marks the assignment as abandoned and advances dispatch state" do
     {:ok, event} =
       RoomEvent.new(%{
         event_id: "evt-abandon-1",
         room_id: "room-1",
-        type: :turn_abandoned,
-        payload: %{job_id: "job-1", reason: "timed out"},
+        type: :assignment_abandoned,
+        payload: %{
+          assignment_id: "asn-1",
+          reason: "assignment timed out"
+        },
         recorded_at: DateTime.utc_now()
       })
 
-    updated = EventReducer.apply_event(snapshot, event)
-
-    assert updated.current_turn == %{}
-    assert updated.execution_plan.completed_turn_count == 0
-    assert updated.execution_plan.excluded_target_ids == ["target-worker-01"]
-    assert [%{status: :abandoned}] = updated.turns
-    assert updated.workflow_state.applied_event_ids == ["evt-abandon-1"]
-  end
-
-  test "ignores duplicate event ids" do
-    snapshot =
-      room_snapshot(%{
-        workflow_state: %{applied_event_ids: ["evt-dup-1"]}
+    updated =
+      snapshot(%{
+        status: "running",
+        current_assignment: %{assignment_id: "asn-1", participant_id: "worker-01"},
+        assignments: [%{assignment_id: "asn-1", participant_id: "worker-01", status: "running"}],
+        dispatch_state: %{applied_event_ids: [], completed_slots: 0, total_slots: 2}
       })
+      |> EventReducer.apply_event(event)
 
-    {:ok, event} =
-      RoomEvent.new(%{
-        event_id: "evt-dup-1",
-        room_id: "room-1",
-        type: :runtime_state_changed,
-        payload: %{status: "blocked", phase: "critique"},
-        recorded_at: DateTime.utc_now()
-      })
-
-    assert EventReducer.apply_event(snapshot, event) == snapshot
+    assert updated.current_assignment == %{}
+    assert updated.dispatch_state.completed_slots == 1
+    assert [%{assignment_id: "asn-1", status: "abandoned"}] = updated.assignments
   end
 
-  defp participants do
-    [
-      %{
-        participant_id: "worker-01",
-        role: "worker",
-        target_id: "target-worker-01",
-        capability_id: "codex.exec.session"
-      },
-      %{
-        participant_id: "worker-02",
-        role: "worker",
-        target_id: "target-worker-02",
-        capability_id: "codex.exec.session"
-      }
-    ]
-  end
-
-  defp room_snapshot(overrides) do
+  defp snapshot(overrides \\ %{}) do
     Map.merge(
       %{
         room_id: "room-1",
         session_id: "session-1",
-        brief: "Design a generalized collaboration substrate.",
+        brief: "Design a participation substrate.",
         rules: [],
-        participants: participants(),
-        turns: [],
-        context_entries: [],
-        disputes: [],
-        current_turn: %{},
-        execution_plan: %{},
         status: "idle",
-        phase: "idle",
-        round: 0,
-        next_entry_seq: 1,
-        next_dispute_seq: 1,
-        workflow_id: DefaultRoundRobin.id(),
-        workflow_config: %{},
-        workflow_state: %{applied_event_ids: []}
+        participants: [],
+        current_assignment: %{},
+        assignments: [],
+        context_objects: [],
+        contributions: [],
+        dispatch_policy_id: "round_robin/v2",
+        dispatch_policy_config: %{},
+        dispatch_state: %{applied_event_ids: [], completed_slots: 0, total_slots: 1},
+        next_context_seq: 1,
+        next_assignment_seq: 1,
+        next_contribution_seq: 1
       },
       overrides
     )

@@ -11,70 +11,87 @@ defmodule JidoHiveClient.ResultDecoder do
     end
   end
 
-  defp normalize(%{"actions" => actions} = decoded) when is_list(actions) do
-    {:ok,
-     %{
-       "summary" => normalize_summary(Map.get(decoded, "summary"), actions),
-       "actions" => Enum.map(actions, &normalize_action/1),
-       "artifacts" => normalize_artifacts(Map.get(decoded, "artifacts", []))
-     }}
-  end
+  defp normalize(%{} = decoded) do
+    contribution_type = Map.get(decoded, "contribution_type")
 
-  defp normalize(%{"ops" => ops} = decoded) when is_list(ops) do
-    {:ok,
-     %{
-       "summary" => normalize_summary(Map.get(decoded, "summary"), ops),
-       "actions" => Enum.map(ops, &normalize_action/1),
-       "artifacts" => normalize_artifacts(Map.get(decoded, "artifacts", []))
-     }}
-  end
-
-  defp normalize(_decoded), do: {:error, :invalid_contract}
-
-  defp normalize_action(action) when is_map(action) do
-    op = normalize_operation(Map.get(action, "op") || Map.get(action, "kind"))
-
-    %{
-      "op" => op,
-      "title" =>
-        Map.get(action, "title") || Map.get(action, "ref") || Map.get(action, "id") || op,
-      "body" =>
-        Map.get(action, "body") || Map.get(action, "content") || Map.get(action, "text") || "",
-      "severity" => Map.get(action, "severity"),
-      "targets" => normalize_targets(action_targets(action))
-    }
-  end
-
-  defp action_targets(action) do
-    case Map.get(action, "targets") do
-      targets when is_list(targets) ->
-        targets
-
-      _other ->
-        maybe_inline_target(action)
+    if is_binary(contribution_type) and String.trim(contribution_type) != "" do
+      {:ok,
+       %{
+         "summary" => normalize_summary(Map.get(decoded, "summary"), contribution_type),
+         "contribution_type" => contribution_type,
+         "authority_level" => Map.get(decoded, "authority_level") || "advisory",
+         "context_objects" => normalize_context_objects(Map.get(decoded, "context_objects", [])),
+         "artifacts" => normalize_artifacts(Map.get(decoded, "artifacts", []))
+       }}
+    else
+      {:error, :invalid_contract}
     end
   end
 
-  defp maybe_inline_target(action) do
-    case {Map.get(action, "entry_ref"), Map.get(action, "dispute_id")} do
-      {nil, nil} -> []
-      {entry_ref, dispute_id} -> [%{"entry_ref" => entry_ref, "dispute_id" => dispute_id}]
-    end
+  defp normalize_summary(summary, _contribution_type) when is_binary(summary) and summary != "",
+    do: summary
+
+  defp normalize_summary(_summary, contribution_type), do: "#{contribution_type} contribution"
+
+  defp normalize_context_objects(context_objects) when is_list(context_objects) do
+    Enum.map(context_objects, &normalize_context_object/1)
   end
 
-  defp normalize_targets(targets) when is_list(targets),
-    do: Enum.map(targets, &normalize_target/1)
+  defp normalize_context_objects(_other), do: []
 
-  defp normalize_targets(_other), do: []
-
-  defp normalize_target(target) when is_map(target) do
+  defp normalize_context_object(context_object) when is_map(context_object) do
     %{
-      "entry_ref" => Map.get(target, "entry_ref"),
-      "dispute_id" => Map.get(target, "dispute_id")
+      "object_type" => Map.get(context_object, "object_type"),
+      "title" => Map.get(context_object, "title"),
+      "body" => Map.get(context_object, "body"),
+      "data" => normalize_map(Map.get(context_object, "data", %{})),
+      "scope" => normalize_scope(Map.get(context_object, "scope", %{})),
+      "uncertainty" => normalize_uncertainty(Map.get(context_object, "uncertainty", %{})),
+      "relations" => normalize_relations(Map.get(context_object, "relations", []))
     }
   end
 
-  defp normalize_target(_other), do: %{"entry_ref" => nil, "dispute_id" => nil}
+  defp normalize_context_object(_other) do
+    %{
+      "object_type" => nil,
+      "title" => nil,
+      "body" => nil,
+      "data" => %{},
+      "scope" => %{"read" => ["room"], "write" => ["author"]},
+      "uncertainty" => %{"status" => "provisional", "confidence" => nil},
+      "relations" => []
+    }
+  end
+
+  defp normalize_scope(scope) when is_map(scope) do
+    %{
+      "read" => list_of_strings(Map.get(scope, "read", ["room"])),
+      "write" => list_of_strings(Map.get(scope, "write", ["author"]))
+    }
+  end
+
+  defp normalize_scope(_other), do: %{"read" => ["room"], "write" => ["author"]}
+
+  defp normalize_uncertainty(uncertainty) when is_map(uncertainty) do
+    %{
+      "status" => Map.get(uncertainty, "status", "provisional"),
+      "confidence" => Map.get(uncertainty, "confidence"),
+      "rationale" => Map.get(uncertainty, "rationale")
+    }
+  end
+
+  defp normalize_uncertainty(_other), do: %{"status" => "provisional", "confidence" => nil}
+
+  defp normalize_relations(relations) when is_list(relations) do
+    Enum.map(relations, fn relation ->
+      %{
+        "relation" => Map.get(relation, "relation"),
+        "target_id" => Map.get(relation, "target_id")
+      }
+    end)
+  end
+
+  defp normalize_relations(_other), do: []
 
   defp normalize_artifacts(artifacts) when is_list(artifacts) do
     Enum.map(artifacts, fn artifact ->
@@ -88,25 +105,11 @@ defmodule JidoHiveClient.ResultDecoder do
 
   defp normalize_artifacts(_other), do: []
 
-  defp normalize_summary(summary, _actions) when is_binary(summary) and summary != "", do: summary
+  defp normalize_map(map) when is_map(map), do: map
+  defp normalize_map(_other), do: %{}
 
-  defp normalize_summary(_summary, actions) do
-    ops =
-      actions
-      |> Enum.map(&(Map.get(&1, "op") || Map.get(&1, "kind")))
-      |> Enum.map(&normalize_operation/1)
-      |> Enum.reject(&blank_value?/1)
-
-    case ops do
-      [] -> "collaboration response"
-      _other -> "collaboration response with actions: #{Enum.join(ops, ", ")}"
-    end
-  end
-
-  defp normalize_operation(value) when is_binary(value), do: String.upcase(value)
-  defp normalize_operation(_value), do: nil
-
-  defp blank_value?(value), do: is_nil(value) or value == ""
+  defp list_of_strings(list) when is_list(list), do: Enum.filter(list, &is_binary/1)
+  defp list_of_strings(_other), do: []
 
   defp extract_json(text) when is_binary(text) do
     trimmed = String.trim(text)

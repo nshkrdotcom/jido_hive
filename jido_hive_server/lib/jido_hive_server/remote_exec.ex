@@ -19,8 +19,9 @@ defmodule JidoHiveServer.RemoteExec do
     GenServer.call(__MODULE__, {:upsert_target, channel_pid, payload})
   end
 
-  def dispatch_job(target_id, job) when is_binary(target_id) and is_map(job) do
-    GenServer.call(__MODULE__, {:dispatch_job, target_id, job})
+  def dispatch_assignment(target_id, assignment)
+      when is_binary(target_id) and is_map(assignment) do
+    GenServer.call(__MODULE__, {:dispatch_assignment, target_id, assignment})
   end
 
   def remove_channel(channel_pid) when is_pid(channel_pid) do
@@ -55,9 +56,7 @@ defmodule JidoHiveServer.RemoteExec do
     connections = Map.put(state.connections, channel_pid, connection)
 
     Logger.info(
-      "relay online workspace=#{connection.workspace_id} user=#{connection.user_id} " <>
-        "participant=#{connection.participant_id} role=#{connection.participant_role} " <>
-        "connection_id=#{connection.connection_id}"
+      "relay online workspace=#{connection.workspace_id} user=#{connection.user_id} participant=#{connection.participant_id} role=#{connection.participant_role} connection_id=#{connection.connection_id}"
     )
 
     {:reply, {:ok, connection}, %{state | connections: connections}}
@@ -66,30 +65,26 @@ defmodule JidoHiveServer.RemoteExec do
   def handle_call({:upsert_target, channel_pid, payload}, _from, state) do
     connection = Map.fetch!(state.connections, channel_pid)
 
-    target =
-      %{
-        target_id: payload["target_id"],
-        capability_id: payload["capability_id"],
-        channel_pid: channel_pid,
-        workspace_id: payload["workspace_id"] || connection.workspace_id,
-        user_id: payload["user_id"] || connection.user_id,
-        participant_id: payload["participant_id"] || connection.participant_id,
-        participant_role: payload["participant_role"] || connection.participant_role,
-        runtime_driver: payload["runtime_driver"] || "asm",
-        provider: payload["provider"] || "codex",
-        workspace_root: payload["workspace_root"] || File.cwd!(),
-        execution_surface: payload["execution_surface"],
-        execution_environment: payload["execution_environment"],
-        provider_options: payload["provider_options"]
-      }
+    target = %{
+      target_id: payload["target_id"],
+      capability_id: payload["capability_id"],
+      channel_pid: channel_pid,
+      workspace_id: payload["workspace_id"] || connection.workspace_id,
+      user_id: payload["user_id"] || connection.user_id,
+      participant_id: payload["participant_id"] || connection.participant_id,
+      participant_role: payload["participant_role"] || connection.participant_role,
+      runtime_driver: payload["runtime_driver"] || "asm",
+      provider: payload["provider"] || "codex",
+      workspace_root: payload["workspace_root"] || File.cwd!(),
+      execution_surface: payload["execution_surface"],
+      execution_environment: payload["execution_environment"],
+      provider_options: payload["provider_options"]
+    }
 
     targets = Map.put(state.targets, target.target_id, target)
 
     Logger.info(
-      "target online workspace=#{target.workspace_id} participant=#{target.participant_id} " <>
-        "role=#{target.participant_role} target=#{target.target_id} " <>
-        "capability=#{target.capability_id} provider=#{target.provider} " <>
-        "runtime=#{target.runtime_driver}"
+      "target online workspace=#{target.workspace_id} participant=#{target.participant_id} role=#{target.participant_role} target=#{target.target_id} capability=#{target.capability_id} provider=#{target.provider} runtime=#{target.runtime_driver}"
     )
 
     {:ok, _snapshot} = Persistence.upsert_target(target)
@@ -97,10 +92,10 @@ defmodule JidoHiveServer.RemoteExec do
     {:reply, {:ok, target}, %{state | targets: targets}}
   end
 
-  def handle_call({:dispatch_job, target_id, job}, _from, state) do
+  def handle_call({:dispatch_assignment, target_id, assignment}, _from, state) do
     case Map.fetch(state.targets, target_id) do
       {:ok, target} ->
-        send(target.channel_pid, {:dispatch_job, job})
+        send(target.channel_pid, {:dispatch_assignment, assignment})
         {:reply, :ok, state}
 
       :error ->

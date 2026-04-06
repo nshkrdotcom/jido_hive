@@ -7,14 +7,8 @@ defmodule JidoHiveServerWeb.RoomEventsControllerTest do
         "room_id" => "room-events-1",
         "brief" => "Design a generalized substrate.",
         "rules" => ["Track all mutations as events."],
-        "participants" => [
-          %{
-            "participant_id" => "worker-01",
-            "role" => "worker",
-            "target_id" => "target-worker-01",
-            "capability_id" => "codex.exec.session"
-          }
-        ]
+        "dispatch_policy_id" => "human_gate/v1",
+        "participants" => []
       })
 
     assert %{"data" => %{"room_id" => "room-events-1"}} = json_response(create_conn, 201)

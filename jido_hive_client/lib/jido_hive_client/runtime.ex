@@ -69,26 +69,33 @@ defmodule JidoHiveClient.Runtime do
     GenServer.call(server, {:connection_changed, status, payload})
   end
 
-  @spec record_result_published(pid() | atom(), map(), map()) :: :ok
-  def record_result_published(server \\ __MODULE__, job, result)
-      when is_map(job) and is_map(result) do
-    GenServer.call(server, {:result_published, job, result})
+  @spec record_contribution_published(pid() | atom(), map(), map()) :: :ok
+  def record_contribution_published(server \\ __MODULE__, assignment, contribution)
+      when is_map(assignment) and is_map(contribution) do
+    GenServer.call(server, {:contribution_published, assignment, contribution})
   end
 
-  @spec run_job(pid() | atom(), map()) :: {:ok, map()} | {:error, term()}
-  def run_job(server \\ __MODULE__, job) when is_map(job) do
-    with {:ok, normalized_job} <- ProtocolCodec.normalize_job_start(job),
+  @spec run_assignment(pid() | atom(), map()) :: {:ok, map()} | {:error, term()}
+  def run_assignment(server \\ __MODULE__, assignment) when is_map(assignment) do
+    with {:ok, normalized_assignment} <- ProtocolCodec.normalize_assignment_start(assignment),
          {module, executor_opts} <- GenServer.call(server, :executor),
-         :ok <- GenServer.call(server, {:job_received, normalized_job}),
-         :ok <- GenServer.call(server, {:job_started, normalized_job}) do
-      case module.run(normalized_job, executor_opts) do
+         :ok <- GenServer.call(server, {:assignment_received, normalized_assignment}),
+         :ok <- GenServer.call(server, {:assignment_started, normalized_assignment}) do
+      case module.run(normalized_assignment, executor_opts) do
         {:ok, result} ->
-          normalized_result = ProtocolCodec.normalize_job_result(result, normalized_job)
-          :ok = GenServer.call(server, {:job_completed, normalized_job, normalized_result})
-          {:ok, normalized_result}
+          normalized_contribution =
+            ProtocolCodec.normalize_contribution(result, normalized_assignment)
+
+          :ok =
+            GenServer.call(
+              server,
+              {:assignment_completed, normalized_assignment, normalized_contribution}
+            )
+
+          {:ok, normalized_contribution}
 
         {:error, reason} = error ->
-          :ok = GenServer.call(server, {:job_failed, normalized_job, reason})
+          :ok = GenServer.call(server, {:assignment_failed, normalized_assignment, reason})
           error
       end
     end
@@ -146,69 +153,80 @@ defmodule JidoHiveClient.Runtime do
     {:reply, :ok, next_state}
   end
 
-  def handle_call({:job_received, job}, _from, %__MODULE__{} = state) do
+  def handle_call({:assignment_received, assignment}, _from, %__MODULE__{} = state) do
     next_state =
       state
-      |> Map.update!(:snapshot, &State.job_received(&1, job))
+      |> Map.update!(:snapshot, &State.assignment_received(&1, assignment))
       |> append_event(%{
-        type: "client.job.received",
-        room_id: job["room_id"],
-        job_id: job["job_id"],
-        payload: job_payload(job)
+        type: "client.assignment.received",
+        room_id: assignment["room_id"],
+        assignment_id: assignment["assignment_id"],
+        payload: assignment_payload(assignment)
       })
 
     {:reply, :ok, next_state}
   end
 
-  def handle_call({:job_started, job}, _from, %__MODULE__{} = state) do
+  def handle_call({:assignment_started, assignment}, _from, %__MODULE__{} = state) do
     next_state =
       state
-      |> Map.update!(:snapshot, &State.job_started(&1, job))
+      |> Map.update!(:snapshot, &State.assignment_started(&1, assignment))
       |> append_event(%{
-        type: "client.job.started",
-        room_id: job["room_id"],
-        job_id: job["job_id"],
-        payload: job_payload(job)
+        type: "client.assignment.started",
+        room_id: assignment["room_id"],
+        assignment_id: assignment["assignment_id"],
+        payload: assignment_payload(assignment)
       })
 
     {:reply, :ok, next_state}
   end
 
-  def handle_call({:job_completed, job, result}, _from, %__MODULE__{} = state) do
+  def handle_call({:assignment_completed, assignment, contribution}, _from, %__MODULE__{} = state) do
     next_state =
       state
-      |> Map.update!(:snapshot, &State.job_finished(&1, job, result))
+      |> Map.update!(:snapshot, &State.assignment_finished(&1, assignment, contribution))
       |> append_event(%{
-        type: "client.job.completed",
-        room_id: job["room_id"],
-        job_id: job["job_id"],
-        payload: %{"status" => result["status"], "summary" => result["summary"]}
+        type: "client.assignment.completed",
+        room_id: assignment["room_id"],
+        assignment_id: assignment["assignment_id"],
+        payload: %{
+          "status" => contribution["status"],
+          "summary" => contribution["summary"],
+          "contribution_type" => contribution["contribution_type"]
+        }
       })
 
     {:reply, :ok, next_state}
   end
 
-  def handle_call({:job_failed, job, reason}, _from, %__MODULE__{} = state) do
+  def handle_call({:assignment_failed, assignment, reason}, _from, %__MODULE__{} = state) do
     next_state =
       state
-      |> Map.update!(:snapshot, &State.job_failed(&1, job, reason))
+      |> Map.update!(:snapshot, &State.assignment_failed(&1, assignment, reason))
       |> append_event(%{
-        type: "client.job.failed",
-        room_id: job["room_id"],
-        job_id: job["job_id"],
+        type: "client.assignment.failed",
+        room_id: assignment["room_id"],
+        assignment_id: assignment["assignment_id"],
         payload: %{"reason" => inspect(reason)}
       })
 
     {:reply, :ok, next_state}
   end
 
-  def handle_call({:result_published, job, result}, _from, %__MODULE__{} = state) do
+  def handle_call(
+        {:contribution_published, assignment, contribution},
+        _from,
+        %__MODULE__{} = state
+      ) do
     next_state =
       append_event(state, %{
-        type: "client.result.published",
-        room_id: job["room_id"],
-        job_id: job["job_id"],
-        payload: %{"status" => result["status"]}
+        type: "client.contribution.published",
+        room_id: assignment["room_id"],
+        assignment_id: assignment["assignment_id"],
+        payload: %{
+          "status" => contribution["status"],
+          "contribution_type" => contribution["contribution_type"]
+        }
       })
 
     {:reply, :ok, next_state}
@@ -234,12 +252,12 @@ defmodule JidoHiveClient.Runtime do
     %{state | event_log: event_log}
   end
 
-  defp job_payload(job) do
+  defp assignment_payload(assignment) do
     %{
-      "participant_id" => job["participant_id"],
-      "participant_role" => job["participant_role"],
-      "target_id" => job["target_id"],
-      "phase" => get_in(job, ["collaboration_envelope", "turn", "phase"])
+      "participant_id" => assignment["participant_id"],
+      "participant_role" => assignment["participant_role"],
+      "target_id" => assignment["target_id"],
+      "phase" => assignment["phase"]
     }
   end
 

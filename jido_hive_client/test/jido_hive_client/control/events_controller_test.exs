@@ -10,11 +10,11 @@ defmodule JidoHiveClient.Control.EventsControllerTest do
       workspace_id: "workspace-1",
       user_id: "user-1",
       participant_id: "participant-1",
-      participant_role: "architect",
+      participant_role: "analyst",
       target_id: "target-1",
       capability_id: "capability-1",
       workspace_root: "/workspace",
-      executor: {JidoHiveClient.Executor.Scripted, [provider: :codex, role: :architect]},
+      executor: {JidoHiveClient.Executor.Scripted, [provider: :codex, role: :analyst]},
       runtime_id: :asm
     ]
   end
@@ -24,7 +24,7 @@ defmodule JidoHiveClient.Control.EventsControllerTest do
     [runtime: runtime]
   end
 
-  test "GET /api/events returns runtime events as JSON", %{runtime: runtime} do
+  test "GET /api/runtime/events returns runtime events as JSON", %{runtime: runtime} do
     :ok = Runtime.update_connection(runtime, :ready, %{})
 
     conn = call_router(conn(:get, "/api/runtime/events"), runtime)
@@ -44,7 +44,7 @@ defmodule JidoHiveClient.Control.EventsControllerTest do
     assert body["next_cursor"] == "client-event-1"
   end
 
-  test "GET /api/events filters by cursor", %{runtime: runtime} do
+  test "GET /api/runtime/events filters by cursor", %{runtime: runtime} do
     :ok = Runtime.update_connection(runtime, :ready, %{})
     [first] = Runtime.recent_events(runtime)
     :ok = Runtime.update_connection(runtime, :waiting_socket, %{"reason" => "disconnect"})
@@ -59,11 +59,10 @@ defmodule JidoHiveClient.Control.EventsControllerTest do
                "type" => "client.connection.changed",
                "payload" => %{"status" => "waiting_socket"}
              }
-           ] =
-             body["events"]
+           ] = body["events"]
   end
 
-  test "GET /api/events streams SSE backlog in once mode", %{runtime: runtime} do
+  test "GET /api/runtime/events streams SSE backlog in once mode", %{runtime: runtime} do
     :ok = Runtime.update_connection(runtime, :ready, %{})
 
     conn =

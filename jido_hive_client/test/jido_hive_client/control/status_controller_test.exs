@@ -10,11 +10,11 @@ defmodule JidoHiveClient.Control.StatusControllerTest do
       workspace_id: "workspace-1",
       user_id: "user-1",
       participant_id: "participant-1",
-      participant_role: "architect",
+      participant_role: "analyst",
       target_id: "target-1",
       capability_id: "capability-1",
       workspace_root: "/workspace",
-      executor: {JidoHiveClient.Executor.Scripted, [provider: :codex, role: :architect]},
+      executor: {JidoHiveClient.Executor.Scripted, [provider: :codex, role: :analyst]},
       runtime_id: :asm
     ]
   end
@@ -35,55 +35,56 @@ defmodule JidoHiveClient.Control.StatusControllerTest do
     assert body["identity"]["workspace_id"] == "workspace-1"
     assert body["identity"]["target_id"] == "target-1"
     assert body["connection_status"] == "ready"
-    assert body["metrics"]["jobs_completed"] == 0
+    assert body["metrics"]["assignments_completed"] == 0
   end
 
-  test "GET /api/runtime/jobs returns recent jobs", %{runtime: runtime} do
+  test "GET /api/runtime/assignments returns recent assignments", %{runtime: runtime} do
     request = %{
-      "job" => %{
-        "job_id" => "job-1",
+      "assignment" => %{
+        "assignment_id" => "asn-1",
         "room_id" => "room-1",
         "participant_id" => "participant-1",
-        "participant_role" => "architect",
+        "participant_role" => "analyst",
         "target_id" => "target-1",
         "capability_id" => "capability-1",
         "session" => %{"provider" => "codex"},
-        "collaboration_envelope" => %{"turn" => %{"phase" => "proposal"}}
+        "contribution_contract" => %{"allowed_contribution_types" => ["reasoning"]},
+        "context_view" => %{"brief" => "Design a substrate.", "context_objects" => []}
       }
     }
 
     execute_conn =
-      conn(:post, "/api/runtime/execute", Jason.encode!(request))
+      conn(:post, "/api/runtime/assignments/execute", Jason.encode!(request))
       |> put_req_header("content-type", "application/json")
       |> call_router(runtime)
 
     assert execute_conn.status == 200
 
-    jobs_conn = call_router(conn(:get, "/api/runtime/jobs"), runtime)
-    body = Jason.decode!(jobs_conn.resp_body)
+    assignments_conn = call_router(conn(:get, "/api/runtime/assignments"), runtime)
+    body = Jason.decode!(assignments_conn.resp_body)
 
-    assert jobs_conn.status == 200
-    assert [%{"job_id" => "job-1"}] = body["recent_jobs"]
+    assert assignments_conn.status == 200
+    assert [%{"assignment_id" => "asn-1"}] = body["recent_assignments"]
   end
 
-  test "POST /api/runtime/execute runs a manual job through the configured executor", %{
-    runtime: runtime
-  } do
+  test "POST /api/runtime/assignments/execute runs a manual assignment through the configured executor",
+       %{runtime: runtime} do
     request = %{
-      "job" => %{
-        "job_id" => "job-1",
+      "assignment" => %{
+        "assignment_id" => "asn-1",
         "room_id" => "room-1",
         "participant_id" => "participant-1",
-        "participant_role" => "architect",
+        "participant_role" => "analyst",
         "target_id" => "target-1",
         "capability_id" => "capability-1",
         "session" => %{"provider" => "codex"},
-        "collaboration_envelope" => %{"turn" => %{"phase" => "proposal"}}
+        "contribution_contract" => %{"allowed_contribution_types" => ["reasoning"]},
+        "context_view" => %{"brief" => "Design a substrate.", "context_objects" => []}
       }
     }
 
     conn =
-      conn(:post, "/api/runtime/execute", Jason.encode!(request))
+      conn(:post, "/api/runtime/assignments/execute", Jason.encode!(request))
       |> put_req_header("content-type", "application/json")
       |> call_router(runtime)
 
@@ -91,10 +92,10 @@ defmodule JidoHiveClient.Control.StatusControllerTest do
     snapshot = Runtime.snapshot(runtime)
 
     assert conn.status == 200
-    assert body["job_id"] == "job-1"
+    assert body["assignment_id"] == "asn-1"
     assert body["status"] == "completed"
-    assert snapshot.metrics.jobs_completed == 1
-    assert [%{job_id: "job-1"}] = snapshot.recent_jobs
+    assert snapshot.metrics.assignments_completed == 1
+    assert [%{assignment_id: "asn-1"}] = snapshot.recent_assignments
   end
 
   test "POST /api/runtime/shutdown invokes the configured shutdown callback", %{runtime: runtime} do

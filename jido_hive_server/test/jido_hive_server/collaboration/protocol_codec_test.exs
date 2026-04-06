@@ -3,10 +3,10 @@ defmodule JidoHiveServer.Collaboration.ProtocolCodecTest do
 
   alias JidoHiveServer.Collaboration.ProtocolCodec
 
-  test "normalizes legacy relay hello payloads and injects workspace_id" do
+  test "normalizes relay hello payloads and injects workspace_id" do
     payload = %{
       participant_id: "participant-1",
-      participant_role: "architect",
+      participant_role: "analyst",
       user_id: "user-1",
       client_version: "0.1.0"
     }
@@ -16,85 +16,72 @@ defmodule JidoHiveServer.Collaboration.ProtocolCodecTest do
 
     assert hello["workspace_id"] == "workspace-1"
     assert hello["participant_id"] == "participant-1"
-    assert hello["participant_role"] == "architect"
   end
 
-  test "normalizes v2 target registration payloads and preserves nested runtime envelopes" do
+  test "normalizes participant upsert payloads with nested runtime envelopes" do
     payload = %{
-      "schema_version" => "jido_hive/target.register.v2",
-      "target" => %{
+      "participant" => %{
         "target_id" => "target-1",
-        "capability_id" => "capability-1",
         "participant_id" => "participant-1",
-        "participant_role" => "architect",
+        "participant_role" => "analyst",
+        "capability_id" => "codex.exec.session",
         "provider" => "codex",
-        "execution_surface" => %{
-          "transport" => "cli",
-          "transport_options" => %{"tty" => true}
-        },
+        "execution_surface" => %{"transport" => "cli"},
         "execution_environment" => %{"workspace_root" => "/workspace"},
         "provider_options" => %{"model" => "gpt-5.4"}
       }
     }
 
-    assert {:ok, {:target_register, target}} =
-             ProtocolCodec.decode_inbound("target.register", payload, "workspace-1")
+    assert {:ok, {:participant_upsert, participant}} =
+             ProtocolCodec.decode_inbound("participant.upsert", payload, "workspace-1")
 
-    assert target["workspace_id"] == "workspace-1"
-    assert get_in(target, ["execution_surface", "transport_options", "tty"]) == true
-    assert get_in(target, ["execution_environment", "workspace_root"]) == "/workspace"
-    assert get_in(target, ["provider_options", "model"]) == "gpt-5.4"
+    assert participant["workspace_id"] == "workspace-1"
+    assert get_in(participant, ["execution_environment", "workspace_root"]) == "/workspace"
   end
 
-  test "normalizes v2 job results with nested result payloads" do
+  test "normalizes contribution submit payloads with nested contribution payloads" do
     payload = %{
-      "schema_version" => "jido_hive/job.result.v2",
-      "result" => %{
-        "job_id" => "job-1",
+      "contribution" => %{
         "room_id" => "room-1",
+        "assignment_id" => "asn-1",
         "participant_id" => "participant-1",
-        "participant_role" => "architect",
-        "target_id" => "target-1",
-        "status" => "completed",
+        "participant_role" => "analyst",
+        "contribution_type" => "reasoning",
+        "authority_level" => "advisory",
         "summary" => "completed",
-        "actions" => [],
-        "tool_events" => [],
-        "events" => [],
-        "approvals" => [],
-        "artifacts" => [],
+        "context_objects" => [],
         "execution" => %{"status" => "completed"}
       }
     }
 
-    assert {:ok, {:job_result, result}} =
-             ProtocolCodec.decode_inbound("job.result.v2", payload, "workspace-1")
+    assert {:ok, {:contribution_submit, contribution}} =
+             ProtocolCodec.decode_inbound("contribution.submit", payload, "workspace-1")
 
-    assert result["job_id"] == "job-1"
-    assert result["room_id"] == "room-1"
-    assert result["execution"]["status"] == "completed"
+    assert contribution["room_id"] == "room-1"
+    assert contribution["execution"]["status"] == "completed"
   end
 
-  test "rejects malformed job result payloads" do
-    payload = %{"result" => %{"job_id" => "job-1"}}
+  test "rejects malformed contribution payloads" do
+    payload = %{"contribution" => %{"room_id" => "room-1"}}
 
-    assert {:error, {:missing_field, "room_id"}} =
-             ProtocolCodec.decode_inbound("job.result.v2", payload, "workspace-1")
+    assert {:error, {:missing_field, "participant_id"}} =
+             ProtocolCodec.decode_inbound("contribution.submit", payload, "workspace-1")
   end
 
-  test "encodes outbound job.start payloads with schema_version and string keys" do
-    job = %{
-      job_id: "job-1",
+  test "encodes outbound assignment.start payloads with schema_version and string keys" do
+    assignment = %{
+      assignment_id: "asn-1",
       room_id: "room-1",
       participant_id: "participant-1",
       session: %{provider: :codex},
-      collaboration_envelope: %{turn: %{phase: "proposal"}}
+      contribution_contract: %{allowed_contribution_types: ["reasoning"]},
+      context_view: %{brief: "Design a substrate."}
     }
 
-    encoded = ProtocolCodec.encode_job_start(job)
+    encoded = ProtocolCodec.encode_assignment_start(assignment)
 
-    assert encoded["schema_version"] == "jido_hive/job.start.v2"
-    assert encoded["job_id"] == "job-1"
+    assert encoded["schema_version"] == "jido_hive/assignment.start.v1"
+    assert encoded["assignment_id"] == "asn-1"
     assert encoded["session"]["provider"] == "codex"
-    assert encoded["collaboration_envelope"]["turn"]["phase"] == "proposal"
   end
 end

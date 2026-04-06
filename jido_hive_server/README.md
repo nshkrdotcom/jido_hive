@@ -1,39 +1,38 @@
 # JidoHiveServer
 
-`jido_hive_server` is the Phoenix server that runs the shared side of `jido_hive`.
+`jido_hive_server` is the Phoenix application that owns the shared side of `jido_hive`.
 
 It is responsible for:
 
 - exposing the public `REST` API
-- accepting worker connections over Phoenix WebSockets
-- registering targets
+- accepting worker connections over Phoenix channels
+- tracking available runtime targets
 - creating and running rooms
-- applying workflow logic
+- dispatching assignments under a policy
 - persisting room snapshots and room events
+- exposing room history and timeline views
 - planning and executing publications
 
 If you are new to the repo, start with the root guide first: [../README.md](../README.md)
 
-## What end users should know
+## What end users and operators should know
 
 From an operator point of view, the server is the source of truth.
 
-If you want to:
+Use the server when you need to:
 
-- create rooms
-- run workflows
-- inspect room state
-- inspect target availability
-- inspect room history
-- publish completed outputs
-
-you are using the server app.
+- create a room
+- inspect targets
+- inspect or stream room history
+- submit a manual human contribution
+- run a room under a policy
+- inspect or execute publications
 
 Workers connect to the server, but workers do not own the collaboration lifecycle.
 
 ## Quick local start
 
-From the repo root, the recommended startup path is:
+From the repo root:
 
 ```bash
 bin/server
@@ -45,7 +44,7 @@ That wrapper runs:
 - `mix ecto.migrate`
 - `mix phx.server`
 
-You can also run directly inside this app:
+Direct app-local startup:
 
 ```bash
 cd jido_hive_server
@@ -61,30 +60,33 @@ Default local endpoint:
 
 ## What the server exposes
 
-### WebSocket relay
+### Phoenix relay
 
-Relay endpoint:
+Local relay endpoint:
 
 - `ws://127.0.0.1:4000/socket/websocket`
 
-This is used by worker clients to:
+Canonical relay events:
 
-- join a relay topic
-- register connections and targets
-- receive `job.start`
-- send back `job.result`
+- client joins relay topic
+- client pushes `relay.hello`
+- client pushes `participant.upsert`
+- server pushes `assignment.start`
+- client pushes `contribution.submit`
+
+The relay is for live assignment delivery and contribution intake. Shared state still lives on the server.
 
 ### REST API
 
-Base local API:
+Local base API:
 
 - `http://127.0.0.1:4000/api`
 
-Key endpoints:
+Routes:
 
 - `GET /api/targets`
-- `GET /api/workflows`
-- `GET /api/workflows/*id`
+- `GET /api/policies`
+- `GET /api/policies/*id`
 - `POST /api/rooms`
 - `GET /api/rooms/:id`
 - `GET /api/rooms/:id/events`
@@ -92,6 +94,9 @@ Key endpoints:
 - `GET /api/rooms/:id/timeline?after=<cursor>`
 - `GET /api/rooms/:id/timeline?stream=true`
 - `GET /api/rooms/:id/timeline?stream=true&once=true`
+- `GET /api/rooms/:id/context_objects`
+- `GET /api/rooms/:id/context_objects/:context_id`
+- `POST /api/rooms/:id/contributions`
 - `POST /api/rooms/:id/run`
 - `POST /api/rooms/:id/first_slice`
 - `GET /api/rooms/:id/publication_plan`
@@ -104,50 +109,73 @@ Key endpoints:
 
 ## Room execution model
 
-The server runs collaboration through rooms and workflows.
+The server runs collaboration through rooms, policies, assignments, and contributions.
 
 High-level flow:
 
-1. workers connect and register targets
+1. workers connect and upsert participants/targets
 2. a room is created
-3. the server chooses a workflow
-4. the server dispatches turns to targets
-5. clients execute and return structured results
-6. the server reduces those results into room state
-7. the server can prepare and execute publications
+3. a dispatch policy is selected
+4. the server opens the next assignment
+5. a worker executes locally and publishes a contribution
+6. the server reduces that contribution into room state
+7. the room timeline and publication plan update from persisted events
 
-For UI and operator history views, the server also exposes a room timeline projection derived from persisted room events.
+A room snapshot is built from generic collaboration primitives rather than workflow-specific state.
 
-Default workflow behavior is a structured round-robin collaboration pattern with proposal, critique, and resolution phases. The generalized substrate also supports additional workflow definitions, including chain-of-responsibility.
+## Built-in policies
 
-## Room history surfaces
+Current built-in policies:
 
-The server exposes two different history views for a room:
+- `round_robin/v2`: fixed structured collaboration across the locked participant set
+- `resource_pool/v1`: allocate assignments to the least-used available runtime participant
+- `human_gate/v1`: stop for human/manual contributions and completion gating
 
-- `GET /api/rooms/:id/events`: the low-level persisted room event history
-- `GET /api/rooms/:id/timeline`: the UI-facing timeline projection derived from those events
+Use `GET /api/policies` to inspect the available policy definitions.
 
-Use the timeline endpoint when you want:
+## Manual contributions
 
-- human-readable room activity
+The server accepts human/manual contributions over HTTP.
+
+Example use cases:
+
+- an operator injects a decision
+- a reviewer adds a question or constraint
+- a UI submits a binding approval step
+
+Route:
+
+- `POST /api/rooms/:id/contributions`
+
+That path uses the same canonical contribution model as worker-submitted contributions.
+
+## History surfaces
+
+The server exposes two room history views:
+
+- `GET /api/rooms/:id/events`: persisted room event records
+- `GET /api/rooms/:id/timeline`: UI-facing projection derived from those events
+
+Use the timeline when you want:
+
+- human-readable activity
 - incremental polling with `?after=<cursor>`
-- SSE delivery with `?stream=true`
-- one-shot backlog streaming with `?stream=true&once=true`
+- SSE streaming with `?stream=true`
 
-Use the raw events endpoint when you want the underlying event records rather than the projection.
+Use the raw event log when you want the lower-level event stream or debugging detail.
 
 ## Persistence
 
 The server uses SQLite through Ecto.
 
-Persisted server data includes:
+Persisted data includes:
 
 - room snapshots
 - room events
 - target registrations
 - publication runs
 
-This is what lets the server act as the durable shared state holder instead of treating the relay as an ephemeral pass-through.
+Normal local startup runs migrations automatically through `bin/server`.
 
 ## Publications
 
@@ -155,40 +183,34 @@ The server owns publication planning and execution.
 
 That includes:
 
-- turning final room state into publication payloads
-- using configured connector installations
-- recording publication run history
+- GitHub publication actions
+- Notion publication actions
+- publication-run persistence
 
-For operator-oriented publication commands, use the repo-level toolkit:
-
-- [../setup/README.md](../setup/README.md)
+The built-in publication integrations are registered through the integrations bootstrap process.
 
 ## What developers should know
 
-The server is not just a Phoenix transport shell. The generalized refactor moved the collaboration model toward:
+The server design is intentionally layered:
 
-- explicit room command and room event structures
-- pure event reduction into snapshots
-- workflow registry and workflow modules
-- thinner relay and controller boundaries
+- collaboration schema modules define the room primitives
+- reducer and command-handler modules own pure state transitions
+- dispatch policies select assignments without transport concerns
+- persistence and remote execution adapt the pure core to storage and relay boundaries
+- controllers and channels remain thin boundaries
 
-Design split:
+Important server modules live under:
 
-- controllers and channels are boundaries
-- orchestration lives in collaboration and persistence modules
-- workflows define the ordered execution behavior
-
-That structure is what future UI and workflow work should build on.
+- `lib/jido_hive_server/collaboration`
+- `lib/jido_hive_server/persistence.ex`
+- `lib/jido_hive_server/remote_exec.ex`
+- `lib/jido_hive_server/publications.ex`
 
 ## Production and deployment
 
 Current deployed base:
 
 - `https://jido-hive-server-test.app.nsai.online`
-
-For the exact end-to-end production operator runbook, including log tailing and starting production workers, use the root production section:
-
-- [../README.md#production-smoke-test](../README.md#production-smoke-test)
 
 Deployments run through `coolify_ex` in `MIX_ENV=coolify`.
 
@@ -208,6 +230,10 @@ MIX_ENV=coolify mix coolify.logs --project server --latest --tail 200
 MIX_ENV=coolify mix coolify.app_logs --project server --lines 200 --follow
 ```
 
+For the exact production operator sequence, use the root guide:
+
+- [../README.md#production-smoke-test](../README.md#production-smoke-test)
+
 ## Development
 
 Inside this app:
@@ -217,7 +243,7 @@ mix deps.get
 mix ecto.create
 mix ecto.migrate
 mix test
-mix quality
+mix docs --warnings-as-errors
 ```
 
 Repo-wide from the root:
@@ -225,10 +251,3 @@ Repo-wide from the root:
 ```bash
 mix ci
 ```
-
-## Related docs
-
-- root guide: [../README.md](../README.md)
-- setup toolkit: [../setup/README.md](../setup/README.md)
-- architecture: [../docs/architecture.md](../docs/architecture.md)
-- round-robin developer guide: [../docs/developer/multi_agent_round_robin.md](../docs/developer/multi_agent_round_robin.md)

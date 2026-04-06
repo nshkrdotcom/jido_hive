@@ -1,10 +1,11 @@
 defmodule JidoHiveServer.Collaboration.ProtocolCodec do
   @moduledoc false
 
-  @job_start_v2 "jido_hive/job.start.v2"
+  @assignment_start_v1 "jido_hive/assignment.start.v1"
 
   @spec decode_inbound(String.t(), map(), String.t()) ::
-          {:ok, {:relay_hello | :target_register | :job_result, map()}} | {:error, term()}
+          {:ok, {:relay_hello | :participant_upsert | :contribution_submit, map()}}
+          | {:error, term()}
   def decode_inbound(event, payload, workspace_id)
       when is_binary(event) and is_map(payload) and is_binary(workspace_id) do
     with {:ok, type} <- event_type(event),
@@ -18,63 +19,69 @@ defmodule JidoHiveServer.Collaboration.ProtocolCodec do
 
   def decode_inbound(_event, _payload, _workspace_id), do: {:error, :invalid_payload}
 
-  @spec encode_job_start(map()) :: map()
-  def encode_job_start(job) when is_map(job) do
-    job
+  @spec encode_assignment_start(map()) :: map()
+  def encode_assignment_start(assignment) when is_map(assignment) do
+    assignment
     |> normalize_value()
-    |> Map.put_new("schema_version", @job_start_v2)
+    |> Map.put_new("schema_version", @assignment_start_v1)
   end
 
   defp event_type("relay.hello"), do: {:ok, :relay_hello}
-  defp event_type("relay.hello.v2"), do: {:ok, :relay_hello}
-  defp event_type("target.upsert"), do: {:ok, :target_register}
-  defp event_type("target.register"), do: {:ok, :target_register}
-  defp event_type("job.result"), do: {:ok, :job_result}
-  defp event_type("job.result.v2"), do: {:ok, :job_result}
+  defp event_type("participant.upsert"), do: {:ok, :participant_upsert}
+  defp event_type("contribution.submit"), do: {:ok, :contribution_submit}
   defp event_type(_other), do: {:error, :unsupported_event}
 
   defp unwrap_message(:relay_hello, %{"hello" => %{} = hello}), do: {:ok, hello}
-  defp unwrap_message(:target_register, %{"target" => %{} = target}), do: {:ok, target}
-  defp unwrap_message(:job_result, %{"result" => %{} = result}), do: {:ok, result}
+
+  defp unwrap_message(:participant_upsert, %{"participant" => %{} = participant}),
+    do: {:ok, participant}
+
+  defp unwrap_message(:contribution_submit, %{"contribution" => %{} = contribution}),
+    do: {:ok, contribution}
+
   defp unwrap_message(_type, %{} = payload), do: {:ok, payload}
 
   defp inject_workspace(type, payload, workspace_id)
-       when type in [:relay_hello, :target_register] do
+       when type in [:relay_hello, :participant_upsert] do
     Map.put(payload, "workspace_id", workspace_id)
   end
 
   defp inject_workspace(_type, payload, _workspace_id), do: payload
 
   defp normalize_defaults(:relay_hello, payload) do
-    payload
-    |> Map.put_new("client_version", "0.1.0")
+    Map.put_new(payload, "client_version", "0.1.0")
   end
 
-  defp normalize_defaults(:target_register, payload) do
+  defp normalize_defaults(:participant_upsert, payload) do
     payload
     |> Map.put_new("runtime_driver", "asm")
     |> Map.put_new("provider", "codex")
   end
 
-  defp normalize_defaults(:job_result, payload) do
+  defp normalize_defaults(:contribution_submit, payload) do
     payload
-    |> Map.put_new("actions", [])
-    |> Map.put_new("tool_events", [])
-    |> Map.put_new("events", [])
-    |> Map.put_new("approvals", [])
+    |> Map.put_new("context_objects", [])
     |> Map.put_new("artifacts", [])
-    |> Map.update("execution", %{}, fn
-      execution when is_map(execution) -> execution
-      _other -> %{}
-    end)
+    |> Map.put_new("events", [])
+    |> Map.put_new("tool_events", [])
+    |> Map.put_new("approvals", [])
+    |> Map.put_new("execution", %{})
+    |> Map.put_new("status", "completed")
+    |> Map.put_new("schema_version", "jido_hive/contribution.submit.v1")
   end
 
   defp validate(:relay_hello, payload) do
     require_fields(payload, ["participant_id", "participant_role", "workspace_id"])
   end
 
-  defp validate(:target_register, payload) do
-    case require_fields(payload, ["target_id", "capability_id", "workspace_id"]) do
+  defp validate(:participant_upsert, payload) do
+    case require_fields(payload, [
+           "target_id",
+           "capability_id",
+           "participant_id",
+           "participant_role",
+           "workspace_id"
+         ]) do
       :ok ->
         validate_map_fields(payload, [
           "execution_surface",
@@ -87,8 +94,15 @@ defmodule JidoHiveServer.Collaboration.ProtocolCodec do
     end
   end
 
-  defp validate(:job_result, payload) do
-    case require_fields(payload, ["job_id", "room_id", "status"]) do
+  defp validate(:contribution_submit, payload) do
+    case require_fields(payload, [
+           "room_id",
+           "participant_id",
+           "participant_role",
+           "contribution_type",
+           "authority_level",
+           "summary"
+         ]) do
       :ok -> validate_map_field(payload, "execution")
       error -> error
     end
@@ -125,6 +139,9 @@ defmodule JidoHiveServer.Collaboration.ProtocolCodec do
       _other -> false
     end
   end
+
+  defp normalize_value(%DateTime{} = value), do: DateTime.to_iso8601(value)
+  defp normalize_value(%NaiveDateTime{} = value), do: NaiveDateTime.to_iso8601(value)
 
   defp normalize_value(value) when is_map(value) do
     value

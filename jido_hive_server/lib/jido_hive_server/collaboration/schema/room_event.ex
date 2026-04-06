@@ -25,12 +25,13 @@ defmodule JidoHiveServer.Collaboration.Schema.RoomEvent do
 
   @spec new(map()) :: {:ok, t()} | {:error, {:missing_field, atom()}}
   def new(attrs) when is_map(attrs) do
-    with :ok <- validate_required(attrs) do
+    with :ok <- validate_required(attrs),
+         {:ok, type} <- atom_value(attrs[:type] || attrs["type"]) do
       {:ok,
        %__MODULE__{
          event_id: attrs[:event_id] || attrs["event_id"],
          room_id: attrs[:room_id] || attrs["room_id"],
-         type: atom_value(attrs[:type] || attrs["type"]),
+         type: type,
          payload: attrs[:payload] || attrs["payload"],
          causation_id: attrs[:causation_id] || attrs["causation_id"],
          correlation_id: attrs[:correlation_id] || attrs["correlation_id"],
@@ -48,6 +49,11 @@ defmodule JidoHiveServer.Collaboration.Schema.RoomEvent do
     end)
   end
 
-  defp atom_value(value) when is_binary(value), do: String.to_atom(value)
-  defp atom_value(value), do: value
+  defp atom_value(value) when is_atom(value), do: {:ok, value}
+  defp atom_value("room_created"), do: {:ok, :room_created}
+  defp atom_value("assignment_opened"), do: {:ok, :assignment_opened}
+  defp atom_value("contribution_recorded"), do: {:ok, :contribution_recorded}
+  defp atom_value("assignment_abandoned"), do: {:ok, :assignment_abandoned}
+  defp atom_value("runtime_state_changed"), do: {:ok, :runtime_state_changed}
+  defp atom_value(_value), do: {:error, {:invalid_field, :type}}
 end
