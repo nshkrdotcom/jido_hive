@@ -26,6 +26,9 @@ Useful follow-up commands:
   MIX_ENV=coolify mix coolify.logs --project server --latest --tail 200
   MIX_ENV=coolify mix coolify.app_logs --project server --lines 200 --follow
 
+Readiness / verification:
+  The deploy manifest waits for GET /healthz, then verifies / and /api/targets.
+
 Examples:
   export COOLIFY_BASE_URL="https://coolify.example.com"
   export COOLIFY_TOKEN="..."

@@ -3,6 +3,7 @@ defmodule JidoHiveServerWeb.Router do
 
   scope "/", JidoHiveServerWeb do
     get "/", HomeController, :index
+    get "/healthz", HealthController, :show
   end
 
   pipeline :api do

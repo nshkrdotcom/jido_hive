@@ -401,6 +401,9 @@ The wrapper shells into `jido_hive_server` and runs:
 MIX_ENV=coolify mix coolify.deploy
 ```
 
+Deployment readiness is anchored to `GET /healthz`, and post-ready verification
+checks `/` plus `GET /api/targets`.
+
 Useful follow-up commands:
 
 ```bash

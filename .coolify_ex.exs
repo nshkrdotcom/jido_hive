@@ -10,15 +10,27 @@
       git_remote: "origin",
       project_path: "jido_hive_server",
       public_base_url: "https://jido-hive-server-test.app.nsai.online",
-      smoke_checks: [
-        %{
-          name: "Landing page",
-          url: "/",
-          expected_status: 200,
-          expected_body_contains: "Jido Hive Server"
-        },
-        %{name: "Targets API", url: "/api/targets", expected_status: 200, expected_body_contains: "\"data\""}
-      ]
+      readiness: %{
+        checks: [
+          %{name: "Health", url: "/healthz", expected_status: 200, expected_body_contains: "ok"}
+        ]
+      },
+      verification: %{
+        checks: [
+          %{
+            name: "Landing page",
+            url: "/",
+            expected_status: 200,
+            expected_body_contains: "Jido Hive Server"
+          },
+          %{
+            name: "Targets API",
+            url: "/api/targets",
+            expected_status: 200,
+            expected_body_contains: "\"data\""
+          }
+        ]
+      }
     }
   }
 }

@@ -250,6 +250,11 @@ tools, and Phoenix Channels for live worker execution.
 
 The API is mounted under `/api`.
 
+Operational routes outside `/api`:
+
+- `GET /`
+- `GET /healthz`
+
 Important route groups:
 
 - connector installation flow
@@ -399,6 +404,9 @@ The wrapper shells into this package and runs:
 ```bash
 MIX_ENV=coolify mix coolify.deploy
 ```
+
+The deployed manifest uses `GET /healthz` for readiness and verifies `/` plus
+`GET /api/targets` after the app is ready.
 
 Useful follow-up commands:
 
