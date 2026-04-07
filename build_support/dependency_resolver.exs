@@ -134,7 +134,7 @@ defmodule JidoHive.Build.DependencyResolver do
   end
 
   def coolify_ex(opts \\ []) do
-    resolve_hex(:coolify_ex, "~> 0.5.0", [], opts)
+    resolve_hex(:coolify_ex, "~> 0.5.1", [], opts)
   end
 
   defp resolve(app, local_paths, fallback_opts, opts) do
