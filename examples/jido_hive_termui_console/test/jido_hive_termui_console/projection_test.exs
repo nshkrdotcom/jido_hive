@@ -10,16 +10,27 @@ defmodule JidoHiveTermuiConsole.ProjectionTest do
         %{"body" => "Redis is healthy", "metadata" => %{"participant_id" => "bob"}}
       ],
       context_objects: [
-        %{"context_id" => "ctx-1", "object_type" => "hypothesis", "title" => "Redis timeout"},
+        %{
+          "context_id" => "ctx-1",
+          "object_type" => "hypothesis",
+          "title" => "Redis timeout",
+          "derived" => %{"stale_ancestor" => true},
+          "adjacency" => %{
+            "incoming" => [%{"type" => "supports"}],
+            "outgoing" => [%{"type" => "contradicts"}, %{"type" => "references"}]
+          }
+        },
         %{
           "context_id" => "ctx-2",
           "object_type" => "contradiction",
-          "title" => "Datadog says Redis is fine"
+          "title" => "Datadog says Redis is fine",
+          "adjacency" => %{"incoming" => [], "outgoing" => [%{"type" => "contradicts"}]}
         },
         %{
           "context_id" => "ctx-3",
           "object_type" => "decision",
-          "title" => "Rollback registry deploy"
+          "title" => "Rollback registry deploy",
+          "adjacency" => %{"incoming" => [], "outgoing" => []}
         }
       ]
     }
@@ -41,11 +52,11 @@ defmodule JidoHiveTermuiConsole.ProjectionTest do
 
     assert Projection.context_lines(snapshot(), 1) == [
              "DECISION",
-             "  Rollback registry deploy",
+             "  Rollback registry deploy [in:0 out:0]",
              "CONTRADICTION",
-             "> Datadog says Redis is fine",
+             "> Datadog says Redis is fine [in:0 out:1] [CONFLICT]",
              "HYPOTHESIS",
-             "  Redis timeout"
+             "  Redis timeout [in:1 out:2] [STALE] [CONFLICT]"
            ]
   end
 end

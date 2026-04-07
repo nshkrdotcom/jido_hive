@@ -57,7 +57,11 @@ defmodule JidoHiveTermuiConsole.Projection do
 
         prefix = if object_index == selected_index, do: ">", else: " "
         label = title(object) || body(object) || object_type
-        content = String.slice(label, 0, 76)
+
+        content =
+          object
+          |> label_with_graph_feedback(label)
+          |> String.slice(0, 76)
 
         {lines ++ heading_lines ++ ["#{prefix} #{content}"], object_type, object_index + 1}
       end)
@@ -94,6 +98,40 @@ defmodule JidoHiveTermuiConsole.Projection do
 
   defp object_type(object) do
     Map.get(object, "object_type") || Map.get(object, :object_type) || "message"
+  end
+
+  defp label_with_graph_feedback(object, label) do
+    adjacency = adjacency(object)
+    in_count = length(adjacency["incoming"])
+    out_count = length(adjacency["outgoing"])
+
+    suffixes =
+      [
+        "[in:#{in_count} out:#{out_count}]",
+        if(stale?(object), do: "[STALE]"),
+        if(conflict?(object), do: "[CONFLICT]")
+      ]
+      |> Enum.reject(&is_nil/1)
+
+    Enum.join([label | suffixes], " ")
+  end
+
+  defp stale?(object) do
+    derived = Map.get(object, "derived") || Map.get(object, :derived) || %{}
+    Map.get(derived, "stale_ancestor") || Map.get(derived, :stale_ancestor) || false
+  end
+
+  defp conflict?(object) do
+    object_type(object) == "contradiction" or
+      Enum.any?(adjacency(object)["incoming"] ++ adjacency(object)["outgoing"], fn edge ->
+        (Map.get(edge, "type") || Map.get(edge, :type)) == "contradicts" ||
+          (Map.get(edge, "type") || Map.get(edge, :type)) == :contradicts
+      end)
+  end
+
+  defp adjacency(object) do
+    Map.get(object, "adjacency") || Map.get(object, :adjacency) ||
+      %{"incoming" => [], "outgoing" => []}
   end
 
   defp timeline_entries(snapshot),

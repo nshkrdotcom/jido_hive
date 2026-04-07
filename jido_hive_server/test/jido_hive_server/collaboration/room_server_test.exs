@@ -155,6 +155,102 @@ defmodule JidoHiveServer.Collaboration.RoomServerTest do
     assert Persistence.list_room_events("room-scope-1") == []
   end
 
+  test "rejects contributions that use unknown relation names" do
+    room =
+      start_supervised!(
+        {RoomServer,
+         room_id: "room-invalid-relation-1",
+         snapshot:
+           base_snapshot("room-invalid-relation-1")
+           |> Map.put(:participants, [
+             %{
+               participant_id: "human-01",
+               participant_role: "reviewer",
+               participant_kind: "human",
+               authority_level: "binding",
+               target_id: "target-human-01",
+               capability_id: "human.chat",
+               metadata: %{}
+             }
+           ])}
+      )
+
+    assert {:error, {:scope_violation, %{kind: :invalid_relation_type, relation: "derived_from"}}} =
+             RoomServer.record_contribution(room, %{
+               "contribution" => %{
+                 "room_id" => "room-invalid-relation-1",
+                 "participant_id" => "human-01",
+                 "participant_role" => "reviewer",
+                 "participant_kind" => "human",
+                 "target_id" => "target-human-01",
+                 "capability_id" => "human.chat",
+                 "contribution_type" => "decision",
+                 "authority_level" => "binding",
+                 "summary" => "Use the wrong relation name.",
+                 "context_objects" => [
+                   %{
+                     "object_type" => "decision",
+                     "title" => "Bad relation",
+                     "relations" => [
+                       %{"relation" => "derived_from", "target_id" => "ctx-1"}
+                     ]
+                   }
+                 ]
+               }
+             })
+
+    assert {:ok, current} = RoomServer.snapshot(room)
+    assert current.contributions == []
+  end
+
+  test "rejects contributions that omit relation target ids" do
+    room =
+      start_supervised!(
+        {RoomServer,
+         room_id: "room-missing-target-1",
+         snapshot:
+           base_snapshot("room-missing-target-1")
+           |> Map.put(:participants, [
+             %{
+               participant_id: "human-01",
+               participant_role: "reviewer",
+               participant_kind: "human",
+               authority_level: "binding",
+               target_id: "target-human-01",
+               capability_id: "human.chat",
+               metadata: %{}
+             }
+           ])}
+      )
+
+    assert {:error, {:scope_violation, %{kind: :missing_relation_target, relation: "supports"}}} =
+             RoomServer.record_contribution(room, %{
+               "contribution" => %{
+                 "room_id" => "room-missing-target-1",
+                 "participant_id" => "human-01",
+                 "participant_role" => "reviewer",
+                 "participant_kind" => "human",
+                 "target_id" => "target-human-01",
+                 "capability_id" => "human.chat",
+                 "contribution_type" => "reasoning",
+                 "authority_level" => "binding",
+                 "summary" => "Missing relation target.",
+                 "context_objects" => [
+                   %{
+                     "object_type" => "evidence",
+                     "title" => "Bad evidence",
+                     "relations" => [
+                       %{"relation" => "supports", "target_id" => nil}
+                     ]
+                   }
+                 ]
+               }
+             })
+
+    assert {:ok, current} = RoomServer.snapshot(room)
+    assert current.contributions == []
+  end
+
   test "persists derived contradiction and downstream invalidation events after accepted appends" do
     room =
       start_supervised!(

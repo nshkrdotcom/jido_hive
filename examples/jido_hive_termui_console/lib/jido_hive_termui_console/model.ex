@@ -11,6 +11,7 @@ defmodule JidoHiveTermuiConsole.Model do
     :participant_role,
     :poll_interval_ms,
     :snapshot,
+    relation_mode: :contextual,
     input_buffer: "",
     selected_context_index: 0,
     status_line: "Ready",
@@ -31,6 +32,7 @@ defmodule JidoHiveTermuiConsole.Model do
       participant_id: Keyword.get(opts, :participant_id, "human-local"),
       participant_role: Keyword.get(opts, :participant_role, "collaborator"),
       poll_interval_ms: Keyword.get(opts, :poll_interval_ms, 500),
+      relation_mode: Keyword.get(opts, :relation_mode, :contextual),
       snapshot: snapshot
     }
     |> apply_snapshot(snapshot)
@@ -83,6 +85,12 @@ defmodule JidoHiveTermuiConsole.Model do
   @spec set_status(t(), String.t()) :: t()
   def set_status(%__MODULE__{} = state, message) when is_binary(message) do
     %{state | status_line: message}
+  end
+
+  @spec set_relation_mode(t(), atom()) :: t()
+  def set_relation_mode(%__MODULE__{} = state, mode)
+      when mode in [:contextual, :references, :derives_from, :supports, :contradicts, :none] do
+    %{state | relation_mode: mode}
   end
 
   defp clamp_index([], _selected_index), do: 0

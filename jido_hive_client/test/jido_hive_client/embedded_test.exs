@@ -166,9 +166,47 @@ defmodule JidoHiveClient.EmbeddedTest do
     assert_receive {:submit_contribution, "room-1", acceptance_payload}
     assert Enum.any?(acceptance_payload["context_objects"], &(&1["object_type"] == "decision"))
 
+    assert Enum.find(acceptance_payload["context_objects"], &(&1["object_type"] == "decision"))[
+             "relations"
+           ] == [
+             %{"relation" => "derives_from", "target_id" => candidate["context_id"]}
+           ]
+
     wait_until(fn ->
       Embedded.snapshot(embedded).context_objects
       |> Enum.any?(&(&1["object_type"] == "decision"))
     end)
+  end
+
+  test "submits selected relation context through the embedded chat path", %{embedded: embedded} do
+    {:ok, _contribution} =
+      Embedded.submit_chat(embedded, %{
+        text: "I think auth is broken",
+        selected_context_id: "ctx-root",
+        selected_relation: "references"
+      })
+
+    assert_receive {:submit_contribution, "room-1", payload}
+
+    assert Enum.find(payload["context_objects"], &(&1["object_type"] == "hypothesis"))[
+             "relations"
+           ] == [
+             %{"relation" => "references", "target_id" => "ctx-root"}
+           ]
+  end
+
+  test "submits plain chat when selected relation mode is none", %{embedded: embedded} do
+    {:ok, _contribution} =
+      Embedded.submit_chat(embedded, %{
+        text: "I think auth is broken",
+        selected_context_id: "ctx-root",
+        selected_relation: "none"
+      })
+
+    assert_receive {:submit_contribution, "room-1", payload}
+
+    refute Enum.any?(payload["context_objects"], fn object ->
+             Map.has_key?(object, "relations")
+           end)
   end
 end

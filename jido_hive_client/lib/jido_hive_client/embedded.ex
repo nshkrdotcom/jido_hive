@@ -247,7 +247,13 @@ defmodule JidoHiveClient.Embedded do
         "timeline_count" => length(state.timeline),
         "context_count" => length(state.context_objects),
         "selected_context_id" =>
-          Map.get(attrs, :selected_context_id) || Map.get(attrs, "selected_context_id")
+          Map.get(attrs, :selected_context_id) || Map.get(attrs, "selected_context_id"),
+        "selected_context_object_type" =>
+          Map.get(attrs, :selected_context_object_type) ||
+            Map.get(attrs, "selected_context_object_type"),
+        "selected_relation" =>
+          Map.get(attrs, :selected_relation) || Map.get(attrs, "selected_relation") ||
+            "contextual"
       }
     })
   end
@@ -316,7 +322,7 @@ defmodule JidoHiveClient.Embedded do
           "object_type" => "decision",
           "title" => title,
           "body" => value(context_object, "body") || title,
-          "relations" => [%{"relation" => "derived_from", "target_id" => context_id}]
+          "relations" => [%{"relation" => "derives_from", "target_id" => context_id}]
         }
       ],
       "events" => [%{"event_type" => "accept", "context_id" => context_id}],

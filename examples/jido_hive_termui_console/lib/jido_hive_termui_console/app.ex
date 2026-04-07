@@ -54,6 +54,15 @@ defmodule JidoHiveTermuiConsole.App do
     {refresh_snapshot(state) |> Model.set_status("Refreshed"), []}
   end
 
+  def update({:set_relation_mode, mode}, state) do
+    next_state =
+      state
+      |> Model.set_relation_mode(mode)
+      |> Model.set_status("Compose mode: #{relation_mode_label(mode)}")
+
+    {next_state, []}
+  end
+
   def update({:input_append, char}, state) do
     {Model.append_input(state, char), []}
   end
@@ -76,19 +85,12 @@ defmodule JidoHiveTermuiConsole.App do
         {Model.set_status(state, "Type a message before submitting"), []}
 
       text ->
-        selected_context_id =
-          case Model.selected_context(state) do
-            nil ->
-              nil
+        selected_context = Model.selected_context(state)
 
-            context_object ->
-              Map.get(context_object, "context_id") || Map.get(context_object, :context_id)
-          end
-
-        case state.embedded_module.submit_chat(state.embedded, %{
-               text: text,
-               selected_context_id: selected_context_id
-             }) do
+        case state.embedded_module.submit_chat(
+               state.embedded,
+               submit_attrs(text, selected_context, state.relation_mode)
+             ) do
           {:ok, _contribution} ->
             next_state =
               state
@@ -140,6 +142,10 @@ defmodule JidoHiveTermuiConsole.App do
         "Room #{state.room_id} | #{state.participant_id} (#{state.participant_role})",
         Style.new(fg: :bright_black)
       ),
+      text(
+        "Mode #{relation_mode_label(state.relation_mode)} | Selected #{selected_context_label(state)}",
+        Style.new(fg: :bright_black)
+      ),
       text("", nil),
       stack(:horizontal, [
         render_pane("Conversation", Projection.conversation_lines(state.snapshot), pane_width),
@@ -153,7 +159,7 @@ defmodule JidoHiveTermuiConsole.App do
       render_pane("Input", ["> " <> state.input_buffer], input_width, 3),
       text(state.status_line, Style.new(fg: :yellow)),
       text(
-        "Enter submit | Up/Down select | Ctrl+A accept | Ctrl+R refresh | Ctrl+Q quit",
+        "Enter submit | Up/Down select | Ctrl+A accept | Ctrl+T contextual | Ctrl+F ref | Ctrl+D derive | Ctrl+S support | Ctrl+X contradict | Ctrl+N none | Ctrl+R refresh | Ctrl+Q quit",
         Style.new(fg: :bright_black)
       )
     ])
@@ -167,12 +173,7 @@ defmodule JidoHiveTermuiConsole.App do
   defp shortcut_msg(%Event.Key{char: char, modifiers: modifiers})
        when is_binary(char) and is_list(modifiers) do
     if Enum.member?(modifiers, :ctrl) do
-      case char do
-        "q" -> :quit
-        "a" -> :accept_selected
-        "r" -> :refresh
-        _other -> nil
-      end
+      ctrl_shortcut_msg(char)
     end
   end
 
@@ -201,4 +202,55 @@ defmodule JidoHiveTermuiConsole.App do
 
     box(content, width: width, height: height)
   end
+
+  defp submit_attrs(text, _selected_context, :none), do: %{text: text}
+  defp submit_attrs(text, nil, _mode), do: %{text: text}
+
+  defp submit_attrs(text, selected_context, mode) do
+    %{
+      text: text,
+      selected_context_id: context_id(selected_context),
+      selected_context_object_type: context_object_type(selected_context),
+      selected_relation: Atom.to_string(mode)
+    }
+  end
+
+  defp relation_mode_label(mode) do
+    mode
+    |> Atom.to_string()
+    |> String.replace("_", " ")
+  end
+
+  defp selected_context_label(state) do
+    case Model.selected_context(state) do
+      nil -> "none"
+      context_object -> context_id(context_object) || "none"
+    end
+  end
+
+  defp context_id(context_object),
+    do: Map.get(context_object, "context_id") || Map.get(context_object, :context_id)
+
+  defp context_object_type(context_object) do
+    Map.get(context_object, "object_type") || Map.get(context_object, :object_type)
+  end
+
+  defp ctrl_shortcut_msg("q"), do: :quit
+  defp ctrl_shortcut_msg("a"), do: :accept_selected
+  defp ctrl_shortcut_msg("r"), do: :refresh
+
+  defp ctrl_shortcut_msg(char) do
+    case relation_mode_shortcut(char) do
+      nil -> nil
+      mode -> {:set_relation_mode, mode}
+    end
+  end
+
+  defp relation_mode_shortcut("t"), do: :contextual
+  defp relation_mode_shortcut("f"), do: :references
+  defp relation_mode_shortcut("d"), do: :derives_from
+  defp relation_mode_shortcut("s"), do: :supports
+  defp relation_mode_shortcut("x"), do: :contradicts
+  defp relation_mode_shortcut("n"), do: :none
+  defp relation_mode_shortcut(_char), do: nil
 end

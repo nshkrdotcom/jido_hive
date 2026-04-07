@@ -26,7 +26,8 @@ defmodule JidoHiveServer.Collaboration.ContextManager do
     writable_ids = writable_context_ids(participant, room, scope)
     readable_ids = readable_context_ids(participant, room, scope)
 
-    validate_object_types(write_intent, scope)
+    validate_relation_contract(write_intent)
+    |> continue_validation(fn -> validate_object_types(write_intent, scope) end)
     |> continue_validation(fn -> validate_supersedes_targets(write_intent, writable_ids) end)
     |> continue_validation(fn -> validate_read_targets(write_intent, readable_ids) end)
   end
@@ -149,6 +150,23 @@ defmodule JidoHiveServer.Collaboration.ContextManager do
   defp normalize_hop_limit(value) when is_integer(value) and value >= 0, do: value
   defp normalize_hop_limit(_value), do: 2
 
+  defp validate_relation_contract(write_intent) do
+    write_intent
+    |> invalid_relations()
+    |> Enum.find_value(:ok, fn invalid_relation ->
+      case invalid_relation do
+        %{kind: :invalid_relation_type, relation: relation} ->
+          {:error, {:scope_violation, %{kind: :invalid_relation_type, relation: relation}}}
+
+        %{kind: :missing_relation_target, relation: relation} ->
+          {:error, {:scope_violation, %{kind: :missing_relation_target, relation: relation}}}
+
+        _other ->
+          {:error, {:scope_violation, %{kind: :invalid_relation}}}
+      end
+    end)
+  end
+
   defp validate_object_types(write_intent, scope) do
     drafted_object_types =
       Map.get(
@@ -198,6 +216,10 @@ defmodule JidoHiveServer.Collaboration.ContextManager do
     write_intent
     |> Map.get(:relation_targets_by_type, Map.get(write_intent, "relation_targets_by_type", %{}))
     |> Map.get(relation_type, [])
+  end
+
+  defp invalid_relations(write_intent) do
+    Map.get(write_intent, :invalid_relations, Map.get(write_intent, "invalid_relations", []))
   end
 
   defp type_writable?(%{writable_types: :all}, _object_type), do: true

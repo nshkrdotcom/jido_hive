@@ -124,7 +124,7 @@ defmodule JidoHiveServer.Collaboration do
 
   def list_context_objects(room_id) when is_binary(room_id) do
     with {:ok, snapshot} <- fetch_room(room_id) do
-      {:ok, Enum.map(snapshot.context_objects, &decorate_context_object(&1, snapshot, false))}
+      {:ok, Enum.map(snapshot.context_objects, &decorate_context_object(&1, snapshot))}
     end
   end
 
@@ -133,7 +133,7 @@ defmodule JidoHiveServer.Collaboration do
     with {:ok, snapshot} <- fetch_room(room_id),
          context_object when not is_nil(context_object) <-
            Enum.find(snapshot.context_objects, &(&1.context_id == context_id)) do
-      {:ok, decorate_context_object(context_object, snapshot, true)}
+      {:ok, decorate_context_object(context_object, snapshot)}
     else
       nil -> {:error, :context_object_not_found}
       {:error, _} = error -> error
@@ -431,17 +431,13 @@ defmodule JidoHiveServer.Collaboration do
     ArgumentError -> nil
   end
 
-  defp decorate_context_object(context_object, snapshot, include_adjacency?) do
+  defp decorate_context_object(context_object, snapshot) do
     decorated =
       case Map.get(snapshot, :context_annotations, %{})[context_object.context_id] do
         nil -> context_object
         annotation -> Map.put(context_object, :derived, annotation)
       end
 
-    if include_adjacency? do
-      Map.put(decorated, :adjacency, ContextGraph.adjacency(snapshot, context_object.context_id))
-    else
-      decorated
-    end
+    Map.put(decorated, :adjacency, ContextGraph.adjacency(snapshot, context_object.context_id))
   end
 end

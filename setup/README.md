@@ -147,11 +147,18 @@ compatible workers.
   `GET /api/targets`
 - room context inspection now includes graph adjacency and derived stale flags
 - room timeline inspection now includes contradiction and downstream-invalidation entries
+- malformed relation payloads are rejected by the server instead of being
+  silently accepted and ignored later
 - the room locks the selected worker set at room creation time
 - the default turn budget is `participant_count * 3`
 - if a worker drops mid-room, the logical budget is preserved and the room keeps
   round-robining across the remaining workers
 - `run-room` uses the locked room plan by default when `--max-turns` is omitted
+
+For the current human-facing graph-authoring path, see:
+
+- `../examples/jido_hive_termui_console/README.md`
+- `../jido_hive_client/README.md`
 
 ## Publication Commands
 

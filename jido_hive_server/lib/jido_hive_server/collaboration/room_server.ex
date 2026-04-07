@@ -185,8 +185,30 @@ defmodule JidoHiveServer.Collaboration.RoomServer do
                 )
             end
           end)
+        end),
+      invalid_relations:
+        Enum.flat_map(context_objects, fn context_object ->
+          context_object
+          |> list_value("relations")
+          |> Enum.flat_map(&invalid_relation_entries/1)
         end)
     }
+  end
+
+  defp invalid_relation_entries(relation) do
+    relation_name = value(relation, "relation")
+    target_id = relation_target_id(relation)
+
+    cond do
+      relation_key(relation) == nil ->
+        [%{kind: :invalid_relation_type, relation: relation_name}]
+
+      relation_key(relation) != nil and not valid_relation_target_id?(target_id) ->
+        [%{kind: :missing_relation_target, relation: relation_name}]
+
+      true ->
+        []
+    end
   end
 
   defp appended_context_ids(before_snapshot, after_snapshot) do
@@ -238,6 +260,11 @@ defmodule JidoHiveServer.Collaboration.RoomServer do
   end
 
   defp relation_target_id(relation), do: value(relation, "target_id")
+
+  defp valid_relation_target_id?(target_id) when is_binary(target_id),
+    do: String.trim(target_id) != ""
+
+  defp valid_relation_target_id?(_target_id), do: false
 
   defp value(map, key) when is_map(map) and is_binary(key) do
     Map.get(map, key) || Map.get(map, existing_atom_key(key))

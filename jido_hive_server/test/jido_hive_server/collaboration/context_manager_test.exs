@@ -43,6 +43,44 @@ defmodule JidoHiveServer.Collaboration.ContextManagerTest do
              ContextManager.validate_append(participant, write_intent, room)
   end
 
+  test "rejects append intents that contain unknown relation names" do
+    room = scoped_room() |> ContextGraph.attach()
+
+    participant = %{
+      participant_id: "worker-1",
+      participant_role: "analyst",
+      participant_kind: "runtime"
+    }
+
+    write_intent = %{
+      drafted_object_types: ["note"],
+      relation_targets_by_type: %{},
+      invalid_relations: [%{kind: :invalid_relation_type, relation: "derived_from"}]
+    }
+
+    assert {:error, {:scope_violation, %{kind: :invalid_relation_type, relation: "derived_from"}}} =
+             ContextManager.validate_append(participant, write_intent, room)
+  end
+
+  test "rejects append intents that contain relations without a target id" do
+    room = scoped_room() |> ContextGraph.attach()
+
+    participant = %{
+      participant_id: "worker-1",
+      participant_role: "analyst",
+      participant_kind: "runtime"
+    }
+
+    write_intent = %{
+      drafted_object_types: ["note"],
+      relation_targets_by_type: %{},
+      invalid_relations: [%{kind: :missing_relation_target, relation: "supports"}]
+    }
+
+    assert {:error, {:scope_violation, %{kind: :missing_relation_target, relation: "supports"}}} =
+             ContextManager.validate_append(participant, write_intent, room)
+  end
+
   test "rejects read-governed relation targets beyond the allowed references hop limit" do
     room = scoped_room() |> ContextGraph.attach()
 

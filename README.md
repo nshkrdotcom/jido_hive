@@ -11,119 +11,314 @@
 
 # jido_hive
 
-`jido_hive` is a human-first collaborative AI substrate built as two Elixir applications:
+`jido_hive` is a human-first collaborative AI system built as an Elixir monorepo.
+It is organized around one strong boundary: the server owns room state and
+coordination, while participants, whether human-facing or worker-facing, operate
+through explicit contracts instead of side channels.
 
-- [`jido_hive_server`](jido_hive_server/README.md): the room authority, relay, API, persistence layer, and policy runner
-- [`jido_hive_client`](jido_hive_client/README.md): the participant runtime used by worker CLIs, embedded local tooling, and the first TUI example
+This repository contains:
 
-The current system is designed around one idea: humans and AI participants should collaborate in a shared room where conversation and structured context evolve together.
+- `jido_hive_server`: the authoritative room server, relay, API boundary,
+  persistence layer, context graph, and context manager
+- `jido_hive_client`: the participant runtime used by long-running workers and
+  embedded local tools
+- `examples/jido_hive_termui_console`: the first end-user console built on the
+  embedded client runtime
+- the root workspace project: monorepo tooling, shared quality gates, and
+  developer orchestration
 
-## What the system does today
+If you are new to the repo, read this file first, then move to the package
+README that matches the part of the system you are changing.
 
-A room in `jido_hive` has five practical primitives:
+## Table of contents
 
-1. `Room`: the authoritative coordination container
-2. `Participant`: a worker or human contributor
-3. `Assignment`: scoped work sent to a participant
-4. `Contribution`: structured output returned to the room
-5. `ContextObject`: durable knowledge objects such as `belief`, `note`, `question`, `hypothesis`, `evidence`, `contradiction`, `decision_candidate`, and `decision`
+- [Why this exists](#why-this-exists)
+- [Current system shape](#current-system-shape)
+- [Core collaboration model](#core-collaboration-model)
+- [Current context reasoning model](#current-context-reasoning-model)
+- [Monorepo layout](#monorepo-layout)
+- [How a room progresses](#how-a-room-progresses)
+- [Local setup](#local-setup)
+- [Recommended local workflows](#recommended-local-workflows)
+- [Production and deployment](#production-and-deployment)
+- [Quality, docs, and developer workflow](#quality-docs-and-developer-workflow)
+- [Where to read next](#where-to-read-next)
 
-The server owns room state and dispatch policy. Clients never coordinate directly with each other.
+## Why this exists
 
-## New server-side context reasoning
+Most multi-agent systems start from worker orchestration and then bolt on human
+interaction later. `jido_hive` goes the other direction:
 
-`jido_hive_server` now derives a room-local context graph from `ContextObject.relations` and applies a pure context manager over room snapshots.
+- humans and AI participants collaborate inside the same room model
+- conversation and durable structured context evolve together
+- the room keeps an authoritative event log rather than letting clients invent
+  local truth
+- context reasoning lives on the server so every client sees the same derived
+  relationships, contradictions, and invalidation signals
 
-That currently adds:
-- append-time scope enforcement against room-owned participant scope
-- deterministic assignment and human-pane context views
-- contradiction detection and downstream invalidation room events
-- derived stale flags and graph adjacency on room context inspection surfaces
+The result is not a chat app with tools attached. It is a shared collaboration
+substrate where structured context objects, dispatch policy, participant scope,
+and inspection surfaces all line up around a room snapshot.
 
-## Current collaboration surfaces
+## Current system shape
+
+Today the repo delivers three practical surfaces:
 
 ### 1. Worker execution plane
 
-AI workers connect over Phoenix WebSockets and receive `assignment.start` packets. They answer with `contribution.submit` payloads.
+Workers connect to the server over Phoenix Channels. They register themselves,
+receive assignments, execute locally, and submit structured contributions.
 
 This is the path used by:
+
 - `bin/client-worker`
 - `bin/hive-clients`
-- the production smoke flow
+- the local and production smoke flows
 
-### 2. Human and operator control plane
+### 2. Operator and human control plane
 
-The server exposes REST APIs for room creation, room inspection, manual contributions, timelines, and policy/workflow inspection.
+The server exposes REST endpoints for creating rooms, inspecting room state,
+posting contributions, running workflows, and inspecting targets, policies, and
+publications.
 
 This is the path used by:
+
 - `setup/hive`
 - `bin/hive-control`
-- future web and API operators
+- future UI surfaces
+- direct manual inspection and debugging
 
-Those inspection surfaces now include:
-- context-object detail with graph adjacency
-- derived stale flags on affected context objects
-- timeline entries for contradiction detection and downstream invalidation
+### 3. Embedded human-facing runtime
 
-### 3. Embedded client runtime
+The client now also ships an embedded Elixir API. That API lets local tools:
 
-`jido_hive_client` now also exposes a direct Elixir embedding API for local tools:
-- start an embedded participant runtime
+- subscribe to room snapshots
 - submit human chat text
-- intercept that text locally into structured contributions
-- refresh and inspect room snapshots
-- accept a context object into a binding decision
+- convert that text into structured contributions locally
+- ground those contributions in a selected existing context object
+- refresh timeline and context state
+- accept a context object into a binding decision flow
 
-This is the path used by the first TUI example.
+This is the path used by the first `term_ui` example in
+`examples/jido_hive_termui_console`.
 
-### 4. TUI example
+## Core collaboration model
 
-The repo now includes:
-- `examples/jido_hive_termui_console`
+A room in `jido_hive` is built from five practical primitives:
 
-It is a `term_ui` application with:
-- left pane: conversation timeline
-- right pane: structured context view
-- bottom input: plain chat entry
+1. `Room`
+   The authoritative coordination container. It owns brief, status,
+   participants, events, context, policy progression, and room-local config.
+2. `Participant`
+   A worker or human contributor known to the room. The room server remains the
+   authority even when the participant executes work elsewhere.
+3. `Assignment`
+   The server's structured request for the next unit of work.
+4. `Contribution`
+   The participant's structured response. Contributions can contain text,
+   metadata, and drafted context objects.
+5. `ContextObject`
+   A durable knowledge object created from contributions. Current object types
+   include values such as `message`, `note`, `belief`, `question`,
+   `hypothesis`, `evidence`, `contradiction`, `decision_candidate`, `decision`,
+   and `artifact` when emitted as a context object.
 
-The TUI talks to `jido_hive_client` programmatically in Elixir. It does not shell out to a separate HTTP client process.
+The high-level rule is simple:
 
-## Repo layout
+- the server owns authoritative room state
+- clients do not coordinate directly with each other
+- derived reasoning is computed from room snapshots, not from client-local caches
 
-- `jido_hive_server/`: Phoenix server, REST API, relay, persistence, policies
-- `jido_hive_client/`: worker runtime, embedded runtime, interceptor, local control API
-- `examples/jido_hive_termui_console/`: first interactive terminal UI consumer
-- `setup/hive`: operator and demo orchestration script
-- `bin/`: server, worker, and operator wrappers
+## Current context reasoning model
 
-## Fastest local setup
+The most important recent shift in the system is that context reasoning is now
+server-side and room-local.
+
+`jido_hive_server` derives a context graph from `ContextObject.relations` and
+applies a pure context manager over room snapshots. That gives the room a
+consistent reasoning layer without adding a graph database, query language, or
+another state owner.
+
+### Context graph
+
+The graph model is intentionally narrow:
+
+- node = an existing `ContextObject`
+- edge = a normalized relation derived from object relations
+- edge types currently include `derives_from`, `references`, `contradicts`,
+  `resolves`, `supersedes`, `supports`, and `blocks`
+- the graph is rebuilt as pure Elixir maps over room snapshots
+- room snapshots expose adjacency and related derived inspection data through the
+  server APIs
+
+### Context manager
+
+The context manager is the governance layer that uses the graph. It currently
+does four practical things:
+
+- validates append intent against room-owned participant scope
+- builds deterministic context views for assignments and human-facing consumers
+- emits contradiction-detected room events when new unresolved contradictions
+  appear
+- marks downstream nodes stale when an appended object supersedes an ancestor
+
+Important implementation rules:
+
+- participant scope is owned by the room under `context_config.participant_scopes`
+- reads can extend by one extra `references` hop beyond the participant's base
+  scope roots
+- updates are append-only through new objects and `supersedes` relations
+- stale state is derived and projected, not written back into canonical stored
+  context objects
+
+This means the room snapshot now carries richer signals for every consumer:
+
+- context-object detail can include graph adjacency
+- context-object listings can include adjacency counts for lightweight clients
+- derived stale annotations can be projected inline
+- room timelines can surface contradiction and downstream invalidation events
+
+### Prompt-driven graph authoring
+
+The current human path is no longer just "chat that happens to produce some
+objects." It now has a stricter graph contract:
+
+- canonical relation names are enforced at append time
+- malformed relation names are rejected instead of being silently ignored
+- relation-bearing edges must have a non-empty `target_id`
+- embedded human tools can submit chat relative to a selected context object
+- the TUI exposes explicit relation modes so a human can choose whether a new
+  contribution `references`, `derives_from`, `supports`, or `contradicts` the
+  selected node
+
+The default human mode is `contextual`, which chooses a relation based on the
+generated object type. There is also a `none` mode that submits plain chat
+without anchoring the contribution into the graph.
+
+## Monorepo layout
+
+This repository is a root workspace plus three nested Mix projects:
+
+- `mix.exs`
+  The workspace root. It uses `blitz_workspace` to fan out repo-wide tasks such
+  as compile, test, Credo, Dialyzer, docs, and formatting.
+- `jido_hive_server/mix.exs`
+  Phoenix API, websocket relay, persistence, room logic, policies, context
+  graph, context manager, and deployment integration.
+- `jido_hive_client/mix.exs`
+  Worker runtime, local executor wrappers, embedded API, interceptor pipeline,
+  and local diagnostics surface.
+- `examples/jido_hive_termui_console/mix.exs`
+  A `term_ui` console that proves the embedded human-participation path.
+
+The root workspace matters because quality is enforced across the whole repo, not
+just whichever nested app you touched.
+
+## How a room progresses
+
+The easiest way to understand the system is to follow one room from start to
+finish.
+
+### 1. Workers register as targets
+
+Workers connect to the websocket relay, send `relay.hello`, upsert their
+participant identity, and become available targets for room creation.
+
+### 2. An operator creates a room
+
+The operator or setup script selects the current workers, creates the room, and
+optionally locks the room to a fixed participant set and turn budget.
+
+### 3. The server dispatches an assignment
+
+The server examines room state, policy state, and participant availability, then
+emits `assignment.start` to the next worker.
+
+### 4. A participant submits a contribution
+
+Workers or embedded human-facing tools submit structured contributions. The
+contribution can include drafted context objects with relations to previous
+objects.
+
+### 5. The server reduces the contribution
+
+The reducer:
+
+- validates append intent against scope
+- materializes context objects
+- records the canonical room event
+- persists the updated room snapshot
+- projects the context graph and annotations
+- emits additional derived events when contradictions or invalidation appear
+
+### 6. Room inspection surfaces update
+
+Clients and operators can then poll or stream:
+
+- the canonical event log
+- the timeline projection
+- the context object listing
+- individual context objects with adjacency
+- target and policy state
+
+### 7. Policy decides what happens next
+
+The room policy continues dispatching until the room reaches its configured stop
+condition.
+
+This same lifecycle supports both worker-driven execution and human-in-the-loop
+flows because the server remains the room authority in both cases.
+
+## Local setup
+
+Install and fetch repo prerequisites once from the root:
 
 ```bash
 bin/setup
 ```
 
-## Fastest worker demo
+That prepares the nested Mix apps and the root workspace tooling.
 
-Open three terminals.
+### Local server endpoints
+
+- API: `http://127.0.0.1:4000/api`
+- WebSocket: `ws://127.0.0.1:4000/socket/websocket`
+
+### Production endpoints
+
+- API: `https://jido-hive-server-test.app.nsai.online/api`
+- WebSocket: `wss://jido-hive-server-test.app.nsai.online/socket/websocket`
+
+## Recommended local workflows
+
+There are three practical ways to work with the repo.
+
+### Fastest worker demo
+
+Use three terminals:
 
 Terminal 1:
+
 ```bash
 bin/live-demo-server
 ```
 
 Terminal 2:
+
 ```bash
 bin/client-worker --worker-index 1
 ```
 
 Terminal 3:
+
 ```bash
 bin/client-worker --worker-index 2
 ```
 
-That proves the server relay, worker runtime, assignment flow, structured contributions, and room progression.
+That exercises the core server relay, worker runtime, room assignment flow, and
+structured contribution path.
 
-## Recommended operator flow
+### Recommended operator flow
 
 Use the menu wrappers:
 
@@ -132,28 +327,21 @@ bin/hive-control
 bin/hive-clients
 ```
 
-Typical flow:
+Typical loop:
 
-1. Start workers in `bin/hive-clients`
-2. Create or run rooms from `bin/hive-control`
-3. Inspect targets, room timelines, context objects, and publication state
+1. Start a local server with `bin/server` or `bin/live-demo-server`.
+2. Launch workers from `bin/hive-clients`.
+3. Use `bin/hive-control` to inspect targets, create rooms, run rooms, inspect
+   timelines, and examine context state.
 
-Production equivalents:
+This is the best flow for development because it matches how operators will use
+the system while still exposing room internals.
 
-```bash
-bin/hive-control --prod
-bin/hive-clients --prod
-```
+### Human-first TUI flow
 
-## Human-first local flow with the TUI
+The first console consumer lives in `examples/jido_hive_termui_console`.
 
-The first TUI consumer lives at:
-- `examples/jido_hive_termui_console`
-
-The TUI depends on the local `term_ui` source tree and examples at:
-- `/home/home/p/g/n/term_ui`
-
-To run the TUI against an existing room:
+Run it against an existing room:
 
 ```bash
 cd examples/jido_hive_termui_console
@@ -161,96 +349,126 @@ mix run -- --room-id room-123 --participant-id alice
 ```
 
 Useful flags:
+
 - `--api-base-url` default: `http://127.0.0.1:4000/api`
 - `--participant-role` default: `collaborator`
 - `--poll-interval-ms` default: `500`
 
-TUI keys:
+Current keys:
+
 - `Enter`: submit chat
-- `Up/Down`: move selected context object
+- `Up` / `Down`: move the selected context object
 - `Ctrl+A`: accept the selected context object into a binding decision
+- `Ctrl+T`: contextual graph-authoring mode
+- `Ctrl+F`: explicit `references` mode
+- `Ctrl+D`: explicit `derives_from` mode
+- `Ctrl+S`: explicit `supports` mode
+- `Ctrl+X`: explicit `contradicts` mode
+- `Ctrl+N`: plain chat mode with no anchoring
 - `Ctrl+R`: refresh immediately
 - `Ctrl+Q`: quit
 
-## Transports and APIs
+The example depends on the local `term_ui` source tree when present at
+`/home/home/p/g/n/term_ui`, and otherwise falls back to the Hex release defined
+in the example package.
 
-### Server
+The context pane is still list-based, but it now surfaces enough graph state to
+be useful in practice:
 
-- Local API: `http://127.0.0.1:4000/api`
-- Local WebSocket: `ws://127.0.0.1:4000/socket/websocket`
-- Production API: `https://jido-hive-server-test.app.nsai.online/api`
-- Production WebSocket: `wss://jido-hive-server-test.app.nsai.online/socket/websocket`
+- per-object incoming and outgoing edge counts
+- stale markers for downstream invalidation
+- contradiction markers for conflicting context
 
-### Client local control API
+## Production and deployment
 
-A worker can expose a local inspection surface with `--control-port`.
+The current deployment target is the Coolify-managed server instance.
 
-Example:
+### Important deployment assumption
+
+Commit and push your changes before triggering deployment. The current
+`coolify_ex` path resolves the GitHub repository state. It does not deploy your
+local uncommitted working tree.
+
+### Deploy from the repo root
 
 ```bash
-bin/client-worker --worker-index 1 --control-port 4101
+scripts/deploy_coolify.sh
 ```
 
-Useful local routes:
-- `GET /api/runtime`
-- `GET /api/runtime/assignments`
-- `GET /api/runtime/events`
-- `GET /api/runtime/events?stream=true`
-- `POST /api/runtime/assignments/execute`
+The wrapper shells into `jido_hive_server` and runs:
 
-## Production smoke test
+```bash
+MIX_ENV=coolify mix coolify.deploy
+```
 
-1. Tail prod server logs:
+Useful follow-up commands:
 
 ```bash
 cd jido_hive_server
+MIX_ENV=coolify mix coolify.latest --project server
+MIX_ENV=coolify mix coolify.status --project server --latest
 MIX_ENV=coolify mix coolify.app_logs --project server --lines 200 --follow
 ```
 
-2. Start prod workers:
+### Production smoke flow
 
 ```bash
-cd /home/home/p/g/n/jido_hive
-bin/client-worker --prod --worker-index 1
-bin/client-worker --prod --worker-index 2
-```
-
-3. Wait for target registration:
-
-```bash
-setup/hive --prod wait-targets --count 2
-```
-
-4. Run the production flow:
-
-```bash
+setup/hive --prod doctor
+setup/hive --prod server-info
+setup/hive --prod targets
 setup/hive --prod live-demo --participant-count 2
 ```
 
-## Quality and development
+Useful production wrappers:
 
-Repo-wide quality gate:
+```bash
+bin/hive-control --prod
+bin/hive-clients --prod
+```
+
+## Quality, docs, and developer workflow
+
+Run the repo-wide quality gate from the root:
 
 ```bash
 mix ci
 ```
 
-Useful workspace commands:
+That expands to the workspace flow:
+
+1. `mix monorepo.deps.get`
+2. `mix monorepo.format --check-formatted`
+3. `mix monorepo.compile`
+4. `mix monorepo.test`
+5. `mix monorepo.credo --strict`
+6. `mix monorepo.dialyzer`
+7. `mix monorepo.docs`
+
+Useful shortcuts:
 
 ```bash
-mix monorepo.deps.get
-mix monorepo.format
-mix monorepo.compile
-mix monorepo.test
-mix monorepo.credo
-mix monorepo.dialyzer
-mix monorepo.docs
+mix mr.deps.get
+mix mr.format
+mix mr.compile
+mix mr.test
+mix mr.credo
+mix mr.dialyzer
+mix mr.docs
 ```
 
-## Read next
+A few repo norms matter:
 
-- [Server README](jido_hive_server/README.md)
-- [Client README](jido_hive_client/README.md)
-- [TUI example README](examples/jido_hive_termui_console/README.md)
+- prefer the root workspace commands when touching multiple packages
+- treat the server collaboration core as the canonical behavior layer
+- keep transport adapters thin
+- document changes in the relevant package README when the package surface
+  changes materially
+
+## Where to read next
+
+- [jido_hive_server README](jido_hive_server/README.md)
+- [jido_hive_client README](jido_hive_client/README.md)
+- [jido_hive_termui_console README](examples/jido_hive_termui_console/README.md)
+- [setup toolkit README](setup/README.md)
 
 License: MIT

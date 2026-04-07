@@ -42,4 +42,18 @@ defmodule JidoHiveTermuiConsole.ModelTest do
     assert model.input_buffer == "h"
     assert Model.clear_input(model).input_buffer == ""
   end
+
+  test "tracks graph relation authoring mode" do
+    model =
+      Model.new(
+        embedded: self(),
+        embedded_module: EmbeddedStub,
+        room_id: "room-1",
+        snapshot: EmbeddedStub.snapshot(self())
+      )
+
+    assert model.relation_mode == :contextual
+    assert Model.set_relation_mode(model, :supports).relation_mode == :supports
+    assert Model.set_relation_mode(model, :none).relation_mode == :none
+  end
 end

@@ -6,6 +6,10 @@ usage() {
 Usage:
   scripts/deploy_coolify.sh [--no-push] [--force] [--instant] [--skip-verify]
 
+Important:
+  Commit and push the work first. coolify_ex deploys the GitHub repo state,
+  not your local uncommitted working tree.
+
 Required environment variables:
   COOLIFY_BASE_URL   Example: https://coolify.example.com
   COOLIFY_TOKEN      Coolify API token with write access
