@@ -7,3 +7,4 @@ agent_session_manager/
 cli_subprocess_core/
 !bin/
 !bin/*
+.codex
