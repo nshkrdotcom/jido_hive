@@ -121,6 +121,8 @@ defmodule JidoHiveServer.Collaboration.DispatchPolicies.RoundRobin do
   end
 
   defp build_assignment(snapshot, participant, phase, slot_index) do
+    task_context = assignment_task_context(snapshot, phase)
+
     %{
       participant_id: Map.get(participant, :participant_id),
       participant_role: Map.get(participant, :participant_role),
@@ -135,8 +137,17 @@ defmodule JidoHiveServer.Collaboration.DispatchPolicies.RoundRobin do
         authority_mode: phase["authority_mode"] || "advisory_only",
         format: "json_object"
       },
-      context_view: ContextView.build(snapshot, participant),
+      task_context: task_context,
+      context_view: ContextView.build(snapshot, participant, task_context),
       plan_slot_index: slot_index
+    }
+  end
+
+  defp assignment_task_context(snapshot, phase) do
+    %{
+      mode: :assignment,
+      anchor_context_id: latest_context_id(snapshot),
+      objective: phase["objective"] || snapshot.brief
     }
   end
 
@@ -174,6 +185,16 @@ defmodule JidoHiveServer.Collaboration.DispatchPolicies.RoundRobin do
 
   defp failed_assignment?(snapshot) do
     Enum.any?(Map.get(snapshot, :assignments, []), &(&1.status == "failed"))
+  end
+
+  defp latest_context_id(snapshot) do
+    snapshot
+    |> Map.get(:context_objects, [])
+    |> Enum.max_by(&{Map.get(&1, :inserted_at), Map.get(&1, :context_id)}, fn -> nil end)
+    |> case do
+      nil -> nil
+      context_object -> Map.get(context_object, :context_id)
+    end
   end
 
   defp rotate(list, 0), do: list

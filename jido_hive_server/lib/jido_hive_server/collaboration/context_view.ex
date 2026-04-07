@@ -1,17 +1,21 @@
 defmodule JidoHiveServer.Collaboration.ContextView do
   @moduledoc false
 
-  alias JidoHiveServer.Collaboration.ContextQuery
+  alias JidoHiveServer.Collaboration.ContextManager
 
   @spec build(map(), map()) :: map()
-  def build(snapshot, participant) when is_map(snapshot) and is_map(participant) do
+  def build(snapshot, participant),
+    do: build(snapshot, participant, %{mode: :human_pane, anchor_context_id: nil})
+
+  @spec build(map(), map(), map()) :: map()
+  def build(snapshot, participant, task_context)
+      when is_map(snapshot) and is_map(participant) and is_map(task_context) do
     %{
       brief: Map.get(snapshot, :brief),
       rules: Map.get(snapshot, :rules, []),
       status: Map.get(snapshot, :status, "idle"),
       context_objects:
-        Map.get(snapshot, :context_objects, [])
-        |> ContextQuery.visible_context_objects(participant)
+        ContextManager.build_view(participant, task_context, snapshot)
         |> Enum.map(&normalize_context_object/1),
       recent_contributions:
         Map.get(snapshot, :contributions, [])
@@ -31,7 +35,8 @@ defmodule JidoHiveServer.Collaboration.ContextView do
       provenance: Map.get(context_object, :provenance, %{}),
       scope: Map.get(context_object, :scope, %{}),
       uncertainty: Map.get(context_object, :uncertainty, %{}),
-      relations: Map.get(context_object, :relations, [])
+      relations: Map.get(context_object, :relations, []),
+      derived: Map.get(context_object, :derived, %{})
     }
   end
 

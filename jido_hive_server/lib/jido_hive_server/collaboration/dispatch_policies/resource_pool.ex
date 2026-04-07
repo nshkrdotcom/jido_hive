@@ -64,30 +64,7 @@ defmodule JidoHiveServer.Collaboration.DispatchPolicies.ResourcePool do
         {:blocked, "publication_ready"}
 
       true ->
-        participant = Enum.min_by(participants, &assignment_count(snapshot, &1.participant_id))
-
-        phase =
-          Enum.at(phases(snapshot), rem(completed_slots(snapshot), length(phases(snapshot))))
-
-        {:ok,
-         %{
-           participant_id: Map.get(participant, :participant_id),
-           participant_role: Map.get(participant, :participant_role),
-           target_id: Map.get(participant, :target_id),
-           capability_id: Map.get(participant, :capability_id),
-           phase: phase["phase"],
-           objective: phase["objective"] || snapshot.brief,
-           contribution_contract: %{
-             allowed_contribution_types: phase["allowed_contribution_types"] || ["reasoning"],
-             allowed_object_types: phase["allowed_object_types"] || ["belief", "note"],
-             allowed_relation_types:
-               phase["allowed_relation_types"] || ["derives_from", "references"],
-             authority_mode: phase["authority_mode"] || "advisory_only",
-             format: "json_object"
-           },
-           context_view: ContextView.build(snapshot, participant),
-           plan_slot_index: completed_slots(snapshot)
-         }}
+        build_next_assignment(snapshot, participants)
     end
   end
 
@@ -163,5 +140,50 @@ defmodule JidoHiveServer.Collaboration.DispatchPolicies.ResourcePool do
 
   defp failed_assignment?(snapshot) do
     Enum.any?(Map.get(snapshot, :assignments, []), &(&1.status == "failed"))
+  end
+
+  defp latest_context_id(snapshot) do
+    snapshot
+    |> Map.get(:context_objects, [])
+    |> Enum.max_by(&{Map.get(&1, :inserted_at), Map.get(&1, :context_id)}, fn -> nil end)
+    |> case do
+      nil -> nil
+      context_object -> Map.get(context_object, :context_id)
+    end
+  end
+
+  defp build_next_assignment(snapshot, participants) do
+    participant = Enum.min_by(participants, &assignment_count(snapshot, &1.participant_id))
+    phase = Enum.at(phases(snapshot), rem(completed_slots(snapshot), length(phases(snapshot))))
+    task_context = assignment_task_context(snapshot, phase)
+
+    {:ok,
+     %{
+       participant_id: Map.get(participant, :participant_id),
+       participant_role: Map.get(participant, :participant_role),
+       target_id: Map.get(participant, :target_id),
+       capability_id: Map.get(participant, :capability_id),
+       phase: phase["phase"],
+       objective: phase["objective"] || snapshot.brief,
+       contribution_contract: %{
+         allowed_contribution_types: phase["allowed_contribution_types"] || ["reasoning"],
+         allowed_object_types: phase["allowed_object_types"] || ["belief", "note"],
+         allowed_relation_types:
+           phase["allowed_relation_types"] || ["derives_from", "references"],
+         authority_mode: phase["authority_mode"] || "advisory_only",
+         format: "json_object"
+       },
+       task_context: task_context,
+       context_view: ContextView.build(snapshot, participant, task_context),
+       plan_slot_index: completed_slots(snapshot)
+     }}
+  end
+
+  defp assignment_task_context(snapshot, phase) do
+    %{
+      mode: :assignment,
+      anchor_context_id: latest_context_id(snapshot),
+      objective: phase["objective"] || snapshot.brief
+    }
   end
 end

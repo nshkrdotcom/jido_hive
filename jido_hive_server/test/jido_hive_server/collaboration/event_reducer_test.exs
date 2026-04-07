@@ -66,7 +66,7 @@ defmodule JidoHiveServer.Collaboration.EventReducerTest do
                 data: %{},
                 scope: %{"read" => ["room"], "write" => ["author"]},
                 uncertainty: %{"status" => "provisional", "confidence" => 0.8},
-                relations: []
+                relations: [%{relation: "derives_from", target_id: "ctx-existing"}]
               }
             ],
             artifacts: [],
@@ -114,6 +114,21 @@ defmodule JidoHiveServer.Collaboration.EventReducerTest do
             opened_at: opened_at
           }
         ],
+        context_objects: [
+          %{
+            context_id: "ctx-existing",
+            object_type: "fact",
+            title: "Seed fact",
+            body: "Earlier fact.",
+            data: %{},
+            authored_by: %{participant_id: "worker-00"},
+            provenance: %{},
+            scope: %{read: ["room"], write: ["author"]},
+            uncertainty: %{status: "accepted", confidence: 1.0, rationale: nil},
+            relations: [],
+            inserted_at: opened_at
+          }
+        ],
         dispatch_state: %{applied_event_ids: [], completed_slots: 0, total_slots: 1}
       })
       |> EventReducer.apply_event(event)
@@ -122,8 +137,17 @@ defmodule JidoHiveServer.Collaboration.EventReducerTest do
     assert updated.dispatch_state.completed_slots == 1
     assert updated.status == "publication_ready"
     assert [%{contribution_id: "contrib-1"}] = updated.contributions
-    assert [%{context_id: "ctx-1", object_type: "belief"}] = updated.context_objects
+
+    assert [
+             %{context_id: "ctx-existing", object_type: "fact"},
+             %{context_id: "ctx-1", object_type: "belief"}
+           ] = updated.context_objects
+
     assert [%{assignment_id: "asn-1", status: "completed"}] = updated.assignments
+
+    assert updated.context_graph.outgoing["ctx-1"] |> Enum.map(&{&1.type, &1.to_id}) == [
+             {:derives_from, "ctx-existing"}
+           ]
   end
 
   test "assignment_abandoned marks the assignment as abandoned and advances dispatch state" do
@@ -166,6 +190,8 @@ defmodule JidoHiveServer.Collaboration.EventReducerTest do
         assignments: [],
         context_objects: [],
         contributions: [],
+        context_graph: %{outgoing: %{}, incoming: %{}},
+        context_annotations: %{},
         dispatch_policy_id: "round_robin/v2",
         dispatch_policy_config: %{},
         dispatch_state: %{applied_event_ids: [], completed_slots: 0, total_slots: 1},

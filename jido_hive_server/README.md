@@ -7,6 +7,8 @@ It owns:
 - dispatch policy execution
 - participant registration and relay presence
 - room event reduction into authoritative state
+- room-local context graph projection
+- room-local context manager decisions and derived events
 - HTTP APIs for operators and human participants
 - Phoenix channel transport for worker execution
 
@@ -15,6 +17,12 @@ If you are onboarding, start with the repo root [README](../README.md).
 ## What the server is responsible for
 
 The server is the source of truth for collaborative state. It accepts contributions, validates them, reduces them into room state, persists the result, and decides what assignment should happen next.
+
+It also now derives:
+- normalized graph edges from `ContextObject.relations`
+- participant-specific context views from room snapshots
+- contradiction and downstream-invalidation room events
+- stale annotations without mutating canonical stored context objects
 
 The server does not execute AI models itself. It coordinates participants that do.
 
@@ -51,6 +59,11 @@ Participants submit structured contributions. The reducer extracts context objec
 - `decision`
 
 The server stores provenance and room history so the current context can be inspected later through API projections.
+
+Current context inspection now includes:
+- graph adjacency on context-object detail
+- derived stale flags inline on affected objects
+- timeline entries for contradiction detection and downstream invalidation
 
 ## Server transports
 

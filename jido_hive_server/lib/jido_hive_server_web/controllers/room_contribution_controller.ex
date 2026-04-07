@@ -30,6 +30,7 @@ defmodule JidoHiveServerWeb.RoomContributionController do
   end
 
   defp normalize(%DateTime{} = value), do: DateTime.to_iso8601(value)
+  defp normalize(%_{} = value), do: value |> Map.from_struct() |> normalize()
 
   defp normalize(map) when is_map(map),
     do: Map.new(map, fn {key, value} -> {to_string(key), normalize(value)} end)

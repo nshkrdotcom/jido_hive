@@ -53,6 +53,8 @@ defmodule JidoHiveServer.Collaboration.Schema.RoomEvent do
   defp atom_value("room_created"), do: {:ok, :room_created}
   defp atom_value("assignment_opened"), do: {:ok, :assignment_opened}
   defp atom_value("contribution_recorded"), do: {:ok, :contribution_recorded}
+  defp atom_value("contradiction_detected"), do: {:ok, :contradiction_detected}
+  defp atom_value("downstream_invalidated"), do: {:ok, :downstream_invalidated}
   defp atom_value("assignment_abandoned"), do: {:ok, :assignment_abandoned}
   defp atom_value("runtime_state_changed"), do: {:ok, :runtime_state_changed}
   defp atom_value(_value), do: {:error, {:invalid_field, :type}}

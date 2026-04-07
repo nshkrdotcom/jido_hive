@@ -68,6 +68,17 @@ defmodule JidoHiveServer.Collaboration.RoomTimeline do
      contribution["status"] || "completed"}
   end
 
+  defp classify(:contradiction_detected, payload) do
+    {"context.contradiction.detected", "Contradiction detected",
+     "#{payload["left_context_id"]} contradicts #{payload["right_context_id"]}", payload,
+     "attention"}
+  end
+
+  defp classify(:downstream_invalidated, payload) do
+    {"context.downstream.invalidated", "Downstream invalidated",
+     Enum.join(payload["invalidated_context_ids"] || [], ", "), payload, "attention"}
+  end
+
   defp classify(:assignment_abandoned, payload) do
     {"assignment.abandoned", "Assignment abandoned", payload["reason"], payload, "abandoned"}
   end

@@ -8,7 +8,7 @@ defmodule JidoHiveServerWeb.RoomController do
       {:ok, snapshot} ->
         conn
         |> put_status(:created)
-        |> json(%{data: snapshot})
+        |> json(%{data: normalize(snapshot)})
 
       {:error, reason} ->
         render_error(conn, :unprocessable_entity, reason)
@@ -18,7 +18,7 @@ defmodule JidoHiveServerWeb.RoomController do
   def show(conn, %{"id" => room_id}) do
     case Collaboration.fetch_room(room_id) do
       {:ok, snapshot} ->
-        json(conn, %{data: snapshot})
+        json(conn, %{data: normalize(snapshot)})
 
       {:error, :room_not_found} ->
         render_error(conn, :not_found, :room_not_found)
@@ -31,7 +31,7 @@ defmodule JidoHiveServerWeb.RoomController do
   def run_first_slice(conn, %{"id" => room_id}) do
     case Collaboration.run_first_slice(room_id) do
       {:ok, snapshot} ->
-        json(conn, %{data: snapshot})
+        json(conn, %{data: normalize(snapshot)})
 
       {:error, :room_not_found} ->
         render_error(conn, :not_found, :room_not_found)
@@ -53,7 +53,7 @@ defmodule JidoHiveServerWeb.RoomController do
 
     case Collaboration.run_room(room_id, run_opts) do
       {:ok, snapshot} ->
-        json(conn, %{data: snapshot})
+        json(conn, %{data: normalize(snapshot)})
 
       {:error, :room_not_found} ->
         render_error(conn, :not_found, :room_not_found)
@@ -134,4 +134,13 @@ defmodule JidoHiveServerWeb.RoomController do
 
   defp maybe_put_max_assignments(opts, max_assignments),
     do: Keyword.put(opts, :max_assignments, max_assignments)
+
+  defp normalize(%DateTime{} = value), do: DateTime.to_iso8601(value)
+  defp normalize(%_{} = value), do: value |> Map.from_struct() |> normalize()
+
+  defp normalize(map) when is_map(map),
+    do: Map.new(map, fn {key, value} -> {to_string(key), normalize(value)} end)
+
+  defp normalize(list) when is_list(list), do: Enum.map(list, &normalize/1)
+  defp normalize(value), do: value
 end

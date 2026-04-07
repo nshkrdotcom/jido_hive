@@ -30,6 +30,16 @@ A room in `jido_hive` has five practical primitives:
 
 The server owns room state and dispatch policy. Clients never coordinate directly with each other.
 
+## New server-side context reasoning
+
+`jido_hive_server` now derives a room-local context graph from `ContextObject.relations` and applies a pure context manager over room snapshots.
+
+That currently adds:
+- append-time scope enforcement against room-owned participant scope
+- deterministic assignment and human-pane context views
+- contradiction detection and downstream invalidation room events
+- derived stale flags and graph adjacency on room context inspection surfaces
+
 ## Current collaboration surfaces
 
 ### 1. Worker execution plane
@@ -49,6 +59,11 @@ This is the path used by:
 - `setup/hive`
 - `bin/hive-control`
 - future web and API operators
+
+Those inspection surfaces now include:
+- context-object detail with graph adjacency
+- derived stale flags on affected context objects
+- timeline entries for contradiction detection and downstream invalidation
 
 ### 3. Embedded client runtime
 

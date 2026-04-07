@@ -4,6 +4,7 @@ defmodule JidoHiveServer.Persistence do
   import Ecto.Query
 
   alias JidoHiveServer.Collaboration.Schema.RoomEvent
+  alias JidoHiveServer.Collaboration.SnapshotProjection
 
   alias JidoHiveServer.Persistence.{
     PublicationRunRecord,
@@ -16,7 +17,10 @@ defmodule JidoHiveServer.Persistence do
 
   @spec persist_room_snapshot(map()) :: {:ok, map()} | {:error, Ecto.Changeset.t()}
   def persist_room_snapshot(%{room_id: room_id} = snapshot) when is_binary(room_id) do
-    attrs = %{room_id: room_id, snapshot: normalize(snapshot)}
+    attrs = %{
+      room_id: room_id,
+      snapshot: snapshot |> SnapshotProjection.strip_derived() |> normalize()
+    }
 
     %RoomSnapshotRecord{}
     |> RoomSnapshotRecord.changeset(attrs)
@@ -234,6 +238,7 @@ defmodule JidoHiveServer.Persistence do
       assignments: snapshot_list(snapshot, "assignments", &rehydrate_assignment/1),
       context_objects: snapshot_list(snapshot, "context_objects", &rehydrate_context_object/1),
       contributions: snapshot_list(snapshot, "contributions", &rehydrate_contribution/1),
+      context_config: rehydrate_context_config(snapshot_map(snapshot, "context_config", & &1)),
       dispatch_policy_id: snapshot_value(snapshot, "dispatch_policy_id", "round_robin/v2"),
       dispatch_policy_config: snapshot_map(snapshot, "dispatch_policy_config", & &1),
       dispatch_state: rehydrate_dispatch_state(snapshot_map(snapshot, "dispatch_state", & &1)),
@@ -242,6 +247,7 @@ defmodule JidoHiveServer.Persistence do
       next_assignment_seq: snapshot_value(snapshot, "next_assignment_seq", 1),
       next_contribution_seq: snapshot_value(snapshot, "next_contribution_seq", 1)
     }
+    |> SnapshotProjection.project()
   end
 
   defp rehydrate_target(snapshot) when is_map(snapshot) do
@@ -293,6 +299,7 @@ defmodule JidoHiveServer.Persistence do
       context_view: assignment["context_view"] || %{},
       plan_slot_index: assignment["plan_slot_index"] || 0,
       status: assignment["status"],
+      task_context: assignment["task_context"] || %{},
       opened_at: datetime_value(assignment["opened_at"]),
       completed_at: datetime_value(assignment["completed_at"]),
       session: assignment["session"] || %{},
@@ -323,6 +330,7 @@ defmodule JidoHiveServer.Persistence do
       assignment_id: contribution["assignment_id"],
       participant_id: contribution["participant_id"],
       participant_role: contribution["participant_role"],
+      participant_kind: contribution["participant_kind"],
       target_id: contribution["target_id"],
       capability_id: contribution["capability_id"],
       contribution_type: contribution["contribution_type"],
@@ -349,6 +357,27 @@ defmodule JidoHiveServer.Persistence do
       phases: dispatch_state["phases"] || []
     }
   end
+
+  defp rehydrate_context_config(context_config) do
+    participant_scopes =
+      context_config
+      |> Map.get("participant_scopes", %{})
+      |> Map.new(fn {participant_id, scope} ->
+        {participant_id,
+         %{
+           writable_types: rehydrate_dimension(scope["writable_types"]),
+           writable_node_ids: rehydrate_dimension(scope["writable_node_ids"]),
+           reference_hop_limit: scope["reference_hop_limit"] || 2
+         }}
+      end)
+
+    %{participant_scopes: participant_scopes}
+  end
+
+  defp rehydrate_dimension("all"), do: :all
+  defp rehydrate_dimension(nil), do: :all
+  defp rehydrate_dimension(values) when is_list(values), do: values
+  defp rehydrate_dimension(_values), do: :all
 
   defp rehydrate_scope(scope) do
     %{

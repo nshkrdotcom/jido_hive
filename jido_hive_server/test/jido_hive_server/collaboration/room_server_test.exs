@@ -98,5 +98,178 @@ defmodule JidoHiveServer.Collaboration.RoomServerTest do
     assert persisted.status == "publication_ready"
     assert length(persisted.assignments) == 1
     assert length(persisted.contributions) == 1
+    assert persisted.context_graph.outgoing["ctx-1"] == []
+  end
+
+  test "rejects contributions that violate room-owned participant scope" do
+    room =
+      start_supervised!(
+        {RoomServer,
+         room_id: "room-scope-1",
+         snapshot:
+           base_snapshot("room-scope-1")
+           |> Map.put(:participants, [
+             %{
+               participant_id: "worker-01",
+               participant_role: "analyst",
+               participant_kind: "runtime",
+               authority_level: "advisory",
+               target_id: "target-worker-01",
+               capability_id: "codex.exec.session",
+               metadata: %{}
+             }
+           ])
+           |> Map.put(:context_config, %{
+             participant_scopes: %{
+               "worker-01" => %{
+                 writable_types: ["note"],
+                 writable_node_ids: :all,
+                 reference_hop_limit: 2
+               }
+             }
+           })}
+      )
+
+    assert {:error, {:scope_violation, %{kind: :drafted_object_type, object_type: "decision"}}} =
+             RoomServer.record_contribution(room, %{
+               "contribution" => %{
+                 "room_id" => "room-scope-1",
+                 "participant_id" => "worker-01",
+                 "participant_role" => "analyst",
+                 "target_id" => "target-worker-01",
+                 "capability_id" => "codex.exec.session",
+                 "contribution_type" => "reasoning",
+                 "authority_level" => "advisory",
+                 "summary" => "Out of scope decision.",
+                 "context_objects" => [
+                   %{
+                     "object_type" => "decision",
+                     "title" => "Do not allow"
+                   }
+                 ]
+               }
+             })
+
+    assert {:ok, current} = RoomServer.snapshot(room)
+    assert current.contributions == []
+    assert Persistence.list_room_events("room-scope-1") == []
+  end
+
+  test "persists derived contradiction and downstream invalidation events after accepted appends" do
+    room =
+      start_supervised!(
+        {RoomServer,
+         room_id: "room-effects-1",
+         snapshot:
+           base_snapshot("room-effects-1")
+           |> Map.put(:context_objects, [
+             %{
+               context_id: "ctx-ancestor",
+               object_type: "fact",
+               title: "Original fact",
+               body: nil,
+               data: %{},
+               authored_by: %{participant_id: "worker-00", capability_id: "cap-a"},
+               provenance: %{authority_level: "binding"},
+               scope: %{read: ["room"], write: ["author"]},
+               uncertainty: %{status: "accepted", confidence: 1.0, rationale: nil},
+               relations: [],
+               inserted_at: DateTime.utc_now()
+             },
+             %{
+               context_id: "ctx-child",
+               object_type: "note",
+               title: "Downstream note",
+               body: nil,
+               data: %{},
+               authored_by: %{participant_id: "worker-00", capability_id: "cap-a"},
+               provenance: %{authority_level: "binding"},
+               scope: %{read: ["room"], write: ["author"]},
+               uncertainty: %{status: "accepted", confidence: 1.0, rationale: nil},
+               relations: [%{relation: "derives_from", target_id: "ctx-ancestor"}],
+               inserted_at: DateTime.utc_now()
+             },
+             %{
+               context_id: "ctx-decision",
+               object_type: "decision",
+               title: "Existing decision",
+               body: nil,
+               data: %{},
+               authored_by: %{participant_id: "worker-00", capability_id: "cap-a"},
+               provenance: %{authority_level: "binding"},
+               scope: %{read: ["room"], write: ["author"]},
+               uncertainty: %{status: "accepted", confidence: 1.0, rationale: nil},
+               relations: [],
+               inserted_at: DateTime.utc_now()
+             }
+           ])
+           |> Map.put(:next_context_seq, 1)}
+      )
+
+    assert {:ok, updated} =
+             RoomServer.record_contribution(room, %{
+               "contribution" => %{
+                 "room_id" => "room-effects-1",
+                 "participant_id" => "worker-01",
+                 "participant_role" => "analyst",
+                 "participant_kind" => "runtime",
+                 "contribution_type" => "reasoning",
+                 "authority_level" => "advisory",
+                 "summary" => "Supersede and contradict.",
+                 "context_objects" => [
+                   %{
+                     "object_type" => "fact",
+                     "title" => "Replacement fact",
+                     "relations" => [
+                       %{"relation" => "supersedes", "target_id" => "ctx-ancestor"}
+                     ]
+                   },
+                   %{
+                     "object_type" => "note",
+                     "title" => "Counterpoint",
+                     "relations" => [
+                       %{"relation" => "contradicts", "target_id" => "ctx-decision"}
+                     ]
+                   }
+                 ]
+               }
+             })
+
+    assert updated.context_annotations["ctx-child"] == %{
+             stale_ancestor: true,
+             stale_due_to_ids: ["ctx-ancestor"]
+           }
+
+    event_types = Persistence.list_room_events("room-effects-1") |> Enum.map(& &1.type)
+
+    assert event_types == [
+             :contribution_recorded,
+             :contradiction_detected,
+             :downstream_invalidated
+           ]
+  end
+
+  defp base_snapshot(room_id) do
+    %{
+      room_id: room_id,
+      session_id: "session-#{room_id}",
+      brief: "Design a participation substrate.",
+      rules: ["Return structured contributions only."],
+      status: "idle",
+      participants: [],
+      current_assignment: %{},
+      assignments: [],
+      context_objects: [],
+      contributions: [],
+      context_graph: %{outgoing: %{}, incoming: %{}},
+      context_annotations: %{},
+      context_config: %{participant_scopes: %{}},
+      dispatch_policy_id: "round_robin/v2",
+      dispatch_policy_config: %{},
+      dispatch_state: %{applied_event_ids: [], completed_slots: 0, total_slots: 1},
+      next_context_seq: 1,
+      next_assignment_seq: 1,
+      next_contribution_seq: 1
+    }
   end
 end

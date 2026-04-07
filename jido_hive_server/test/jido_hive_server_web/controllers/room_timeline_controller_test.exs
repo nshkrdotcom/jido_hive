@@ -78,6 +78,57 @@ defmodule JidoHiveServerWeb.RoomTimelineControllerTest do
     assert conn.resp_body =~ "\"kind\":\"room.created\""
   end
 
+  test "projects contradiction and invalidation events into timeline kinds", %{conn: conn} do
+    create_room(conn, "room-timeline-4")
+
+    contradiction_detected =
+      RoomEvent.new(%{
+        event_id: "evt-contradiction-room-timeline-4",
+        room_id: "room-timeline-4",
+        type: :contradiction_detected,
+        payload: %{
+          left_context_id: "ctx-2",
+          right_context_id: "ctx-1",
+          heterogeneity_class: :authority,
+          detected_from_context_ids: ["ctx-2"]
+        },
+        recorded_at: DateTime.utc_now()
+      })
+
+    downstream_invalidated =
+      RoomEvent.new(%{
+        event_id: "evt-invalidated-room-timeline-4",
+        room_id: "room-timeline-4",
+        type: :downstream_invalidated,
+        payload: %{
+          source_context_id: "ctx-3",
+          superseded_context_ids: ["ctx-1"],
+          invalidated_context_ids: ["ctx-2"],
+          reason: :supersedes
+        },
+        recorded_at: DateTime.utc_now()
+      })
+
+    assert {:ok, contradiction_event} = contradiction_detected
+    assert {:ok, invalidation_event} = downstream_invalidated
+
+    assert :ok =
+             Persistence.append_room_events("room-timeline-4", [
+               contradiction_event,
+               invalidation_event
+             ])
+
+    timeline_conn = get(recycle(conn), ~p"/api/rooms/room-timeline-4/timeline")
+
+    assert %{
+             "data" => [
+               %{"kind" => "room.created"},
+               %{"kind" => "context.contradiction.detected"},
+               %{"kind" => "context.downstream.invalidated"}
+             ]
+           } = json_response(timeline_conn, 200)
+  end
+
   defp create_room(conn, room_id) do
     create_conn =
       post(conn, ~p"/api/rooms", %{

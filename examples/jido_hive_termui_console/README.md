@@ -8,6 +8,8 @@ It is a terminal UI built with `term_ui` and intended to prove the human-first c
 - right pane: live structured context
 - bottom input: normal chat message entry
 
+The backing server surfaces now include derived stale-context flags plus contradiction and invalidation timeline events, so the example can pick those up without a separate server API expansion.
+
 The local `term_ui` framework source and examples used for this project live at:
 
 - `/home/home/p/g/n/term_ui`

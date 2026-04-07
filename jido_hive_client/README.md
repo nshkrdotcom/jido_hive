@@ -18,6 +18,8 @@ The client is the execution and participation boundary. It:
 - exposes a local runtime/control surface when needed
 - now also supports direct in-process embedding for human-facing tools
 
+The client did not need a parallel refactor for the context-graph MVP. It continues to consume the existing room and timeline surfaces while the server now provides richer derived context signals.
+
 ## Two client modes
 
 ### 1. Worker mode
@@ -140,6 +142,8 @@ The TUI renders:
 - a conversation pane from the room timeline
 - a context pane from the room context objects
 - a chat input that submits through the embedded runtime
+
+The server-side room timeline and context APIs now also carry contradiction, invalidation, and stale-context signals for future client rendering.
 
 ## Developer structure
 

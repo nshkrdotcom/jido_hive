@@ -1,9 +1,11 @@
 defmodule JidoHiveServer.Collaboration do
   @moduledoc false
 
+  alias JidoHiveServer.Collaboration.ContextGraph
   alias JidoHiveServer.Collaboration.DispatchPolicy.Registry, as: PolicyRegistry
   alias JidoHiveServer.Collaboration.RoomServer
   alias JidoHiveServer.Collaboration.Schema.{Assignment, Participant, RoomEvent}
+  alias JidoHiveServer.Collaboration.SnapshotProjection
   alias JidoHiveServer.Persistence
   alias JidoHiveServer.Publications
   alias JidoHiveServer.RemoteExec
@@ -14,6 +16,7 @@ defmodule JidoHiveServer.Collaboration do
     rules = list_value(attrs, "rules")
     dispatch_policy_id = value(attrs, "dispatch_policy_id") || "round_robin/v2"
     dispatch_policy_config = map_value(attrs, "dispatch_policy_config")
+    context_config = map_value(attrs, "context_config")
 
     with true <-
            (is_binary(room_id) and String.trim(room_id) != "") or {:error, :room_id_required},
@@ -29,6 +32,7 @@ defmodule JidoHiveServer.Collaboration do
              brief,
              rules,
              participants,
+             context_config,
              dispatch_policy_id,
              dispatch_policy_config,
              policy_module
@@ -120,7 +124,7 @@ defmodule JidoHiveServer.Collaboration do
 
   def list_context_objects(room_id) when is_binary(room_id) do
     with {:ok, snapshot} <- fetch_room(room_id) do
-      {:ok, snapshot.context_objects}
+      {:ok, Enum.map(snapshot.context_objects, &decorate_context_object(&1, snapshot, false))}
     end
   end
 
@@ -129,7 +133,7 @@ defmodule JidoHiveServer.Collaboration do
     with {:ok, snapshot} <- fetch_room(room_id),
          context_object when not is_nil(context_object) <-
            Enum.find(snapshot.context_objects, &(&1.context_id == context_id)) do
-      {:ok, context_object}
+      {:ok, decorate_context_object(context_object, snapshot, true)}
     else
       nil -> {:error, :context_object_not_found}
       {:error, _} = error -> error
@@ -302,6 +306,7 @@ defmodule JidoHiveServer.Collaboration do
          brief,
          rules,
          participants,
+         context_config,
          dispatch_policy_id,
          dispatch_policy_config,
          policy_module
@@ -317,6 +322,9 @@ defmodule JidoHiveServer.Collaboration do
       assignments: [],
       context_objects: [],
       contributions: [],
+      context_config: context_config,
+      context_graph: %{outgoing: %{}, incoming: %{}},
+      context_annotations: %{},
       dispatch_policy_id: dispatch_policy_id,
       dispatch_policy_config: dispatch_policy_config,
       dispatch_state: %{},
@@ -325,7 +333,9 @@ defmodule JidoHiveServer.Collaboration do
       next_contribution_seq: 1
     }
 
-    %{snapshot | dispatch_state: policy_module.init_state(snapshot)}
+    snapshot
+    |> Map.put(:dispatch_state, policy_module.init_state(snapshot))
+    |> SnapshotProjection.project()
   end
 
   defp load_room_snapshot(room_id) do
@@ -419,5 +429,19 @@ defmodule JidoHiveServer.Collaboration do
     String.to_existing_atom(key)
   rescue
     ArgumentError -> nil
+  end
+
+  defp decorate_context_object(context_object, snapshot, include_adjacency?) do
+    decorated =
+      case Map.get(snapshot, :context_annotations, %{})[context_object.context_id] do
+        nil -> context_object
+        annotation -> Map.put(context_object, :derived, annotation)
+      end
+
+    if include_adjacency? do
+      Map.put(decorated, :adjacency, ContextGraph.adjacency(snapshot, context_object.context_id))
+    else
+      decorated
+    end
   end
 end

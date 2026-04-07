@@ -145,6 +145,8 @@ compatible workers.
   contract
 - `create-room` and `live-demo` discover connected relay targets from
   `GET /api/targets`
+- room context inspection now includes graph adjacency and derived stale flags
+- room timeline inspection now includes contradiction and downstream-invalidation entries
 - the room locks the selected worker set at room creation time
 - the default turn budget is `participant_count * 3`
 - if a worker drops mid-room, the logical budget is preserved and the room keeps

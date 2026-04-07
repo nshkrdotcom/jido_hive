@@ -3,6 +3,7 @@ defmodule JidoHiveServer.Collaboration.EventReducer do
 
   alias JidoHiveServer.Collaboration.DispatchPolicy.Registry, as: PolicyRegistry
   alias JidoHiveServer.Collaboration.Schema.{Assignment, ContextObject, Contribution, RoomEvent}
+  alias JidoHiveServer.Collaboration.SnapshotProjection
 
   @max_tracked_event_ids 256
 
@@ -13,6 +14,7 @@ defmodule JidoHiveServer.Collaboration.EventReducer do
     else
       snapshot
       |> reduce_event(event)
+      |> SnapshotProjection.project()
       |> remember_event_id(event.event_id)
     end
   end
