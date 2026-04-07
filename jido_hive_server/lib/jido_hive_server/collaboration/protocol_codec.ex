@@ -151,6 +151,7 @@ defmodule JidoHiveServer.Collaboration.ProtocolCodec do
 
   defp normalize_value(value) when is_list(value), do: Enum.map(value, &normalize_value/1)
   defp normalize_value(value) when is_boolean(value), do: value
+  defp normalize_value(nil), do: nil
   defp normalize_value(value) when is_atom(value), do: Atom.to_string(value)
   defp normalize_value(value), do: value
 end

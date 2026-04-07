@@ -36,6 +36,26 @@ defmodule JidoHiveClient.RelayWorkerTest do
     def leave(channel), do: Agent.stop(channel)
   end
 
+  defmodule RejectingContributionChannelStub do
+    alias JidoHiveClient.RelayWorkerTest.ChannelStub
+
+    def join(socket, topic, payload) do
+      ChannelStub.join(socket, topic, payload)
+    end
+
+    def push(channel, "contribution.submit", payload) do
+      test_pid = Agent.get(channel, & &1.test_pid)
+      send(test_pid, {:channel_push, "contribution.submit", payload})
+      {:error, %{"error" => "scope_violation"}}
+    end
+
+    def push(channel, event, payload) do
+      ChannelStub.push(channel, event, payload)
+    end
+
+    def leave(channel), do: Agent.stop(channel)
+  end
+
   defp runtime_opts do
     [
       workspace_id: "workspace-1",
@@ -51,6 +71,10 @@ defmodule JidoHiveClient.RelayWorkerTest do
   end
 
   defp worker_opts(runtime, test_pid) do
+    worker_opts(runtime, test_pid, ChannelStub)
+  end
+
+  defp worker_opts(runtime, test_pid, channel_module) do
     [
       url: "ws://127.0.0.1:4000/socket/websocket",
       relay_topic: "relay:workspace-1",
@@ -64,7 +88,7 @@ defmodule JidoHiveClient.RelayWorkerTest do
       executor: {JidoHiveClient.Executor.Scripted, [provider: :codex, role: :analyst]},
       runtime: runtime,
       socket_module: SocketStub,
-      channel_module: ChannelStub,
+      channel_module: channel_module,
       socket_opts: [test_pid: test_pid]
     ]
   end
@@ -131,6 +155,20 @@ defmodule JidoHiveClient.RelayWorkerTest do
     assert_runtime_ready(runtime)
   end
 
+  test "marks the assignment failed when contribution submission is rejected", %{runtime: runtime} do
+    {:ok, worker} =
+      RelayWorker.start_link(worker_opts(runtime, self(), RejectingContributionChannelStub))
+
+    await_handshake()
+
+    send(worker, %Message{event: "assignment.start", payload: assignment_payload()})
+
+    assert_receive {:channel_push, "contribution.submit", _contribution}
+    assert Process.alive?(worker)
+
+    assert_assignment_failed(runtime)
+  end
+
   defp await_handshake do
     assert_receive {:channel_joined, "relay:workspace-1", %{"workspace_id" => "workspace-1"}}
     assert_receive {:channel_push, "relay.hello", _payload}
@@ -151,5 +189,22 @@ defmodule JidoHiveClient.RelayWorkerTest do
 
   defp assert_runtime_ready(_runtime, 0) do
     flunk("runtime did not return to :ready")
+  end
+
+  defp assert_assignment_failed(runtime, attempts \\ 10)
+
+  defp assert_assignment_failed(runtime, attempts) when attempts > 0 do
+    snapshot = Runtime.snapshot(runtime)
+
+    if snapshot.metrics.assignments_failed == 1 and snapshot.connection_status == :ready do
+      :ok
+    else
+      Process.sleep(20)
+      assert_assignment_failed(runtime, attempts - 1)
+    end
+  end
+
+  defp assert_assignment_failed(_runtime, 0) do
+    flunk("runtime did not record the rejected contribution as a failed assignment")
   end
 end

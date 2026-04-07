@@ -45,8 +45,17 @@ defmodule JidoHiveServerWeb.RelayChannel do
           "contribution room=#{contribution_payload["room_id"]} participant=#{contribution_payload["participant_id"]} type=#{contribution_payload["contribution_type"]} status=#{contribution_payload["status"]}"
         )
 
-        {:ok, _snapshot} = Collaboration.receive_contribution(contribution_payload)
-        {:reply, {:ok, %{"accepted" => true}}, socket}
+        case Collaboration.receive_contribution(contribution_payload) do
+          {:ok, _snapshot} ->
+            {:reply, {:ok, %{"accepted" => true}}, socket}
+
+          {:error, reason} ->
+            Logger.warning(
+              "contribution rejected room=#{contribution_payload["room_id"]} participant=#{contribution_payload["participant_id"]} reason=#{inspect(reason)}"
+            )
+
+            {:reply, {:error, error_payload(reason)}, socket}
+        end
 
       {:error, reason} ->
         {:reply, {:error, error_payload(reason)}, socket}

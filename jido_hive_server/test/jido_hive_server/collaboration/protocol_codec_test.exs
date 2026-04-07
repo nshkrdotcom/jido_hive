@@ -68,6 +68,40 @@ defmodule JidoHiveServer.Collaboration.ProtocolCodecTest do
              ProtocolCodec.decode_inbound("contribution.submit", payload, "workspace-1")
   end
 
+  test "preserves nil relation target ids in contribution payloads" do
+    payload = %{
+      "contribution" => %{
+        "room_id" => "room-1",
+        "assignment_id" => "asn-1",
+        "participant_id" => "participant-1",
+        "participant_role" => "analyst",
+        "contribution_type" => "reasoning",
+        "authority_level" => "advisory",
+        "summary" => "completed",
+        "context_objects" => [
+          %{
+            "object_type" => "note",
+            "title" => "Missing target",
+            "relations" => [%{"relation" => "derives_from", "target_id" => nil}]
+          }
+        ],
+        "execution" => %{"status" => "completed"}
+      }
+    }
+
+    assert {:ok, {:contribution_submit, contribution}} =
+             ProtocolCodec.decode_inbound("contribution.submit", payload, "workspace-1")
+
+    assert get_in(contribution, [
+             "context_objects",
+             Access.at(0),
+             "relations",
+             Access.at(0),
+             "target_id"
+           ]) ==
+             nil
+  end
+
   test "encodes outbound assignment.start payloads with schema_version and string keys" do
     assignment = %{
       assignment_id: "asn-1",

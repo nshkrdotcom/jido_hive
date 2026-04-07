@@ -99,6 +99,7 @@ defmodule JidoHiveServer.Collaboration.RoomServerTest do
     assert length(persisted.assignments) == 1
     assert length(persisted.contributions) == 1
     assert persisted.context_graph.outgoing["ctx-1"] == []
+    assert hd(persisted.context_objects).uncertainty.rationale == nil
   end
 
   test "rejects contributions that violate room-owned participant scope" do

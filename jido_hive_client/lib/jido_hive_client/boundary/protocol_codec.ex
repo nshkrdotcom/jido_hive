@@ -33,6 +33,7 @@ defmodule JidoHiveClient.Boundary.ProtocolCodec do
 
     result
     |> normalize_value()
+    |> sanitize_contribution()
     |> Map.put_new("schema_version", @contribution_submit_v1)
     |> Map.put_new("room_id", defaults["room_id"])
     |> Map.put_new("assignment_id", defaults["assignment_id"])
@@ -50,6 +51,7 @@ defmodule JidoHiveClient.Boundary.ProtocolCodec do
     |> Map.put_new("approvals", [])
     |> Map.put_new("execution", %{})
     |> Map.put_new("status", "completed")
+    |> sanitize_contribution()
     |> Map.update("execution", %{}, fn
       execution when is_map(execution) -> execution
       _other -> %{}
@@ -152,6 +154,14 @@ defmodule JidoHiveClient.Boundary.ProtocolCodec do
     Map.get(map, key) || Map.get(map, Atom.to_string(key))
   end
 
+  defp value(map, key) when is_map(map) and is_binary(key) do
+    Map.get(map, key) ||
+      case existing_atom_key(key) do
+        nil -> nil
+        atom_key -> Map.get(map, atom_key)
+      end
+  end
+
   defp normalize_value(value) when is_map(value) do
     value
     |> Enum.map(fn {key, nested_value} -> {to_string(key), normalize_value(nested_value)} end)
@@ -160,6 +170,7 @@ defmodule JidoHiveClient.Boundary.ProtocolCodec do
 
   defp normalize_value(value) when is_list(value), do: Enum.map(value, &normalize_value/1)
   defp normalize_value(value) when is_boolean(value), do: value
+  defp normalize_value(nil), do: nil
   defp normalize_value(value) when is_atom(value), do: Atom.to_string(value)
   defp normalize_value(value), do: value
 
@@ -167,5 +178,66 @@ defmodule JidoHiveClient.Boundary.ProtocolCodec do
     map
     |> Enum.reject(fn {_key, value} -> is_nil(value) end)
     |> Map.new()
+  end
+
+  defp sanitize_contribution(contribution) when is_map(contribution) do
+    Map.update(contribution, "context_objects", [], &sanitize_context_objects/1)
+  end
+
+  defp sanitize_context_objects(context_objects) when is_list(context_objects) do
+    Enum.map(context_objects, fn
+      %{} = context_object ->
+        Map.update(context_object, "relations", [], &sanitize_relations/1)
+
+      other ->
+        other
+    end)
+  end
+
+  defp sanitize_context_objects(_other), do: []
+
+  defp sanitize_relations(relations) when is_list(relations) do
+    relations
+    |> Enum.map(&normalize_relation/1)
+    |> Enum.reject(&is_nil/1)
+  end
+
+  defp sanitize_relations(_other), do: []
+
+  defp normalize_relation(relation) when is_map(relation) do
+    normalized_relation = %{
+      "relation" =>
+        value(relation, "relation") || value(relation, "relation_type") || value(relation, "type"),
+      "target_id" => value(relation, "target_id") || value(relation, "to")
+    }
+
+    if valid_relation?(normalized_relation) do
+      normalized_relation
+    else
+      nil
+    end
+  end
+
+  defp normalize_relation(_relation), do: nil
+
+  defp valid_relation?(%{"relation" => relation, "target_id" => target_id}) do
+    valid_relation_component?(relation) and valid_relation_component?(target_id)
+  end
+
+  defp valid_relation?(_relation), do: false
+
+  defp valid_relation_component?(value) when is_binary(value) do
+    case String.trim(value) do
+      "" -> false
+      normalized -> String.downcase(normalized) not in ["nil", "null"]
+    end
+  end
+
+  defp valid_relation_component?(_value), do: false
+
+  defp existing_atom_key(key) when is_binary(key) do
+    String.to_existing_atom(key)
+  rescue
+    ArgumentError -> nil
   end
 end

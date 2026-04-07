@@ -451,6 +451,7 @@ defmodule JidoHiveServer.Persistence do
   end
 
   defp normalize(list) when is_list(list), do: Enum.map(list, &normalize/1)
+  defp normalize(nil), do: nil
   defp normalize(value) when is_atom(value), do: Atom.to_string(value)
   defp normalize(%DateTime{} = value), do: DateTime.to_iso8601(value)
   defp normalize(value), do: value

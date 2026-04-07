@@ -80,6 +80,11 @@ defmodule JidoHiveClient.Runtime do
     GenServer.call(server, {:contribution_published, assignment, contribution})
   end
 
+  @spec assignment_failed(pid() | atom(), map(), term()) :: :ok
+  def assignment_failed(server \\ __MODULE__, assignment, reason) when is_map(assignment) do
+    GenServer.call(server, {:assignment_failed, assignment, reason})
+  end
+
   @spec run_assignment(pid() | atom(), map()) :: {:ok, map()} | {:error, term()}
   def run_assignment(server \\ __MODULE__, assignment) when is_map(assignment) do
     with {:ok, normalized_assignment} <- ProtocolCodec.normalize_assignment_start(assignment),

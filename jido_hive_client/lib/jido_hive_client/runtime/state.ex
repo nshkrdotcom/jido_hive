@@ -173,6 +173,7 @@ defmodule JidoHiveClient.Runtime.State do
   defp normalize_executor(module) when is_atom(module), do: {module, []}
   defp normalize_executor(_other), do: {JidoHiveClient.Executor.Session, [provider: :codex]}
 
+  defp normalize_atomish(nil), do: nil
   defp normalize_atomish(value) when is_atom(value), do: Atom.to_string(value)
   defp normalize_atomish(value) when is_binary(value), do: value
   defp normalize_atomish(_other), do: nil

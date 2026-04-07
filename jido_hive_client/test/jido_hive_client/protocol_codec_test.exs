@@ -101,4 +101,35 @@ defmodule JidoHiveClient.ProtocolCodecTest do
     assert contribution["assignment_id"] == "asn-1"
     assert contribution["context_objects"] == []
   end
+
+  test "preserves nil defaults and drops relations with missing targets" do
+    contribution =
+      ProtocolCodec.normalize_contribution(
+        %{
+          summary: "completed",
+          contribution_type: "reasoning",
+          context_objects: [
+            %{
+              object_type: "note",
+              title: "Forward-compatible provenance design",
+              relations: [
+                %{relation: "references", target_id: nil},
+                %{relation: "derives_from", target_id: "ctx-1"},
+                %{relation: "references", target_id: " "}
+              ]
+            }
+          ]
+        },
+        %{assignment_id: "asn-1", room_id: "room-1", target_id: nil}
+      )
+
+    assert contribution["target_id"] == nil
+
+    assert [
+             %{
+               "object_type" => "note",
+               "relations" => [%{"relation" => "derives_from", "target_id" => "ctx-1"}]
+             }
+           ] = contribution["context_objects"]
+  end
 end

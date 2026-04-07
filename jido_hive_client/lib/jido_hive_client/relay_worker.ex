@@ -128,20 +128,38 @@ defmodule JidoHiveClient.RelayWorker do
             normalized_assignment["participant_role"] || state.participant_role
           )
 
-        {:ok, _} = state.channel_module.push(channel, "contribution.submit", contribution)
-        Status.result_published(normalized_assignment, contribution)
+        case state.channel_module.push(channel, "contribution.submit", contribution) do
+          {:ok, _reply} ->
+            Status.result_published(normalized_assignment, contribution)
 
-        safe_runtime_record_contribution_published(
-          state.runtime,
-          normalized_assignment,
-          contribution
-        )
+            safe_runtime_record_contribution_published(
+              state.runtime,
+              normalized_assignment,
+              contribution
+            )
 
-        publish_signal("client.assignment.completed", %{
-          assignment_id: normalized_assignment["assignment_id"],
-          participant_id: state.participant_id,
-          target_id: state.target_id
-        })
+            publish_signal("client.assignment.completed", %{
+              assignment_id: normalized_assignment["assignment_id"],
+              participant_id: state.participant_id,
+              target_id: state.target_id
+            })
+
+          {:error, reason} ->
+            Status.execution_failed(normalized_assignment, {:contribution_submit_failed, reason})
+
+            safe_runtime_record_assignment_failed(
+              state.runtime,
+              normalized_assignment,
+              {:contribution_submit_failed, reason}
+            )
+
+            publish_signal("client.assignment.failed", %{
+              assignment_id: normalized_assignment["assignment_id"],
+              participant_id: state.participant_id,
+              target_id: state.target_id,
+              reason: inspect(reason)
+            })
+        end
 
         {:noreply, state}
 
@@ -320,6 +338,14 @@ defmodule JidoHiveClient.RelayWorker do
         safe_runtime_call(fn ->
           Runtime.record_contribution_published(runtime, assignment, contribution)
         end)
+    end
+
+    :ok
+  end
+
+  defp safe_runtime_record_assignment_failed(runtime, assignment, reason) do
+    if runtime_available?(runtime) do
+      _ = safe_runtime_call(fn -> Runtime.assignment_failed(runtime, assignment, reason) end)
     end
 
     :ok
