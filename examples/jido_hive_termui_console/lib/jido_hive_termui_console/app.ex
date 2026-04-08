@@ -500,10 +500,16 @@ defmodule JidoHiveTermuiConsole.App do
     next_state =
       case state.http_module.get(state.api_base_url, "/targets") do
         {:ok, %{"data" => targets}} ->
-          %{state | wizard_available_targets: targets}
+          state
+          |> Map.put(:wizard_available_targets, targets)
+          |> Map.put(:wizard_targets_state, :ready)
+          |> maybe_set_empty_target_warning(targets)
 
         {:error, reason} ->
-          Model.set_status(state, "Target fetch failed: #{inspect(reason)}", :error)
+          state
+          |> Map.put(:wizard_available_targets, [])
+          |> Map.put(:wizard_targets_state, :error)
+          |> Model.set_status("Target fetch failed: #{inspect(reason)}", :error)
       end
 
     {next_state, []}
@@ -513,10 +519,16 @@ defmodule JidoHiveTermuiConsole.App do
     next_state =
       case state.http_module.get(state.api_base_url, "/policies") do
         {:ok, %{"data" => policies}} ->
-          %{state | wizard_available_policies: policies}
+          state
+          |> Map.put(:wizard_available_policies, policies)
+          |> Map.put(:wizard_policies_state, :ready)
+          |> maybe_set_empty_policy_warning(policies)
 
         {:error, reason} ->
-          Model.set_status(state, "Policy fetch failed: #{inspect(reason)}", :error)
+          state
+          |> Map.put(:wizard_available_policies, [])
+          |> Map.put(:wizard_policies_state, :error)
+          |> Model.set_status("Policy fetch failed: #{inspect(reason)}", :error)
       end
 
     {next_state, []}
@@ -591,11 +603,18 @@ defmodule JidoHiveTermuiConsole.App do
   end
 
   defp wizard_submit_policy(state) do
-    case Enum.at(state.wizard_available_policies, state.wizard_cursor) do
-      nil ->
+    cond do
+      state.wizard_policies_state in [:idle, :loading] ->
         {Model.set_status(state, "Policies are still loading", :warn), []}
 
-      policy ->
+      state.wizard_policies_state == :error ->
+        {Model.set_status(state, "Policies failed to load", :error), []}
+
+      state.wizard_available_policies == [] ->
+        {Model.set_status(state, "No policies available on this server", :warn), []}
+
+      true ->
+        policy = Enum.at(state.wizard_available_policies, state.wizard_cursor)
         phases = get_in(policy, ["config", "phases"]) || get_in(policy, [:config, :phases]) || []
 
         next_fields =
@@ -610,10 +629,21 @@ defmodule JidoHiveTermuiConsole.App do
   defp wizard_submit_workers(state) do
     workers = Map.get(state.wizard_fields, "participants", [])
 
-    if workers == [] do
-      {Model.set_status(state, "Select at least one worker", :error), []}
-    else
-      {%{state | wizard_step: 4, wizard_cursor: 0}, []}
+    cond do
+      workers != [] ->
+        {%{state | wizard_step: 4, wizard_cursor: 0}, []}
+
+      state.wizard_targets_state in [:idle, :loading] ->
+        {Model.set_status(state, "Worker targets are still loading", :warn), []}
+
+      state.wizard_targets_state == :error ->
+        {Model.set_status(state, "Worker targets failed to load", :error), []}
+
+      state.wizard_available_targets == [] ->
+        {Model.set_status(state, "No worker targets available on this server", :warn), []}
+
+      true ->
+        {Model.set_status(state, "Select at least one worker", :error), []}
     end
   end
 
@@ -684,6 +714,16 @@ defmodule JidoHiveTermuiConsole.App do
       {Model.set_status(state, "Type a message before submitting", :warn), []}
     end
   end
+
+  defp maybe_set_empty_target_warning(state, []),
+    do: Model.set_status(state, "No worker targets available on this server", :warn)
+
+  defp maybe_set_empty_target_warning(state, _targets), do: state
+
+  defp maybe_set_empty_policy_warning(state, []),
+    do: Model.set_status(state, "No policies available on this server", :warn)
+
+  defp maybe_set_empty_policy_warning(state, _policies), do: state
 
   defp submit_room_chat(state, text) do
     submit_attrs = Identity.to_submit_attrs(identity(state), room_submit_attrs(text, state))

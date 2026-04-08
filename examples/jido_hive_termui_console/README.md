@@ -191,8 +191,8 @@ If `/targets` is empty:
 - the console can still start
 - you can still open a known room id with `--room-id`
 - the lobby may still be empty on first run
-- the wizard may not be able to create a runnable room because there are no
-  workers to assign
+- step 3 of the wizard will say `No worker targets available on this server.`
+- room creation cannot proceed until at least one worker target is registered
 
 If you need fresh worker targets on production, use the existing worker wrappers:
 
@@ -565,7 +565,8 @@ Example:
 ### The wizard opens but shows no workers
 
 The wizard reads live `/targets` data. If no compatible worker targets are
-connected, room creation cannot proceed. Start workers first:
+connected, step 3 now explicitly says `No worker targets available on this
+server.` Room creation cannot proceed in that state. Start workers first:
 
 ```bash
 bin/hive-clients

@@ -141,5 +141,9 @@ defmodule JidoHiveTermuiConsole.NavTest do
     _wizard = Nav.transition(state, :wizard, app_pid: self())
     assert_receive :fetch_wizard_targets
     assert_receive :fetch_wizard_policies
+
+    wizard = Nav.transition(state, :wizard, app_pid: self())
+    assert wizard.wizard_targets_state == :loading
+    assert wizard.wizard_policies_state == :loading
   end
 end

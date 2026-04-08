@@ -75,7 +75,26 @@ defmodule JidoHiveTermuiConsole.Screens.Wizard do
     ]
   end
 
-  defp step_lines(%{wizard_step: 1, wizard_available_policies: []}), do: ["Loading policies..."]
+  defp step_lines(%{wizard_step: 1, wizard_policies_state: state})
+       when state in [:idle, :loading] do
+    ["Loading policies..."]
+  end
+
+  defp step_lines(%{wizard_step: 1, wizard_policies_state: :error}) do
+    [
+      "Policy list could not be loaded.",
+      "",
+      "Check the status line or rerun with --debug."
+    ]
+  end
+
+  defp step_lines(%{wizard_step: 1, wizard_available_policies: []}) do
+    [
+      "No policies available on this server.",
+      "",
+      "Room creation requires at least one dispatch policy."
+    ]
+  end
 
   defp step_lines(%{wizard_step: 1} = state) do
     Enum.with_index(state.wizard_available_policies)
@@ -90,7 +109,27 @@ defmodule JidoHiveTermuiConsole.Screens.Wizard do
     |> Kernel.++(["", "Enter to continue."])
   end
 
-  defp step_lines(%{wizard_step: 3, wizard_available_targets: []}), do: ["Loading targets..."]
+  defp step_lines(%{wizard_step: 3, wizard_targets_state: state})
+       when state in [:idle, :loading] do
+    ["Loading targets..."]
+  end
+
+  defp step_lines(%{wizard_step: 3, wizard_targets_state: :error}) do
+    [
+      "Worker targets could not be loaded.",
+      "",
+      "Check the status line or rerun with --debug."
+    ]
+  end
+
+  defp step_lines(%{wizard_step: 3, wizard_available_targets: []}) do
+    [
+      "No worker targets available on this server.",
+      "",
+      "Room creation requires at least one registered worker target.",
+      "Use local mode with bin/hive-clients, or switch servers."
+    ]
+  end
 
   defp step_lines(%{wizard_step: 3} = state) do
     selected = Map.get(state.wizard_fields, "participants", [])

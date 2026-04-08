@@ -11,6 +11,8 @@ defmodule JidoHiveTermuiConsole.ModelTest do
     assert model.pane_focus == :context
     assert model.publish_bindings == %{}
     assert model.wizard_fields == %{}
+    assert model.wizard_targets_state == :idle
+    assert model.wizard_policies_state == :idle
     assert model.status_line == "Ready"
     assert model.poll_interval_ms == 500
   end

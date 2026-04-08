@@ -147,4 +147,43 @@ defmodule JidoHiveTermuiConsole.AppTest do
     assert render_text =~ "analysis"
     assert render_text =~ "Analyze the brief and add room-scoped context."
   end
+
+  test "wizard view distinguishes empty worker list from loading" do
+    loading_text =
+      Model.new([])
+      |> Map.put(:active_screen, :wizard)
+      |> Map.put(:wizard_step, 3)
+      |> Map.put(:wizard_targets_state, :loading)
+      |> App.view()
+      |> TestSupport.collect_text()
+      |> Enum.join("\n")
+
+    ready_text =
+      Model.new([])
+      |> Map.put(:active_screen, :wizard)
+      |> Map.put(:wizard_step, 3)
+      |> Map.put(:wizard_targets_state, :ready)
+      |> Map.put(:wizard_available_targets, [])
+      |> App.view()
+      |> TestSupport.collect_text()
+      |> Enum.join("\n")
+
+    assert loading_text =~ "Loading targets..."
+    assert ready_text =~ "No worker targets available on this server."
+    assert ready_text =~ "bin/hive-clients"
+  end
+
+  test "wizard submit workers reports no available targets" do
+    model =
+      Model.new([])
+      |> Map.put(:active_screen, :wizard)
+      |> Map.put(:wizard_step, 3)
+      |> Map.put(:wizard_targets_state, :ready)
+      |> Map.put(:wizard_available_targets, [])
+
+    {next_state, []} = App.update(:wizard_enter, model)
+
+    assert next_state.status_line == "No worker targets available on this server"
+    assert next_state.status_severity == :warn
+  end
 end

@@ -131,7 +131,9 @@ defmodule JidoHiveTermuiConsole.Nav do
       wizard_fields: %{},
       wizard_cursor: 0,
       wizard_available_targets: [],
-      wizard_available_policies: []
+      wizard_targets_state: :loading,
+      wizard_available_policies: [],
+      wizard_policies_state: :loading
     })
   end
 
