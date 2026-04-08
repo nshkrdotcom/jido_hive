@@ -36,7 +36,7 @@ defmodule JidoHiveServerWeb.ConnectorControllerTest do
                  "connector_id" => "github",
                  "subject" => "octocat",
                  "state" => "installing"
-                },
+               },
                "session_state" => %{"install_id" => session_install_id}
              }
            } = response

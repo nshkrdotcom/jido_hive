@@ -62,6 +62,30 @@ defmodule JidoHiveTermuiConsole.ProjectionTest do
     assert Enum.any?(rest, &String.contains?(&1, "[cycle"))
   end
 
+  test "detects conflicts from relations when adjacency is absent" do
+    snapshot = %{
+      "context_objects" => [
+        %{
+          "context_id" => "ctx-1",
+          "object_type" => "decision",
+          "title" => "Base claim",
+          "relations" => []
+        },
+        %{
+          "context_id" => "ctx-2",
+          "object_type" => "note",
+          "title" => "Contradicting note",
+          "relations" => [%{"relation" => "contradicts", "target_id" => "ctx-1"}]
+        }
+      ]
+    }
+
+    [base_claim, contradicting_note] = snapshot["context_objects"]
+
+    assert Projection.conflict?(base_claim, snapshot)
+    assert Projection.conflict?(contradicting_note, snapshot)
+  end
+
   test "renders lobby flags from room status" do
     rows = [
       %{

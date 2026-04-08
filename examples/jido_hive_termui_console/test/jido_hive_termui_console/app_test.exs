@@ -176,6 +176,33 @@ defmodule JidoHiveTermuiConsole.AppTest do
     assert Enum.all?(render_text, &String.contains?(&1, "Room room-1"))
   end
 
+  test "room enter opens conflict for incoming contradict relations", %{model: model} do
+    snapshot = %{
+      "timeline" => [],
+      "context_objects" => [
+        %{
+          "context_id" => "ctx-1",
+          "object_type" => "decision",
+          "title" => "Base claim"
+        },
+        %{
+          "context_id" => "ctx-2",
+          "object_type" => "note",
+          "title" => "Conflict probe",
+          "relations" => [%{"relation" => "contradicts", "target_id" => "ctx-1"}]
+        }
+      ]
+    }
+
+    state = %{model | snapshot: snapshot, input_buffer: ""}
+
+    {next_state, []} = App.update(:room_enter, state)
+
+    assert next_state.active_screen == :conflict
+    assert next_state.conflict_left["context_id"] == "ctx-1"
+    assert next_state.conflict_right["context_id"] == "ctx-2"
+  end
+
   test "room guide copy renders when help is visible", %{model: model} do
     render_text =
       model

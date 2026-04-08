@@ -22,6 +22,26 @@ defmodule JidoHiveTermuiConsole.NavTest do
        }}
     end
 
+    def get(_base, "/rooms/room-with-context") do
+      {:ok,
+       %{
+         "data" => %{
+           "room_id" => "room-with-context",
+           "status" => "running",
+           "timeline" => [%{"body" => "server timeline"}],
+           "context_objects" => [
+             %{
+               "context_id" => "ctx-1",
+               "object_type" => "note",
+               "title" => "server context"
+             }
+           ],
+           "dispatch_state" => %{"completed_slots" => 1, "total_slots" => 3},
+           "participants" => []
+         }
+       }}
+    end
+
     def get(_base, _path), do: {:error, :not_found}
   end
 
@@ -128,6 +148,49 @@ defmodule JidoHiveTermuiConsole.NavTest do
     refute_receive {:embedded_snapshot_called, _pid}, 50
   end
 
+  test "transition to room preserves fetched server context when embedded snapshot is empty" do
+    state =
+      Model.new(
+        api_base_url: "http://localhost:4000/api",
+        embedded_module: EmbeddedStub,
+        event_log_poller_module: PollerStub,
+        http_module: HTTPStub
+      )
+
+    next_state = Nav.transition(state, :room, room_id: "room-with-context", app_pid: self())
+
+    assert next_state.snapshot["timeline"] == [%{"body" => "server timeline"}]
+
+    assert next_state.snapshot["context_objects"] == [
+             %{
+               "context_id" => "ctx-1",
+               "object_type" => "note",
+               "title" => "server context"
+             }
+           ]
+  end
+
+  test "transition to missing room surfaces a direct error state" do
+    state =
+      Model.new(
+        api_base_url: "http://localhost:4000/api",
+        embedded_module: EmbeddedStub,
+        event_log_poller_module: PollerStub,
+        http_module: HTTPStub
+      )
+
+    next_state = Nav.transition(state, :room, room_id: "missing-room", app_pid: self())
+
+    assert next_state.active_screen == :room
+    assert next_state.embedded == nil
+    assert next_state.event_log_poller_pid == nil
+    assert next_state.help_visible == false
+    assert next_state.sync_error == true
+    assert next_state.status_severity == :error
+    assert next_state.status_line == "Room missing-room was not found on this server"
+    assert next_state.snapshot["status"] == "not_found"
+  end
+
   test "transition from room to lobby shuts down owned processes" do
     state =
       Model.new(
@@ -157,6 +220,34 @@ defmodule JidoHiveTermuiConsole.NavTest do
           }
         },
         %{"context_id" => "ctx-2", "object_type" => "belief", "title" => "right"}
+      ]
+    }
+
+    state =
+      Model.new(snapshot: snapshot)
+      |> Map.put(:active_screen, :room)
+
+    next_state = Nav.transition(state, :conflict)
+
+    assert next_state.active_screen == :conflict
+    assert next_state.conflict_left["context_id"] == "ctx-1"
+    assert next_state.conflict_right["context_id"] == "ctx-2"
+  end
+
+  test "transition to conflict resolves partner from relations when adjacency is absent" do
+    snapshot = %{
+      "context_objects" => [
+        %{
+          "context_id" => "ctx-1",
+          "object_type" => "decision",
+          "title" => "left"
+        },
+        %{
+          "context_id" => "ctx-2",
+          "object_type" => "note",
+          "title" => "right",
+          "relations" => [%{"relation" => "contradicts", "target_id" => "ctx-1"}]
+        }
       ]
     }
 

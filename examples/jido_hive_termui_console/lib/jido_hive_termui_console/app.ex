@@ -791,7 +791,7 @@ defmodule JidoHiveTermuiConsole.App do
   end
 
   defp enter_selected_context(state, selected) do
-    if Projection.conflict?(selected) do
+    if Projection.conflict?(selected, state.snapshot) do
       {Nav.transition(state, :conflict), []}
     else
       {Model.set_status(state, "Type a message before submitting", :warn), []}

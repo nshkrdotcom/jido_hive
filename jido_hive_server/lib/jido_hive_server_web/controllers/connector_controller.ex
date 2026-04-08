@@ -32,7 +32,14 @@ defmodule JidoHiveServerWeb.ConnectorController do
     "reason" => :reason
   }
 
-  @atom_value_keys [:auth_type, :environment, :flow_kind, :management_mode, :secret_source, :source]
+  @atom_value_keys [
+    :auth_type,
+    :environment,
+    :flow_kind,
+    :management_mode,
+    :secret_source,
+    :source
+  ]
   @datetime_value_keys [:now, :expires_at, :refresh_token_expires_at, :callback_received_at]
 
   def connections(conn, %{"connector_id" => connector_id} = params) do
@@ -99,7 +106,8 @@ defmodule JidoHiveServerWeb.ConnectorController do
     String.to_atom(value)
   end
 
-  defp normalize_install_value(key, value) when key in @datetime_value_keys and is_binary(value) do
+  defp normalize_install_value(key, value)
+       when key in @datetime_value_keys and is_binary(value) do
     case DateTime.from_iso8601(value) do
       {:ok, datetime, _offset} -> datetime
       {:error, _reason} -> value

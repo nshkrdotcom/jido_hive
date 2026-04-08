@@ -40,11 +40,11 @@ defmodule JidoHiveTermuiConsole.Projection do
   def context_lines(snapshot, selected_index, opts \\ []) do
     limit = Keyword.get(opts, :limit, 18)
     width = Keyword.get(opts, :width, 76)
+    objects = display_context_objects(snapshot)
 
-    snapshot
-    |> display_context_objects()
+    objects
     |> Enum.take(limit)
-    |> build_context_lines(selected_index, width)
+    |> build_context_lines(selected_index, width, objects)
     |> default_line("No structured context yet.")
   end
 
@@ -164,17 +164,12 @@ defmodule JidoHiveTermuiConsole.Projection do
     |> Enum.join("  ")
   end
 
-  @spec conflict?(map()) :: boolean()
-  def conflict?(object) do
-    adjacency = adjacency(object)
-    incoming = Map.get(adjacency, "incoming", [])
-    outgoing = Map.get(adjacency, "outgoing", [])
+  @spec conflict?(map(), map() | [map()] | nil) :: boolean()
+  def conflict?(object, scope \\ nil) do
+    {incoming, outgoing} = graph_edges(object, scope)
 
     object_type(object) == "contradiction" or
-      Enum.any?(incoming ++ outgoing, fn edge ->
-        type = Map.get(edge, "type") || Map.get(edge, :type)
-        type in ["contradicts", :contradicts]
-      end)
+      Enum.any?(incoming ++ outgoing, &contradiction_edge?/1)
   end
 
   @spec truncate(String.t(), pos_integer()) :: String.t()
@@ -186,7 +181,7 @@ defmodule JidoHiveTermuiConsole.Projection do
     end
   end
 
-  defp build_context_lines(objects, selected_index, width) do
+  defp build_context_lines(objects, selected_index, width, all_objects) do
     {lines, _last_type, _object_index} =
       Enum.reduce(objects, {[], nil, 0}, fn object, {lines, last_type, object_index} ->
         current_type = object_type(object)
@@ -203,7 +198,7 @@ defmodule JidoHiveTermuiConsole.Projection do
 
         content =
           object
-          |> label_with_graph_feedback(label)
+          |> label_with_graph_feedback(label, all_objects)
           |> truncate(width)
 
         {lines ++ heading_lines ++ ["#{prefix} #{content}"], current_type, object_index + 1}
@@ -212,16 +207,14 @@ defmodule JidoHiveTermuiConsole.Projection do
     lines
   end
 
-  defp label_with_graph_feedback(object, label) do
-    adjacency = adjacency(object)
-    incoming = Map.get(adjacency, "incoming", [])
-    outgoing = Map.get(adjacency, "outgoing", [])
+  defp label_with_graph_feedback(object, label, scope) do
+    {incoming, outgoing} = graph_edges(object, scope)
 
     suffixes =
       [
         "[in:#{length(incoming)} out:#{length(outgoing)}]",
         if(stale?(object), do: "[STALE]"),
-        if(conflict?(object), do: "[CONFLICT]"),
+        if(conflict?(object, scope), do: "[CONFLICT]"),
         if(binding?(object), do: "[BINDING]")
       ]
       |> Enum.reject(&is_nil/1)
@@ -457,12 +450,74 @@ defmodule JidoHiveTermuiConsole.Projection do
     Map.get(object, "object_type") || Map.get(object, :object_type) || "message"
   end
 
+  defp graph_edges(object, scope) do
+    if has_adjacency?(object) do
+      adjacency = adjacency(object)
+      incoming = Map.get(adjacency, "incoming", Map.get(adjacency, :incoming, []))
+      outgoing = Map.get(adjacency, "outgoing", Map.get(adjacency, :outgoing, []))
+      {incoming, outgoing}
+    else
+      object_id = context_id(object)
+      {incoming_relation_edges(scope, object_id), outgoing_relation_edges(object)}
+    end
+  end
+
+  defp has_adjacency?(object) do
+    Map.has_key?(object, "adjacency") or Map.has_key?(object, :adjacency)
+  end
+
+  defp incoming_relation_edges(scope, target_id) when is_binary(target_id) do
+    scope_objects(scope)
+    |> Enum.flat_map(fn object ->
+      source_id = context_id(object)
+
+      object
+      |> relations()
+      |> Enum.filter(&(relation_target_id(&1) == target_id))
+      |> Enum.map(fn relation ->
+        %{
+          "type" => relation_type(relation),
+          "from_id" => source_id,
+          "target_id" => target_id
+        }
+      end)
+    end)
+  end
+
+  defp incoming_relation_edges(_scope, _target_id), do: []
+
+  defp outgoing_relation_edges(object) do
+    Enum.map(relations(object), fn relation ->
+      %{
+        "type" => relation_type(relation),
+        "target_id" => relation_target_id(relation)
+      }
+    end)
+  end
+
+  defp contradiction_edge?(edge) do
+    relation_type(edge) in ["contradicts", :contradicts]
+  end
+
   defp adjacency(object) do
     Map.get(object, "adjacency") || Map.get(object, :adjacency) ||
       %{"incoming" => [], "outgoing" => []}
   end
 
+  defp relation_type(relation) do
+    Map.get(relation, "type") || Map.get(relation, :type) || Map.get(relation, "relation") ||
+      Map.get(relation, :relation)
+  end
+
+  defp relation_target_id(relation) do
+    Map.get(relation, "target_id") || Map.get(relation, :target_id)
+  end
+
   defp relations(object), do: Map.get(object, "relations") || Map.get(object, :relations) || []
+
+  defp scope_objects(%{} = snapshot), do: context_objects(snapshot)
+  defp scope_objects(objects) when is_list(objects), do: objects
+  defp scope_objects(_other), do: []
 
   defp timeline_entries(snapshot),
     do: Map.get(snapshot, "timeline") || Map.get(snapshot, :timeline) || []

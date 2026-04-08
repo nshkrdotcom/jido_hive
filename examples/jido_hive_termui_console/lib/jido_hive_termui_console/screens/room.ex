@@ -110,7 +110,10 @@ defmodule JidoHiveTermuiConsole.Screens.Room do
     stale_count = Enum.count(Map.get(state.snapshot, "context_objects", []), &stale?/1)
 
     conflict_count =
-      Enum.count(Map.get(state.snapshot, "context_objects", []), &Projection.conflict?/1)
+      Enum.count(
+        Map.get(state.snapshot, "context_objects", []),
+        &Projection.conflict?(&1, state.snapshot)
+      )
 
     text =
       "Mode: #{Atom.to_string(state.relation_mode)}  ·  Selected: #{selected_context_label(state)}  ·  [STALE:#{stale_count}] [CONFLICT:#{conflict_count}]  ·  Focus: #{state.pane_focus}"

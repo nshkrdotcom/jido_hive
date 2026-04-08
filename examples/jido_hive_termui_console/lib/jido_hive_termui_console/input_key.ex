@@ -29,7 +29,8 @@ defmodule JidoHiveTermuiConsole.InputKey do
       modifiers in [[], ["shift"]]
   end
 
-  defp normalize_printable(code, ["shift"]) when byte_size(code) == 1 and code >= "a" and code <= "z" do
+  defp normalize_printable(code, ["shift"])
+       when byte_size(code) == 1 and code >= "a" and code <= "z" do
     String.upcase(code)
   end
 

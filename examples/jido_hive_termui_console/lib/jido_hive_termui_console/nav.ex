@@ -68,6 +68,16 @@ defmodule JidoHiveTermuiConsole.Nav do
       room_processes_for_transition(state, room_id, app_pid, preserve_existing, opts)
 
     room_snapshot = fetch_room_snapshot(state, room_id, embedded_snapshot)
+    fetch_error = Map.get(room_snapshot, "last_error")
+
+    {embedded, poller_pid} =
+      if fetch_error == :not_found do
+        stop_poller(poller_pid)
+        stop_embedded(state.embedded_module, embedded)
+        {nil, nil}
+      else
+        {embedded, poller_pid}
+      end
 
     build_state(state, %{
       active_screen: :room,
@@ -75,8 +85,10 @@ defmodule JidoHiveTermuiConsole.Nav do
       embedded: embedded,
       event_log_poller_pid: poller_pid,
       snapshot: room_snapshot,
-      sync_error: not is_nil(Map.get(room_snapshot, "last_error")),
-      help_visible: auto_open_help?(state, :room)
+      sync_error: not is_nil(fetch_error),
+      help_visible: if(fetch_error, do: false, else: auto_open_help?(state, :room)),
+      status_line: room_fetch_status(room_id, fetch_error),
+      status_severity: room_fetch_severity(fetch_error)
     })
   end
 
@@ -254,22 +266,49 @@ defmodule JidoHiveTermuiConsole.Nav do
     room_snapshot
     |> Map.put(
       "timeline",
-      Map.get(embedded_snapshot, "timeline", Map.get(room_snapshot, "timeline", []))
+      prefer_list(Map.get(embedded_snapshot, "timeline"), Map.get(room_snapshot, "timeline", []))
     )
     |> Map.put(
       "context_objects",
-      Map.get(embedded_snapshot, "context_objects", Map.get(room_snapshot, "context_objects", []))
+      prefer_list(
+        Map.get(embedded_snapshot, "context_objects"),
+        Map.get(room_snapshot, "context_objects", [])
+      )
     )
-    |> Map.put("next_cursor", Map.get(embedded_snapshot, "next_cursor"))
-    |> Map.put("last_sync_at", Map.get(embedded_snapshot, "last_sync_at"))
-    |> Map.put("last_error", Map.get(embedded_snapshot, "last_error"))
-    |> Map.put("participant", Map.get(embedded_snapshot, "participant"))
-    |> Map.put("runtime", Map.get(embedded_snapshot, "runtime"))
+    |> Map.put(
+      "next_cursor",
+      prefer_value(
+        Map.get(embedded_snapshot, "next_cursor"),
+        Map.get(room_snapshot, "next_cursor")
+      )
+    )
+    |> Map.put(
+      "last_sync_at",
+      prefer_value(
+        Map.get(embedded_snapshot, "last_sync_at"),
+        Map.get(room_snapshot, "last_sync_at")
+      )
+    )
+    |> Map.put(
+      "last_error",
+      prefer_value(Map.get(embedded_snapshot, "last_error"), Map.get(room_snapshot, "last_error"))
+    )
+    |> Map.put(
+      "participant",
+      prefer_value(
+        Map.get(embedded_snapshot, "participant"),
+        Map.get(room_snapshot, "participant")
+      )
+    )
+    |> Map.put(
+      "runtime",
+      prefer_value(Map.get(embedded_snapshot, "runtime"), Map.get(room_snapshot, "runtime"))
+    )
   end
 
   defp find_conflict_partner(conflict_left, snapshot) do
     conflict_left
-    |> adjacency_edges()
+    |> conflict_edges(snapshot)
     |> Enum.find_value(&conflict_partner_from_edge(&1, snapshot)) ||
       %{
         "context_id" => "unknown",
@@ -278,11 +317,75 @@ defmodule JidoHiveTermuiConsole.Nav do
       }
   end
 
+  defp conflict_edges(object, snapshot) do
+    if has_adjacency?(object),
+      do: adjacency_edges(object),
+      else: relation_conflict_edges(object, snapshot)
+  end
+
+  defp has_adjacency?(object) do
+    Map.has_key?(object, "adjacency") or Map.has_key?(object, :adjacency)
+  end
+
   defp adjacency_edges(object) do
     adjacency = Map.get(object, "adjacency") || Map.get(object, :adjacency) || %{}
     outgoing = Map.get(adjacency, "outgoing") || Map.get(adjacency, :outgoing) || []
     incoming = Map.get(adjacency, "incoming") || Map.get(adjacency, :incoming) || []
     outgoing ++ incoming
+  end
+
+  defp relation_conflict_edges(object, snapshot) do
+    object_id = Map.get(object, "context_id") || Map.get(object, :context_id)
+
+    outgoing_relation_partner_edges(object) ++
+      incoming_relation_partner_edges(snapshot, object_id)
+  end
+
+  defp outgoing_relation_partner_edges(object) do
+    object
+    |> relation_list()
+    |> Enum.map(&partner_edge_from_outgoing_relation/1)
+  end
+
+  defp incoming_relation_partner_edges(snapshot, object_id) do
+    snapshot
+    |> context_objects()
+    |> Enum.flat_map(&incoming_partner_edges_for_candidate(&1, object_id))
+  end
+
+  defp incoming_partner_edges_for_candidate(candidate, object_id) do
+    source_id = Map.get(candidate, "context_id") || Map.get(candidate, :context_id)
+
+    candidate
+    |> relation_list()
+    |> Enum.filter(&(relation_target_id(&1) == object_id))
+    |> Enum.map(&partner_edge_from_incoming_relation(&1, source_id))
+  end
+
+  defp partner_edge_from_outgoing_relation(relation) do
+    %{
+      "type" => relation_type(relation),
+      "partner_id" => relation_target_id(relation)
+    }
+  end
+
+  defp partner_edge_from_incoming_relation(relation, source_id) do
+    %{
+      "type" => relation_type(relation),
+      "partner_id" => source_id
+    }
+  end
+
+  defp relation_list(object) do
+    Map.get(object, "relations", Map.get(object, :relations, []))
+  end
+
+  defp relation_type(relation) do
+    Map.get(relation, "relation") || Map.get(relation, :relation)
+  end
+
+  defp relation_target_id(relation) do
+    Map.get(relation, "target_id") || Map.get(relation, :target_id)
   end
 
   defp context_objects(snapshot),
@@ -293,6 +396,12 @@ defmodule JidoHiveTermuiConsole.Nav do
   end
 
   defp stringify_keys(_other), do: %{}
+
+  defp prefer_list(value, fallback) when value in [nil, []], do: fallback
+  defp prefer_list(value, _fallback), do: value
+
+  defp prefer_value(nil, fallback), do: fallback
+  defp prefer_value(value, _fallback), do: value
 
   defp room_processes_for_transition(state, room_id, app_pid, true, _opts)
        when state.room_id == room_id and not is_nil(state.embedded) do
@@ -309,9 +418,36 @@ defmodule JidoHiveTermuiConsole.Nav do
 
   defp fetch_room_snapshot(state, room_id, embedded_snapshot) do
     case state.http_module.get(state.api_base_url, "/rooms/#{URI.encode_www_form(room_id)}") do
-      {:ok, %{"data" => snapshot}} -> merge_room_snapshot(snapshot, embedded_snapshot)
-      {:error, _reason} -> merge_room_snapshot(%{}, embedded_snapshot)
+      {:ok, %{"data" => snapshot}} ->
+        merge_room_snapshot(snapshot, embedded_snapshot)
+
+      {:error, reason} ->
+        missing_or_unavailable_room_snapshot(room_id, reason)
+        |> merge_room_snapshot(embedded_metadata_snapshot(embedded_snapshot))
     end
+  end
+
+  defp room_fetch_status(room_id, :not_found),
+    do: "Room #{room_id} was not found on this server"
+
+  defp room_fetch_status(_room_id, fetch_error) when not is_nil(fetch_error),
+    do: "Room could not be loaded: #{inspect(fetch_error)}"
+
+  defp room_fetch_status(_room_id, _fetch_error), do: "Ready"
+
+  defp room_fetch_severity(fetch_error) when is_nil(fetch_error), do: :info
+  defp room_fetch_severity(_fetch_error), do: :error
+
+  defp missing_or_unavailable_room_snapshot(room_id, reason) do
+    %{
+      "room_id" => room_id,
+      "status" => if(reason == :not_found, do: "not_found", else: "unavailable"),
+      "context_objects" => [],
+      "timeline" => [],
+      "participants" => [],
+      "dispatch_state" => %{"completed_slots" => 0, "total_slots" => 0},
+      "last_error" => reason
+    }
   end
 
   defp conflict_partner_from_edge(edge, snapshot) do
@@ -329,7 +465,8 @@ defmodule JidoHiveTermuiConsole.Nav do
   end
 
   defp conflict_target_id(edge) do
-    Map.get(edge, "target_id") || Map.get(edge, :target_id) ||
+    Map.get(edge, "partner_id") || Map.get(edge, :partner_id) ||
+      Map.get(edge, "target_id") || Map.get(edge, :target_id) ||
       Map.get(edge, "from_id") || Map.get(edge, :from_id)
   end
 
