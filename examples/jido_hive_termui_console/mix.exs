@@ -10,7 +10,7 @@ defmodule JidoHiveTermuiConsole.MixProject do
       start_permanent: Mix.env() == :prod,
       escript: [
         app: nil,
-        include_priv_for: [:tzdata],
+        include_priv_for: [:tzdata, :ex_ratatui],
         main_module: JidoHiveTermuiConsole.CLI,
         name: "hive"
       ],
@@ -38,23 +38,13 @@ defmodule JidoHiveTermuiConsole.MixProject do
 
   defp deps do
     [
-      term_ui_dependency(),
+      {:ex_ratatui, "~> 0.5"},
       {:jason, "~> 1.4"},
       {:jido_hive_client, path: "../../jido_hive_client"},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
       {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false},
       {:ex_doc, "~> 0.40", only: [:dev, :test], runtime: false}
     ]
-  end
-
-  defp term_ui_dependency do
-    local_path = Path.expand("../../../term_ui", __DIR__)
-
-    if File.dir?(local_path) do
-      {:term_ui, path: local_path}
-    else
-      {:term_ui, github: "pcharbon70/term_ui", ref: "b707a69a4e68539f8cd81942ce41d118a6744d2d"}
-    end
   end
 
   defp aliases do

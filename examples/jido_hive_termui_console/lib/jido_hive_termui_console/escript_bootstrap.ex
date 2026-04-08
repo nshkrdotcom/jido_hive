@@ -3,13 +3,17 @@ defmodule JidoHiveTermuiConsole.EscriptBootstrap do
 
   alias JidoHiveTermuiConsole.Config
 
+  @ex_ratatui_archive_prefix "ex_ratatui/"
   @release_ets_prefix "tzdata/priv/release_ets/"
   @tzdata_app :tzdata
   @zip_name ~c"escript.zip"
 
   @spec start_console_dependencies() :: :ok | {:error, term()}
   def start_console_dependencies do
-    configure_tzdata()
+    case configure_tzdata() do
+      :ok -> configure_ex_ratatui()
+      {:error, _reason} = error -> error
+    end
   end
 
   defp configure_tzdata do
@@ -28,11 +32,38 @@ defmodule JidoHiveTermuiConsole.EscriptBootstrap do
   end
 
   defp seed_tzdata_release_files(release_dir) do
-    with :error <- copy_release_files_from_installed_priv(release_dir),
-         :error <- copy_release_files_from_escript_archive(release_dir) do
-      {:error, {:missing_tzdata_release_files, release_dir}}
+    case copy_release_files_from_installed_priv(release_dir) do
+      :ok ->
+        :ok
+
+      :error ->
+        case copy_release_files_from_escript_archive(release_dir) do
+          :ok ->
+            :ok
+
+          {:error, :missing_release_ets_in_archive} ->
+            {:error, {:missing_tzdata_release_files, release_dir}}
+
+          {:error, _reason} = error ->
+            error
+        end
+    end
+  end
+
+  defp configure_ex_ratatui do
+    ex_ratatui_dir = ex_ratatui_app_dir()
+    ebin_dir = Path.join(ex_ratatui_dir, "ebin")
+    native_dir = Path.join(ex_ratatui_dir, "priv/native")
+
+    with {:ok, archive} <- escript_archive(),
+         :ok <- extract_ex_ratatui_app_from_archive(archive, ex_ratatui_dir),
+         true <- File.dir?(ebin_dir),
+         true <- File.dir?(native_dir),
+         :ok <- add_code_path(ebin_dir) do
+      :ok
     else
-      :ok -> :ok
+      {:error, :not_running_from_escript} -> :ok
+      false -> {:error, {:missing_ex_ratatui_escript_files, ex_ratatui_dir}}
       {:error, _reason} = error -> error
     end
   end
@@ -97,8 +128,53 @@ defmodule JidoHiveTermuiConsole.EscriptBootstrap do
     )
   end
 
+  defp extract_ex_ratatui_app_from_archive(archive, ex_ratatui_dir) do
+    File.rm_rf!(ex_ratatui_dir)
+    File.mkdir_p!(ex_ratatui_dir)
+
+    with {:ok, copied} <-
+           copy_prefixed_archive_files_to_dir(archive, @ex_ratatui_archive_prefix, ex_ratatui_dir),
+         true <- copied > 0 do
+      :ok
+    else
+      false -> {:error, :missing_ex_ratatui_files_in_archive}
+      {:error, _reason} = error -> error
+    end
+  end
+
+  defp copy_prefixed_archive_files_to_dir(archive, prefix, target_dir) do
+    :zip.foldl(
+      fn name, _get_info, get_bin, copied ->
+        archive_path = List.to_string(name)
+
+        if String.starts_with?(archive_path, prefix) do
+          relative_path = String.replace_prefix(archive_path, prefix, "")
+          target_path = Path.join(target_dir, relative_path)
+          File.mkdir_p!(Path.dirname(target_path))
+          File.write!(target_path, get_bin.())
+          copied + 1
+        else
+          copied
+        end
+      end,
+      0,
+      {@zip_name, archive}
+    )
+  end
+
+  defp add_code_path(path) do
+    case :code.add_patha(String.to_charlist(path)) do
+      true -> :ok
+      {:error, reason} -> {:error, {:code_path_add_failed, path, reason}}
+    end
+  end
+
   defp tzdata_data_dir do
     Path.join(Config.config_dir(), "tzdata")
+  end
+
+  defp ex_ratatui_app_dir do
+    Path.join(Config.config_dir(), "escript_apps/ex_ratatui")
   end
 
   defp tzdata_release_files_present?(release_dir) do

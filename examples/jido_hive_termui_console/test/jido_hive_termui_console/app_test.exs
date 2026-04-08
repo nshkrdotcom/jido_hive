@@ -1,6 +1,7 @@
 defmodule JidoHiveTermuiConsole.AppTest do
   use ExUnit.Case, async: false
 
+  alias ExRatatui.Event.Key
   alias JidoHiveTermuiConsole.{App, Model, TestSupport}
 
   defmodule HTTPStub do
@@ -175,12 +176,36 @@ defmodule JidoHiveTermuiConsole.AppTest do
     assert Enum.all?(render_text, &String.contains?(&1, "Room room-1"))
   end
 
+  test "room guide copy renders when help is visible", %{model: model} do
+    render_text =
+      model
+      |> Map.put(:help_visible, true)
+      |> App.view()
+      |> TestSupport.collect_text()
+      |> Enum.join("\n")
+
+    assert render_text =~ "Room Guide"
+    assert render_text =~ "including q"
+    assert render_text =~ "edit the draft"
+    assert render_text =~ "Ctrl+Q quits"
+  end
+
+  test "room guide swallows normal typing until dismissed", %{model: model} do
+    state = %{model | help_visible: true}
+
+    assert App.event_to_msg(%Key{code: "q", kind: "press"}, state) == :ignore
+
+    assert App.event_to_msg(%Key{code: "g", kind: "press", modifiers: ["ctrl"]}, state) ==
+             {:msg, :dismiss_help}
+  end
+
   test "event log updates append formatted lines", %{model: model} do
-    {next_state, []} =
-      App.handle_info(
-        {:event_log_update, [%{"kind" => "contribution.recorded", "cursor" => "c1"}], "c1"},
-        model
-      )
+    assert {:noreply, next_state} =
+             App.handle_info(
+               {:event_log_update, [%{"kind" => "contribution.recorded", "cursor" => "c1"}],
+                "c1"},
+               model
+             )
 
     assert next_state.event_log_cursor == "c1"
     assert next_state.event_log_lines == ["contribution.recorded"]

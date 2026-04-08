@@ -15,6 +15,8 @@ defmodule JidoHiveTermuiConsole.ModelTest do
     assert model.wizard_policies_state == :idle
     assert model.status_line == "Ready"
     assert model.poll_interval_ms == 500
+    assert model.help_visible == false
+    assert model.help_seen == MapSet.new()
   end
 
   test "selection and relation mode helpers remain bounded" do
@@ -30,5 +32,13 @@ defmodule JidoHiveTermuiConsole.ModelTest do
     assert Model.move_selection(model, 10).selected_context_index == 1
     assert Model.move_selection(model, -10).selected_context_index == 0
     assert Model.set_relation_mode(model, :resolves).relation_mode == :resolves
+  end
+
+  test "dismiss_help marks the current screen as seen" do
+    model = Model.new([]) |> Map.put(:active_screen, :room) |> Map.put(:help_visible, true)
+    next = Model.dismiss_help(model)
+
+    assert next.help_visible == false
+    assert MapSet.member?(next.help_seen, :room)
   end
 end

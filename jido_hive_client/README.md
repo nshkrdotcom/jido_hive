@@ -428,4 +428,4 @@ or multiple packages.
 
 - [Root README](../README.md)
 - [Server README](../jido_hive_server/README.md)
-- [TermUI example README](../examples/jido_hive_termui_console/README.md)
+- [Console example README](../examples/jido_hive_termui_console/README.md)

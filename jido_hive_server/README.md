@@ -449,5 +449,5 @@ coherent.
 
 - [Root README](../README.md)
 - [Client README](../jido_hive_client/README.md)
-- [TermUI example README](../examples/jido_hive_termui_console/README.md)
+- [Console example README](../examples/jido_hive_termui_console/README.md)
 - [Setup toolkit README](../setup/README.md)

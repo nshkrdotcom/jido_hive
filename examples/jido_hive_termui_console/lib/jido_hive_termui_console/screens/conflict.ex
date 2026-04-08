@@ -1,63 +1,136 @@
 defmodule JidoHiveTermuiConsole.Screens.Conflict do
   @moduledoc false
 
-  import TermUI.Component.Helpers
+  alias ExRatatui.Event
+  alias ExRatatui.Layout
+  alias ExRatatui.Style
+  alias ExRatatui.Widgets.{Paragraph, TextInput}
+  alias JidoHiveTermuiConsole.{Model, Projection, ScreenUI}
 
-  alias JidoHiveTermuiConsole.{Model, Projection}
-  alias TermUI.Event
-  alias TermUI.Renderer.Style
+  @input_keys ["backspace", "delete", "left", "right", "home", "end"]
 
   @spec event_to_msg(Event.t(), Model.t()) :: term() | nil
-  def event_to_msg(%Event.Key{key: :enter}, _state), do: :submit_conflict_resolution
-  def event_to_msg(%Event.Key{key: :backspace}, _state), do: :conflict_backspace
-  def event_to_msg(%Event.Key{key: :escape}, _state), do: :cancel_conflict
+  def event_to_msg(%Event.Key{code: "enter"}, _state), do: :submit_conflict_resolution
+  def event_to_msg(%Event.Key{code: "esc"}, _state), do: :cancel_conflict
+  def event_to_msg(%Event.Key{code: "q", modifiers: ["ctrl"]}, _state), do: :quit
+  def event_to_msg(%Event.Key{code: "a"}, _state), do: {:prefill_conflict, :left}
+  def event_to_msg(%Event.Key{code: "b"}, _state), do: {:prefill_conflict, :right}
+  def event_to_msg(%Event.Key{code: "s"}, _state), do: :dispatch_ai_synthesis
 
-  def event_to_msg(%Event.Key{char: "q", modifiers: modifiers}, _state) when is_list(modifiers) do
-    if Enum.member?(modifiers, :ctrl), do: :quit, else: nil
-  end
+  def event_to_msg(%Event.Key{code: code, modifiers: []}, _state) when code in @input_keys,
+    do: {:conflict_input_key, code}
 
-  def event_to_msg(%Event.Key{char: "a"}, _state), do: {:prefill_conflict, :left}
-  def event_to_msg(%Event.Key{char: "b"}, _state), do: {:prefill_conflict, :right}
-  def event_to_msg(%Event.Key{char: "s"}, _state), do: :dispatch_ai_synthesis
-
-  def event_to_msg(%Event.Key{char: char}, _state) when is_binary(char) and char != "",
-    do: {:conflict_append, char}
+  def event_to_msg(%Event.Key{code: code, modifiers: []}, _state)
+      when is_binary(code) and byte_size(code) > 0, do: {:conflict_input_key, code}
 
   def event_to_msg(_event, _state), do: nil
 
-  @spec render(Model.t()) :: term()
-  def render(%Model{} = state) do
-    {left_lines, right_lines} =
-      Projection.conflict_sides(state.conflict_left || %{}, state.conflict_right || %{})
+  @spec render(Model.t(), %{width: pos_integer(), height: pos_integer()}) :: [{term(), term()}]
+  def render(%Model{} = state, frame) do
+    area = ScreenUI.root_area(frame)
 
-    pane_width = max(div(state.screen_width - 6, 2), 32)
+    [header_area, meta_area, body_area, input_area, footer_area, status_area] =
+      Layout.split(area, :vertical, [
+        {:length, 2},
+        {:length, 1},
+        {:min, 10},
+        {:length, 3},
+        {:length, 2},
+        {:length, 1}
+      ])
 
-    stack(:vertical, [
-      text("CONFLICT RESOLUTION", header_style()),
-      stack(:horizontal, [
-        render_pane(left_lines, pane_width),
-        render_pane(right_lines, pane_width)
-      ]),
-      render_pane(
-        [
-          "Your resolution — authority: #{String.upcase(state.authority_level)}",
-          "> " <> state.conflict_input_buf,
-          "",
-          "(a) accept left  ·  (b) accept right  ·  (s) dispatch AI synthesis",
-          "Enter to submit  ·  ESC to cancel"
-        ],
-        max(state.screen_width - 2, 40)
-      ),
-      text(state.status_line, status_style(state))
-    ])
+    [left_area, right_area] =
+      Layout.split(body_area, :horizontal, [{:percentage, 50}, {:percentage, 50}])
+
+    widgets = [
+      {header_widget(), header_area},
+      {meta_widget(), meta_area},
+      {side_widget("Left Side", elem(conflict_lines(state), 0)), left_area},
+      {side_widget("Right Side", elem(conflict_lines(state), 1)), right_area},
+      {input_widget(state), input_area},
+      {footer_widget(), footer_area},
+      {status_widget(state), status_area}
+    ]
+
+    widgets ++ ScreenUI.help_popup_widgets(frame, state, "Conflict Guide", help_lines())
   end
 
-  defp render_pane(lines, width) do
-    box(Enum.map(lines, &text/1), width: width, height: 14)
+  defp conflict_lines(state) do
+    Projection.conflict_sides(state.conflict_left || %{}, state.conflict_right || %{})
   end
 
-  defp header_style, do: Style.new(fg: :cyan, attrs: [:bold])
-  defp status_style(%{status_severity: :error}), do: Style.new(fg: :red, attrs: [:bold])
-  defp status_style(%{status_severity: :warn}), do: Style.new(fg: :yellow)
-  defp status_style(_state), do: Style.new(fg: :yellow)
+  defp header_widget do
+    %Paragraph{
+      text: "Conflict Resolution",
+      wrap: false,
+      style: ScreenUI.header_style(),
+      block: %ExRatatui.Widgets.Block{
+        borders: [:all],
+        border_type: :rounded,
+        border_style: %Style{fg: :cyan},
+        padding: {1, 1, 0, 0}
+      }
+    }
+  end
+
+  defp meta_widget do
+    ScreenUI.text_widget("Type a final decision, or use the helpers below to prefill a draft.",
+      style: ScreenUI.meta_style(),
+      wrap: true
+    )
+  end
+
+  defp side_widget(title, lines) do
+    ScreenUI.pane(title, lines, border_fg: :cyan, wrap: true)
+  end
+
+  defp input_widget(%Model{conflict_input_ref: ref} = state) when is_reference(ref) do
+    %TextInput{
+      state: ref,
+      style: %Style{fg: :white},
+      cursor_style: %Style{fg: :black, bg: :white},
+      placeholder: "Write a resolving decision...",
+      placeholder_style: ScreenUI.meta_style(),
+      block: %ExRatatui.Widgets.Block{
+        title: "Resolution Draft (#{String.upcase(state.authority_level)})",
+        borders: [:all],
+        border_type: :rounded,
+        border_style: %Style{fg: :yellow},
+        padding: {1, 1, 0, 0}
+      }
+    }
+  end
+
+  defp input_widget(%Model{} = state) do
+    ScreenUI.pane(
+      "Resolution Draft (#{String.upcase(state.authority_level)})",
+      ["> " <> state.conflict_input_buf],
+      border_fg: :yellow,
+      wrap: false
+    )
+  end
+
+  defp footer_widget do
+    ScreenUI.text_widget(
+      "a accept left  ·  b accept right  ·  s ask AI synthesis  ·  Enter submit  ·  Esc cancel  ·  Ctrl+Q quit",
+      style: ScreenUI.meta_style(),
+      wrap: true
+    )
+  end
+
+  defp status_widget(state) do
+    ScreenUI.text_widget(state.status_line, style: ScreenUI.status_style(state), wrap: false)
+  end
+
+  defp help_lines do
+    [
+      "This screen is for resolving a contradiction.",
+      "Read the left and right sides, then write a decision in the draft box.",
+      "Press a to prefill an accept-left decision.",
+      "Press b to prefill an accept-right decision.",
+      "Press s to ask the system for an AI synthesis request.",
+      "Press Enter to submit the draft as a resolving decision.",
+      "Press Esc to cancel and return to the room."
+    ]
+  end
 end

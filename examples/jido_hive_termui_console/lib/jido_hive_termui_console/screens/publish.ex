@@ -1,55 +1,73 @@
 defmodule JidoHiveTermuiConsole.Screens.Publish do
   @moduledoc false
 
-  import TermUI.Component.Helpers
+  alias ExRatatui.Event
+  alias ExRatatui.Layout
+  alias ExRatatui.Style
+  alias ExRatatui.Widgets.{List, Paragraph, TextInput}
+  alias JidoHiveTermuiConsole.{Model, Projection, ScreenUI}
 
-  alias JidoHiveTermuiConsole.{Model, Projection}
-  alias TermUI.Event
-  alias TermUI.Renderer.Style
+  @input_keys ["backspace", "delete", "left", "right", "home", "end"]
 
   @spec event_to_msg(Event.t(), Model.t()) :: term() | nil
-  def event_to_msg(%Event.Key{key: :tab}, _state), do: :publish_next_focus
-  def event_to_msg(%Event.Key{key: :enter}, _state), do: :publish_submit
-  def event_to_msg(%Event.Key{key: :backspace}, _state), do: :publish_backspace
-  def event_to_msg(%Event.Key{key: :escape}, _state), do: :cancel_publish
+  def event_to_msg(%Event.Key{code: "tab"}, _state), do: :publish_next_focus
+  def event_to_msg(%Event.Key{code: "enter"}, _state), do: :publish_submit
+  def event_to_msg(%Event.Key{code: "esc"}, _state), do: :cancel_publish
+  def event_to_msg(%Event.Key{code: "q", modifiers: ["ctrl"]}, _state), do: :quit
+  def event_to_msg(%Event.Key{code: "r"}, _state), do: :publish_refresh_auth
 
-  def event_to_msg(%Event.Key{char: "q", modifiers: modifiers}, _state) when is_list(modifiers) do
-    if Enum.member?(modifiers, :ctrl), do: :quit, else: nil
+  def event_to_msg(%Event.Key{code: " ", modifiers: []}, state) do
+    case current_focus(state) do
+      %{type: :binding} -> {:publish_input_key, " "}
+      _other -> :publish_toggle_current
+    end
   end
 
-  def event_to_msg(%Event.Key{char: " "}, _state), do: :publish_toggle_current
-  def event_to_msg(%Event.Key{char: "r"}, _state), do: :publish_refresh_auth
+  def event_to_msg(%Event.Key{code: code, modifiers: []}, state) when code in @input_keys do
+    case current_focus(state) do
+      %{type: :binding} -> {:publish_input_key, code}
+      _other -> nil
+    end
+  end
 
-  def event_to_msg(%Event.Key{char: char}, _state) when is_binary(char) and char != "",
-    do: {:publish_append, char}
+  def event_to_msg(%Event.Key{code: code, modifiers: []}, state)
+      when is_binary(code) and byte_size(code) > 0 do
+    case current_focus(state) do
+      %{type: :binding} -> {:publish_input_key, code}
+      _other -> nil
+    end
+  end
 
   def event_to_msg(_event, _state), do: nil
 
-  @spec render(Model.t()) :: term()
-  def render(%Model{} = state) do
-    publications = publication_entries(state)
-    width = max(state.screen_width - 2, 48)
-    current_channel = current_channel(state)
-    preview_lines = preview_lines(state, current_channel, width)
+  @spec render(Model.t(), %{width: pos_integer(), height: pos_integer()}) :: [{term(), term()}]
+  def render(%Model{} = state, frame) do
+    area = ScreenUI.root_area(frame)
 
-    stack(:vertical, [
-      text("PUBLISH", header_style()),
-      text("Room: #{state.room_id}", meta_style()),
-      box(Enum.map(publication_lines(state, publications), &text/1), width: width, height: 16),
-      box(
-        [
-          text("Preview (#{current_channel || "none"})", pane_title_style())
-          | Enum.map(preview_lines, &text/1)
-        ],
-        width: width,
-        height: 12
-      ),
-      text(
-        "Space toggle channel  ·  Tab cycle input fields  ·  Enter publish  ·  r refresh auth  ·  ESC cancel",
-        meta_style()
-      ),
-      text(state.status_line, status_style(state))
-    ])
+    [header_area, meta_area, main_area, editor_area, footer_area, status_area] =
+      Layout.split(area, :vertical, [
+        {:length, 2},
+        {:length, 1},
+        {:min, 10},
+        {:length, 4},
+        {:length, 2},
+        {:length, 1}
+      ])
+
+    [left_area, right_area] =
+      Layout.split(main_area, :horizontal, [{:percentage, 42}, {:percentage, 58}])
+
+    widgets = [
+      {header_widget(state), header_area},
+      {meta_widget(state), meta_area},
+      {list_widget(state), left_area},
+      {preview_widget(state), right_area},
+      {editor_widget(state), editor_area},
+      {footer_widget(), footer_area},
+      {status_widget(state), status_area}
+    ]
+
+    widgets ++ ScreenUI.help_popup_widgets(frame, state, "Publish Guide", help_lines())
   end
 
   @spec focus_items(Model.t()) :: [map()]
@@ -86,19 +104,115 @@ defmodule JidoHiveTermuiConsole.Screens.Publish do
 
   defp publication_entries(_state), do: []
 
-  defp publication_lines(state, publications) do
-    if publications == [] do
-      ["Loading publication plan..."]
+  defp header_widget(state) do
+    %Paragraph{
+      text: "Publish  ·  Room #{state.room_id}",
+      wrap: false,
+      style: ScreenUI.header_style(),
+      block: %ExRatatui.Widgets.Block{
+        borders: [:all],
+        border_type: :rounded,
+        border_style: %Style{fg: :cyan},
+        padding: {1, 1, 0, 0}
+      }
+    }
+  end
+
+  defp meta_widget(state) do
+    ScreenUI.text_widget(
+      "Selected channels: #{Enum.join(state.publish_selected, ", ") |> blank_to("none")}",
+      style: ScreenUI.meta_style(),
+      wrap: true
+    )
+  end
+
+  defp list_widget(%Model{} = state) do
+    items = publication_items(state)
+
+    if items == [] do
+      ScreenUI.pane("Channels and Bindings", ["Loading publication plan..."], border_fg: :cyan)
     else
-      focus = current_focus(state)
-      Enum.flat_map(publications, &publication_block_lines(state, &1, focus))
+      %List{
+        items: items,
+        selected: state.publish_cursor,
+        highlight_symbol: "> ",
+        style: %Style{fg: :white},
+        highlight_style: %Style{fg: :yellow, modifiers: [:bold]},
+        block: %ExRatatui.Widgets.Block{
+          title: "Channels and Bindings",
+          borders: [:all],
+          border_type: :rounded,
+          border_style: %Style{fg: :cyan},
+          padding: {1, 1, 0, 0}
+        }
+      }
     end
+  end
+
+  defp preview_widget(state) do
+    ScreenUI.pane(
+      "Preview (#{current_channel(state) || "none"})",
+      preview_lines(state, current_channel(state), max(state.screen_width - 10, 48)),
+      border_fg: :green,
+      wrap: true
+    )
+  end
+
+  defp editor_widget(%Model{publish_input_ref: ref} = state) when is_reference(ref) do
+    case current_focus(state) do
+      %{type: :binding, channel: channel, field: field} ->
+        %TextInput{
+          state: ref,
+          style: %Style{fg: :white},
+          cursor_style: %Style{fg: :black, bg: :white},
+          placeholder: binding_description(state, channel, field),
+          placeholder_style: ScreenUI.meta_style(),
+          block: %ExRatatui.Widgets.Block{
+            title: "Edit #{channel}.#{field}",
+            borders: [:all],
+            border_type: :rounded,
+            border_style: %Style{fg: :yellow},
+            padding: {1, 1, 0, 0}
+          }
+        }
+
+      _other ->
+        ScreenUI.pane(
+          "Editor",
+          [auth_summary(state)],
+          border_fg: :yellow,
+          wrap: true
+        )
+    end
+  end
+
+  defp editor_widget(%Model{} = state) do
+    ScreenUI.pane("Editor", [auth_summary(state)], border_fg: :yellow, wrap: true)
+  end
+
+  defp footer_widget do
+    ScreenUI.text_widget(
+      "Tab cycle focus  ·  Space toggle channel  ·  Type to edit focused binding  ·  r refresh auth  ·  Enter publish  ·  Esc back  ·  Ctrl+Q quit",
+      style: ScreenUI.meta_style(),
+      wrap: true
+    )
+  end
+
+  defp status_widget(state) do
+    ScreenUI.text_widget(state.status_line, style: ScreenUI.status_style(state), wrap: false)
+  end
+
+  defp publication_items(state) do
+    focus = current_focus(state)
+
+    publication_entries(state)
+    |> Enum.flat_map(&publication_item_lines(&1, state, focus))
   end
 
   defp current_channel(state) do
     case current_focus(state) do
       %{channel: channel} -> channel
-      _other -> List.first(state.publish_selected)
+      _other -> Enum.at(state.publish_selected, 0)
     end
   end
 
@@ -109,27 +223,87 @@ defmodule JidoHiveTermuiConsole.Screens.Publish do
       publication_entries(state)
       |> Enum.find(fn publication -> publication["channel"] == channel end)
 
-    if publication do
-      Projection.publish_preview_lines(channel, publication, width)
-    else
-      ["No preview available."]
-    end
+    if publication,
+      do: Projection.publish_preview_lines(channel, publication, width),
+      else: ["No preview available."]
   end
 
-  defp header_style, do: Style.new(fg: :cyan, attrs: [:bold])
-  defp pane_title_style, do: Style.new(fg: :green, attrs: [:bold])
-  defp meta_style, do: Style.new(fg: :bright_black)
-  defp status_style(%{status_severity: :error}), do: Style.new(fg: :red, attrs: [:bold])
-  defp status_style(%{status_severity: :warn}), do: Style.new(fg: :yellow)
-  defp status_style(_state), do: Style.new(fg: :yellow)
+  defp binding_description(state, _channel, field) do
+    publication_entries(state)
+    |> Enum.flat_map(&(&1["required_bindings"] || []))
+    |> Enum.find_value(field, fn binding ->
+      if binding["field"] == field, do: binding["description"]
+    end)
+    |> to_string()
+  end
+
+  defp auth_summary(state) do
+    state.publish_selected
+    |> Enum.map(fn channel ->
+      case state.auth_module.connection_id(channel) do
+        connection_id when is_binary(connection_id) and connection_id != "" ->
+          "#{channel}: cached (#{connection_id})"
+
+        _other ->
+          "#{channel}: not configured — run hive auth login #{channel}"
+      end
+    end)
+    |> blank_to("Select a binding field to edit, or toggle a channel to include it.")
+  end
+
+  defp publication_item_lines(publication, state, focus) do
+    channel = publication_channel(publication)
+
+    [
+      publication_channel_line(channel, state)
+      | publication_binding_lines(publication, channel, state, focus)
+    ]
+  end
+
+  defp publication_channel_line(channel, state) do
+    selected = if channel in state.publish_selected, do: "[x]", else: "[ ]"
+    auth = publication_channel_auth(channel, state)
+    "#{selected} #{channel}  #{auth}"
+  end
+
+  defp publication_channel_auth(channel, state) do
+    if state.auth_module.connection_id(channel) in [nil, ""],
+      do: "auth:missing",
+      else: "auth:cached"
+  end
+
+  defp publication_binding_lines(publication, channel, state, focus) do
+    Enum.map(publication["required_bindings"] || [], fn binding ->
+      publication_binding_line(binding, channel, state, focus)
+    end)
+  end
+
+  defp publication_binding_line(binding, channel, state, focus) do
+    field = binding["field"]
+    value = get_in(state.publish_bindings, [channel, field]) || ""
+    description = binding["description"] || field
+    marker = publication_binding_marker(focus, channel, field)
+    "#{marker} #{field}: #{Projection.truncate(value, 28)}  (#{description})"
+  end
+
+  defp publication_binding_marker(
+         %{type: :binding, channel: channel, field: field},
+         channel,
+         field
+       ),
+       do: "•"
+
+  defp publication_binding_marker(_focus, _channel, _field), do: "-"
+
+  defp blank_to([], fallback), do: fallback
+  defp blank_to([_ | _] = lines, _fallback), do: Enum.join(lines, "\n")
+  defp blank_to("", fallback), do: fallback
+  defp blank_to(value, _fallback), do: value
 
   defp validate_selected_publications(state) do
     case missing_required_binding(state) do
-      {channel, _field, description} ->
-        {:error, "#{channel}: missing #{description}"}
-
-      nil ->
-        validate_cached_auth(state)
+      {channel, _field, description} -> {:error, "#{channel}: missing #{description}"}
+      nil -> validate_cached_auth(state)
     end
   end
 
@@ -162,38 +336,18 @@ defmodule JidoHiveTermuiConsole.Screens.Publish do
     end)
   end
 
-  defp publication_block_lines(state, publication, focus) do
-    channel = publication_channel(publication)
-    selected = channel in state.publish_selected
-    checkbox = if selected, do: "[x]", else: "[ ]"
-    pointer = if focus && focus.channel == channel, do: ">", else: " "
+  defp publication_channel(publication), do: publication["channel"] || publication[:channel]
 
-    ["#{pointer} #{checkbox} #{channel}"] ++
-      binding_lines(state, publication, channel) ++
-      [auth_line(state, channel), ""]
-  end
-
-  defp binding_lines(state, publication, channel) do
-    Enum.flat_map(publication["required_bindings"] || [], fn binding ->
-      field = binding["field"]
-      value = get_in(state.publish_bindings, [channel, field]) || ""
-      ["  #{binding["description"]}", "  #{field}: [#{value}]"]
-    end)
-  end
-
-  defp auth_line(state, channel) do
-    auth_state = Map.get(state.publish_auth_state, channel, :missing)
-
-    case {auth_state, state.auth_module.connection_id(channel)} do
-      {:cached, connection_id} when is_binary(connection_id) ->
-        "  auth:  ✓ cached (#{connection_id})"
-
-      _other ->
-        "  auth:  ✗ not configured — run: hive auth login #{channel}"
-    end
-  end
-
-  defp publication_channel(publication) do
-    publication["channel"] || publication[:channel]
+  defp help_lines do
+    [
+      "This screen submits publications for the current room.",
+      "The left pane lists available channels and any required binding fields.",
+      "Use Tab to cycle through channels and binding fields.",
+      "Press Space to toggle the currently focused channel on or off.",
+      "When a binding field is focused, typing edits that field in the editor below.",
+      "Press r to refresh cached auth state.",
+      "Press Enter to publish the selected channels once validation passes.",
+      "Press Esc to return to the room."
+    ]
   end
 end

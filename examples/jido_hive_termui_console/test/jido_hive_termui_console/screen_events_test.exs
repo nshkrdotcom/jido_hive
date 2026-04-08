@@ -1,9 +1,9 @@
 defmodule JidoHiveTermuiConsole.ScreenEventsTest do
   use ExUnit.Case, async: true
 
+  alias ExRatatui.Event.Key
   alias JidoHiveTermuiConsole.Model
   alias JidoHiveTermuiConsole.Screens.{Conflict, Publish, Wizard}
-  alias TermUI.Event
 
   test "auth device flow uses atom keys expected by the CLI" do
     assert {:ok, %{channel: "github", user_code: code, verification_uri: uri}} =
@@ -14,17 +14,23 @@ defmodule JidoHiveTermuiConsole.ScreenEventsTest do
   end
 
   test "conflict screen maps ctrl+q to quit" do
-    assert Conflict.event_to_msg(%Event.Key{char: "q", modifiers: [:ctrl]}, Model.new([])) ==
+    assert Conflict.event_to_msg(
+             %Key{code: "q", kind: "press", modifiers: ["ctrl"]},
+             Model.new([])
+           ) ==
              :quit
   end
 
   test "publish screen maps ctrl+q to quit" do
-    assert Publish.event_to_msg(%Event.Key{char: "q", modifiers: [:ctrl]}, Model.new([])) ==
+    assert Publish.event_to_msg(
+             %Key{code: "q", kind: "press", modifiers: ["ctrl"]},
+             Model.new([])
+           ) ==
              :quit
   end
 
   test "wizard screen maps ctrl+q to quit" do
-    assert Wizard.event_to_msg(%Event.Key{char: "q", modifiers: [:ctrl]}, Model.new([])) ==
+    assert Wizard.event_to_msg(%Key{code: "q", kind: "press", modifiers: ["ctrl"]}, Model.new([])) ==
              :quit
   end
 end

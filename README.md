@@ -99,7 +99,7 @@ The client now also ships an embedded Elixir API. That API lets local tools:
 - refresh timeline and context state
 - accept a context object into a binding decision flow
 
-This is the path used by the first `term_ui` example in
+This is the path used by the first `ExRatatui` console example in
 `examples/jido_hive_termui_console`.
 
 ## Core collaboration model
@@ -209,7 +209,7 @@ This repository is a root workspace plus three nested Mix projects:
   Worker runtime, local executor wrappers, embedded API, interceptor pipeline,
   and local diagnostics surface.
 - `examples/jido_hive_termui_console/mix.exs`
-  A `term_ui` console that proves the embedded human-participation path.
+  An `ExRatatui` console that proves the embedded human-participation path.
 
 The root workspace matters because quality is enforced across the whole repo, not
 just whichever nested app you touched.
@@ -388,9 +388,8 @@ The console persists local operator state under `~/.config/hive/`:
 - `rooms.json`: locally saved room ids shown in the lobby
 - `credentials.json`: cached connector credentials for publish flows
 
-The example depends on the local `term_ui` source tree when present at
-`/home/home/p/g/n/term_ui`, and otherwise falls back to the Hex release defined
-in the example package.
+The example depends on Hex `ex_ratatui` and bootstraps its packaged native
+library when launched from the built `./hive` escript.
 
 The room screen remains list-and-pane oriented, but the full console is now a
 five-screen operator flow:

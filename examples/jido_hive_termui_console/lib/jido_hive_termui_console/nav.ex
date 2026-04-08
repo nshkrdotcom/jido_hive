@@ -48,7 +48,8 @@ defmodule JidoHiveTermuiConsole.Nav do
         lobby_rooms: Enum.map(room_ids, &Lobby.placeholder_row/1),
         lobby_loading: room_ids != [],
         status_line: "Ready",
-        status_severity: :info
+        status_severity: :info,
+        help_visible: auto_open_help?(state, :lobby)
       })
 
     Enum.each(room_ids, fn room_id ->
@@ -74,7 +75,8 @@ defmodule JidoHiveTermuiConsole.Nav do
       embedded: embedded,
       event_log_poller_pid: poller_pid,
       snapshot: room_snapshot,
-      sync_error: not is_nil(Map.get(room_snapshot, "last_error"))
+      sync_error: not is_nil(Map.get(room_snapshot, "last_error")),
+      help_visible: auto_open_help?(state, :room)
     })
   end
 
@@ -90,7 +92,8 @@ defmodule JidoHiveTermuiConsole.Nav do
           active_screen: :conflict,
           conflict_left: conflict_left,
           conflict_right: conflict_right,
-          conflict_input_buf: ""
+          conflict_input_buf: "",
+          help_visible: auto_open_help?(state, :conflict)
         })
     end
   end
@@ -109,7 +112,8 @@ defmodule JidoHiveTermuiConsole.Nav do
       publish_selected: [],
       publish_cursor: 0,
       publish_bindings: %{},
-      publish_auth_state: %{}
+      publish_auth_state: %{},
+      help_visible: auto_open_help?(state, :publish)
     })
   end
 
@@ -129,7 +133,8 @@ defmodule JidoHiveTermuiConsole.Nav do
       wizard_available_targets: [],
       wizard_targets_state: :loading,
       wizard_available_policies: [],
-      wizard_policies_state: :loading
+      wizard_policies_state: :loading,
+      help_visible: auto_open_help?(state, :wizard)
     })
   end
 
@@ -147,7 +152,12 @@ defmodule JidoHiveTermuiConsole.Nav do
         http_module: state.http_module,
         config_module: state.config_module,
         auth_module: state.auth_module,
-        event_log_poller_module: state.event_log_poller_module
+        event_log_poller_module: state.event_log_poller_module,
+        help_seen: state.help_seen,
+        room_input_ref: state.room_input_ref,
+        conflict_input_ref: state.conflict_input_ref,
+        wizard_brief_input_ref: state.wizard_brief_input_ref,
+        publish_input_ref: state.publish_input_ref
       }
       |> Map.merge(overrides)
 
@@ -168,6 +178,10 @@ defmodule JidoHiveTermuiConsole.Nav do
       }
 
     build_state(state, Map.merge(preserved, overrides))
+  end
+
+  defp auto_open_help?(state, screen) do
+    not MapSet.member?(state.help_seen, screen)
   end
 
   defp stop_room_processes(%Model{} = state) do

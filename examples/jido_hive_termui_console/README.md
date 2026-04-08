@@ -1,7 +1,7 @@
-# Jido Hive TermUI Console
+# Jido Hive Console Example
 
 `jido_hive_termui_console` is the first full human-facing console built on top
-of `JidoHiveClient.Embedded`.
+of the embedded client runtime in `jido_hive_client`.
 
 It proves that `jido_hive` can support real human participation without a
 browser and without inventing a second room state model. The server still owns
@@ -490,12 +490,12 @@ Before running the console, you need:
 
 The example uses:
 
-- `term_ui` for terminal rendering and event handling
+- `ExRatatui` for terminal rendering, event handling, and text input state
 - `jido_hive_client` for the embedded participant runtime
 - thin direct HTTP calls for lobby, wizard, conflict, and publish fetches
 
-If the local `term_ui` tree exists at `/home/home/p/g/n/term_ui`, the example
-uses it. Otherwise it falls back to the Hex dependency declared in `mix.exs`.
+The shipped `./hive` escript includes an `ExRatatui` bootstrap step that
+extracts the packaged NIF from the archive before the console starts.
 
 ## Developers
 
@@ -508,7 +508,7 @@ This section is for people changing the console itself.
 - `lib/jido_hive_termui_console.ex`
   Top-level startup and runtime option wiring
 - `lib/jido_hive_termui_console/app.ex`
-  Main `term_ui` update loop and message handling
+  Main `ExRatatui` app/update loop and message handling
 - `lib/jido_hive_termui_console/model.ex`
   Multi-screen UI state model
 - `lib/jido_hive_termui_console/nav.ex`
@@ -523,6 +523,8 @@ This section is for people changing the console itself.
   Thin `:httpc` boundary
 - `lib/jido_hive_termui_console/event_log_poller.ex`
   Short-poll room event task
+- `lib/jido_hive_termui_console/escript_bootstrap.ex`
+  Escript startup fixes for bundled runtime data and the `ExRatatui` NIF
 - `lib/jido_hive_termui_console/screens/`
   Screen-specific rendering and key maps
 
@@ -645,12 +647,13 @@ Use:
 ./hive console --api-base-url https://your-server.example/api
 ```
 
-### The example cannot start because `term_ui` is missing
+### The example cannot start because the `ExRatatui` native library failed to load
 
-Make sure either:
+Make sure:
 
-- the local tree exists at `/home/home/p/g/n/term_ui`
-- or Hex dependencies can be fetched during `mix deps.get`
+- `mix deps.get` completed successfully
+- `mix escript.build` was rerun after dependency changes
+- the generated `./hive` file came from this example directory and not an older build artifact
 
 ## Related Docs
 

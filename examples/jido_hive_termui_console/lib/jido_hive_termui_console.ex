@@ -2,7 +2,6 @@ defmodule JidoHiveTermuiConsole do
   @moduledoc false
 
   alias JidoHiveTermuiConsole.{App, Config, Identity}
-  alias TermUI.Runtime
 
   @default_api_base_url "http://127.0.0.1:4000/api"
   @default_poll_interval_ms 500
@@ -14,9 +13,8 @@ defmodule JidoHiveTermuiConsole do
     identity = Identity.load(opts)
     route = Keyword.get(opts, :route, default_route(opts))
 
-    runtime_opts =
+    app_opts =
       [
-        root: App,
         route: route,
         api_base_url: option_or_config(opts, :api_base_url, config, @default_api_base_url),
         participant_id: identity.participant_id,
@@ -30,12 +28,23 @@ defmodule JidoHiveTermuiConsole do
           Keyword.get(opts, :event_log_poller_module, JidoHiveTermuiConsole.EventLogPoller),
         http_module: Keyword.get(opts, :http_module, JidoHiveTermuiConsole.HTTP),
         config_module: Keyword.get(opts, :config_module, JidoHiveTermuiConsole.Config),
-        auth_module: Keyword.get(opts, :auth_module, JidoHiveTermuiConsole.Auth)
+        auth_module: Keyword.get(opts, :auth_module, JidoHiveTermuiConsole.Auth),
+        name: Keyword.get(opts, :name, nil),
+        test_mode: Keyword.get(opts, :test_mode)
       ]
       |> Enum.reject(fn {_key, value} -> is_nil(value) end)
 
-    runtime_module = Keyword.get(opts, :runtime_module, Runtime)
-    runtime_module.run(runtime_opts)
+    case App.start_link(app_opts) do
+      {:ok, pid} ->
+        ref = Process.monitor(pid)
+
+        receive do
+          {:DOWN, ^ref, :process, ^pid, _reason} -> :ok
+        end
+
+      {:error, reason} ->
+        {:error, reason}
+    end
   end
 
   defp default_route(opts) do

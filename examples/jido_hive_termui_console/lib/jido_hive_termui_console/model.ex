@@ -24,6 +24,10 @@ defmodule JidoHiveTermuiConsole.Model do
     :authority_level,
     :room_id,
     :snapshot,
+    :room_input_ref,
+    :conflict_input_ref,
+    :wizard_brief_input_ref,
+    :publish_input_ref,
     active_screen: :lobby,
     lobby_rooms: [],
     lobby_cursor: 0,
@@ -56,7 +60,9 @@ defmodule JidoHiveTermuiConsole.Model do
     sync_error: false,
     screen_width: 120,
     screen_height: 40,
-    poll_interval_ms: 500
+    poll_interval_ms: 500,
+    help_visible: false,
+    help_seen: MapSet.new()
   ]
 
   @type t :: %__MODULE__{}
@@ -97,7 +103,11 @@ defmodule JidoHiveTermuiConsole.Model do
       room_id: Keyword.get(opts, :room_id),
       snapshot: snapshot,
       relation_mode: Keyword.get(opts, :relation_mode, :contextual),
-      poll_interval_ms: Keyword.get(opts, :poll_interval_ms, 500)
+      poll_interval_ms: Keyword.get(opts, :poll_interval_ms, 500),
+      room_input_ref: Keyword.get(opts, :room_input_ref),
+      conflict_input_ref: Keyword.get(opts, :conflict_input_ref),
+      wizard_brief_input_ref: Keyword.get(opts, :wizard_brief_input_ref),
+      publish_input_ref: Keyword.get(opts, :publish_input_ref)
     }
     |> apply_snapshot(snapshot)
   end
@@ -172,6 +182,14 @@ defmodule JidoHiveTermuiConsole.Model do
     %{state | pane_focus: next_focus}
   end
 
+  @spec show_help(t()) :: t()
+  def show_help(%__MODULE__{} = state), do: %{state | help_visible: true}
+
+  @spec dismiss_help(t()) :: t()
+  def dismiss_help(%__MODULE__{} = state) do
+    %{state | help_visible: false, help_seen: MapSet.put(state.help_seen, state.active_screen)}
+  end
+
   @spec selected_context(t()) :: map() | nil
   def selected_context(%__MODULE__{} = state) do
     state.snapshot
@@ -224,9 +242,7 @@ defmodule JidoHiveTermuiConsole.Model do
   end
 
   defp stringify_keys(map) when is_map(map) do
-    Map.new(map, fn {key, value} ->
-      {to_string(key), value}
-    end)
+    Map.new(map, fn {key, value} -> {to_string(key), value} end)
   end
 
   defp value(map, key) when is_map(map) do
