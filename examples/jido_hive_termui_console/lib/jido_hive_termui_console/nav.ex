@@ -20,20 +20,16 @@ defmodule JidoHiveTermuiConsole.Nav do
   def refresh_room_snapshot(%Model{room_id: nil} = state), do: state
 
   def refresh_room_snapshot(%Model{} = state) do
-    embedded_snapshot =
-      if state.embedded do
-        state.embedded_module.snapshot(state.embedded)
-      else
-        %{}
-      end
-
     room_snapshot =
       case state.http_module.get(
              state.api_base_url,
              "/rooms/#{URI.encode_www_form(state.room_id)}"
            ) do
-        {:ok, %{"data" => snapshot}} -> merge_room_snapshot(snapshot, embedded_snapshot)
-        {:error, _reason} -> merge_room_snapshot(state.snapshot || %{}, embedded_snapshot)
+        {:ok, %{"data" => snapshot}} ->
+          merge_room_snapshot(snapshot, embedded_metadata_snapshot(state.snapshot))
+
+        {:error, _reason} ->
+          merge_room_snapshot(state.snapshot || %{}, embedded_metadata_snapshot(state.snapshot))
       end
 
     Model.apply_snapshot(state, room_snapshot)
@@ -287,14 +283,14 @@ defmodule JidoHiveTermuiConsole.Nav do
   defp room_processes_for_transition(state, room_id, app_pid, true, _opts)
        when state.room_id == room_id and not is_nil(state.embedded) do
     poller_pid = state.event_log_poller_pid || start_event_log_poller(state, room_id, app_pid)
-    {state.embedded, poller_pid, state.embedded_module.snapshot(state.embedded)}
+    {state.embedded, poller_pid, embedded_metadata_snapshot(state.snapshot)}
   end
 
   defp room_processes_for_transition(state, room_id, app_pid, _preserve_existing, opts) do
     stop_room_processes(state)
     embedded = ensure_embedded(state, room_id, opts)
     poller_pid = start_event_log_poller(state, room_id, app_pid)
-    {embedded, poller_pid, state.embedded_module.snapshot(embedded)}
+    {embedded, poller_pid, embedded_metadata_snapshot(state.snapshot)}
   end
 
   defp fetch_room_snapshot(state, room_id, embedded_snapshot) do
@@ -336,6 +332,20 @@ defmodule JidoHiveTermuiConsole.Nav do
       "title" => "[not in view]"
     }
   end
+
+  defp embedded_metadata_snapshot(snapshot) when is_map(snapshot) do
+    %{
+      "next_cursor" => Map.get(snapshot, "next_cursor") || Map.get(snapshot, :next_cursor),
+      "last_sync_at" => Map.get(snapshot, "last_sync_at") || Map.get(snapshot, :last_sync_at),
+      "last_error" => Map.get(snapshot, "last_error") || Map.get(snapshot, :last_error),
+      "participant" => Map.get(snapshot, "participant") || Map.get(snapshot, :participant),
+      "runtime" => Map.get(snapshot, "runtime") || Map.get(snapshot, :runtime)
+    }
+    |> Enum.reject(fn {_key, value} -> is_nil(value) end)
+    |> Map.new()
+  end
+
+  defp embedded_metadata_snapshot(_snapshot), do: %{}
 
   defp config_list_rooms(config_module, api_base_url) do
     cond do

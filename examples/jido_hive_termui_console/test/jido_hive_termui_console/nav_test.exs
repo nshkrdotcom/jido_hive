@@ -55,6 +55,34 @@ defmodule JidoHiveTermuiConsole.NavTest do
     end
   end
 
+  defmodule EmbeddedBlockingSnapshotStub do
+    def start_link(opts) do
+      send(self(), {:embedded_start, opts})
+
+      Agent.start_link(fn ->
+        %{
+          "timeline" => [],
+          "context_objects" => [],
+          "last_error" => nil
+        }
+      end)
+    end
+
+    def snapshot(server) do
+      send(self(), {:embedded_snapshot_called, server})
+      Process.sleep(6_000)
+      Agent.get(server, & &1)
+    end
+
+    def refresh(server), do: {:ok, Agent.get(server, & &1)}
+
+    def shutdown(server) do
+      send(self(), {:embedded_shutdown, server})
+      GenServer.stop(server)
+      :ok
+    end
+  end
+
   test "transition to lobby emits fetch messages per local room" do
     state = Model.new(config_module: ConfigStub)
     next_state = Nav.transition(state, :lobby, app_pid: self())
@@ -82,6 +110,22 @@ defmodule JidoHiveTermuiConsole.NavTest do
     assert is_pid(next_state.event_log_poller_pid)
     assert_receive {:embedded_start, _opts}
     assert_receive {:poller_start, _opts}
+  end
+
+  test "transition to room does not snapshot embedded process during initial open" do
+    state =
+      Model.new(
+        api_base_url: "http://localhost:4000/api",
+        embedded_module: EmbeddedBlockingSnapshotStub,
+        event_log_poller_module: PollerStub,
+        http_module: HTTPStub
+      )
+
+    next_state = Nav.transition(state, :room, room_id: "room-1", app_pid: self())
+
+    assert next_state.active_screen == :room
+    assert is_pid(next_state.embedded)
+    refute_receive {:embedded_snapshot_called, _pid}, 50
   end
 
   test "transition from room to lobby shuts down owned processes" do
