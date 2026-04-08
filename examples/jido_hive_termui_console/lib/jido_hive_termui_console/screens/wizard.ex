@@ -85,12 +85,9 @@ defmodule JidoHiveTermuiConsole.Screens.Wizard do
   defp step_lines(%{wizard_step: 2} = state) do
     phases = Map.get(state.wizard_fields, "phases", [])
 
-    [
-      "Phases from selected policy:",
-      if(phases == [], do: "[no phases]", else: Enum.join(phases, ", ")),
-      "",
-      "Enter to continue."
-    ]
+    ["Phases from selected policy:"]
+    |> Kernel.++(phase_lines(phases))
+    |> Kernel.++(["", "Enter to continue."])
   end
 
   defp step_lines(%{wizard_step: 3, wizard_available_targets: []}), do: ["Loading targets..."]
@@ -107,11 +104,12 @@ defmodule JidoHiveTermuiConsole.Screens.Wizard do
 
   defp step_lines(%{wizard_step: 4} = state) do
     participants = Map.get(state.wizard_fields, "participants", [])
+    phases = Map.get(state.wizard_fields, "phases", [])
 
     [
       "Brief: #{Map.get(state.wizard_fields, "brief", "")}",
       "Policy: #{Map.get(state.wizard_fields, "dispatch_policy_id", "")}",
-      "Phases: #{Enum.join(Map.get(state.wizard_fields, "phases", []), ", ")}",
+      "Phases: #{phase_summary(phases)}",
       "Workers: #{Enum.map_join(participants, ", ", & &1["participant_id"])}",
       "",
       "Enter to create and run the room."
@@ -153,6 +151,43 @@ defmodule JidoHiveTermuiConsole.Screens.Wizard do
 
     "#{prefix} #{marker}  #{target["participant_id"]}  #{target["participant_role"]}  #{target["provider"]}  #{target["capability_id"]}"
   end
+
+  defp phase_lines([]), do: ["[no phases]"]
+
+  defp phase_lines(phases) when is_list(phases) do
+    phases
+    |> Enum.with_index(1)
+    |> Enum.flat_map(fn {phase, index} -> render_phase(index, phase) end)
+  end
+
+  defp phase_summary([]), do: "[no phases]"
+
+  defp phase_summary(phases) when is_list(phases) do
+    Enum.map_join(phases, ", ", &phase_label/1)
+  end
+
+  defp render_phase(index, phase) do
+    heading = "#{index}. #{phase_label(phase)}"
+
+    case phase_objective(phase) do
+      nil -> [heading]
+      objective -> [heading, "   #{objective}"]
+    end
+  end
+
+  defp phase_label(%{} = phase) do
+    phase["phase"] || phase[:phase] || phase["objective"] || phase[:objective] ||
+      "[unnamed phase]"
+  end
+
+  defp phase_label(phase) when is_binary(phase), do: phase
+  defp phase_label(phase), do: inspect(phase)
+
+  defp phase_objective(%{} = phase) do
+    phase["objective"] || phase[:objective]
+  end
+
+  defp phase_objective(_phase), do: nil
 
   defp header_style, do: Style.new(fg: :cyan, attrs: [:bold])
   defp meta_style, do: Style.new(fg: :bright_black)

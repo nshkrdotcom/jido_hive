@@ -121,4 +121,30 @@ defmodule JidoHiveTermuiConsole.AppTest do
     assert next_state.event_log_cursor == "c1"
     assert next_state.event_log_lines == ["contribution.recorded"]
   end
+
+  test "wizard view renders phase maps without crashing" do
+    model =
+      Model.new([])
+      |> Map.put(:active_screen, :wizard)
+      |> Map.put(:wizard_step, 2)
+      |> Map.put(:wizard_fields, %{
+        "phases" => [
+          %{
+            "phase" => "analysis",
+            "objective" => "Analyze the brief and add room-scoped context.",
+            "allowed_contribution_types" => ["reasoning"]
+          }
+        ]
+      })
+
+    render_text =
+      model
+      |> App.view()
+      |> TestSupport.collect_text()
+      |> Enum.join("\n")
+
+    assert render_text =~ "Phases from selected policy:"
+    assert render_text =~ "analysis"
+    assert render_text =~ "Analyze the brief and add room-scoped context."
+  end
 end

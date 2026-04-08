@@ -1,12 +1,13 @@
 defmodule JidoHiveTermuiConsole.CLI do
   @moduledoc false
 
-  alias JidoHiveTermuiConsole.{Auth, Config, EscriptBootstrap}
+  alias JidoHiveTermuiConsole.{Auth, Config, EscriptBootstrap, LoggerSetup}
 
   @local_api_base_url "http://127.0.0.1:4000/api"
   @prod_api_base_url "https://jido-hive-server-test.app.nsai.online/api"
 
   @console_switches [
+    debug: :boolean,
     local: :boolean,
     prod: :boolean,
     api_base_url: :string,
@@ -14,7 +15,9 @@ defmodule JidoHiveTermuiConsole.CLI do
     participant_id: :string,
     participant_role: :string,
     authority_level: :string,
-    poll_interval_ms: :integer
+    poll_interval_ms: :integer,
+    log_level: :string,
+    log_file: :string
   ]
 
   @spec main([String.t()]) :: no_return()
@@ -47,7 +50,8 @@ defmodule JidoHiveTermuiConsole.CLI do
     opts = parse_console_opts(argv)
     route = parse_args(argv)
 
-    with :ok <- EscriptBootstrap.start_console_dependencies(),
+    with :ok <- LoggerSetup.configure(opts),
+         :ok <- EscriptBootstrap.start_console_dependencies(),
          :ok <- JidoHiveTermuiConsole.run(Keyword.put(opts, :route, route)) do
       System.halt(0)
     else
@@ -65,8 +69,9 @@ defmodule JidoHiveTermuiConsole.CLI do
       |> OptionParser.parse(strict: @console_switches)
 
     opts
+    |> resolve_log_level()
     |> resolve_mode_api_base_url()
-    |> Keyword.drop([:local, :prod])
+    |> Keyword.drop([:debug, :local, :prod])
   end
 
   @spec parse_args([String.t()]) :: {:lobby, map()} | {:room, map()}
@@ -81,6 +86,19 @@ defmodule JidoHiveTermuiConsole.CLI do
 
   defp strip_console_prefix(["console" | rest]), do: rest
   defp strip_console_prefix(argv), do: argv
+
+  defp resolve_log_level(opts) do
+    cond do
+      Keyword.has_key?(opts, :log_level) ->
+        opts
+
+      Keyword.get(opts, :debug, false) ->
+        Keyword.put(opts, :log_level, "debug")
+
+      true ->
+        opts
+    end
+  end
 
   defp resolve_mode_api_base_url(opts) do
     cond do

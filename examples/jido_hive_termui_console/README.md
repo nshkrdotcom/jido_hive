@@ -17,6 +17,7 @@ If you are new, do this first:
    local default: your own Phoenix server on `http://127.0.0.1:4000/api`
    prod shortcut: the deployed test server on `https://jido-hive-server-test.app.nsai.online/api`
 4. Open the console in two terminals with two distinct participant ids.
+5. Expect the lobby to be empty on first run until you create a room or open one by id.
 
 From the example directory:
 
@@ -27,6 +28,33 @@ mix escript.build
 ```
 
 The resulting executable is `./hive`.
+
+## The First-Run Mental Model
+
+The most important thing to understand is this:
+
+- the lobby is not a global room browser
+- the lobby is a local room registry backed by `~/.config/hive/rooms.json`
+- on first run, an empty lobby is normal
+
+What that means in practice:
+
+- if `rooms.json` has no saved room ids yet, the lobby will show no rows
+- pressing `Enter` in that state will not work because there is no selected room
+- the normal way forward is to press `n` and create a room through the wizard
+- if you already know a room id, you can bypass the empty lobby with `--room-id`
+
+So the intended operator loop is:
+
+1. Start the server and workers if you are using local mode.
+2. Start the console.
+3. Press `n`.
+4. Enter a brief.
+5. Pick a dispatch policy.
+6. Pick one or more worker targets.
+7. Confirm to create the room.
+8. The room id is saved to `~/.config/hive/rooms.json`.
+9. Future launches will show that room in the lobby.
 
 ## Local Onboarding
 
@@ -70,6 +98,22 @@ Terminal 4, start the second human console:
 cd /home/home/p/g/n/jido_hive/examples/jido_hive_termui_console
 ./hive console --participant-id bob
 ```
+
+### What you should expect
+
+When the lobby first opens, it may be empty. That does not mean the console is
+broken. It usually means `~/.config/hive/rooms.json` has no saved room ids yet.
+
+If you see an empty lobby:
+
+1. Press `n`.
+2. Enter a room brief.
+3. Choose a policy.
+4. Choose one or more worker targets.
+5. Press `Enter` on the confirm step.
+
+That will create the room on the server, save the room id locally, start the
+room, and transition you into it.
 
 ### What to do next
 
@@ -136,6 +180,19 @@ Terminal 3, start the second console:
 cd /home/home/p/g/n/jido_hive/examples/jido_hive_termui_console
 ./hive console --prod --participant-id bob
 ```
+
+### Important production caveat
+
+Production mode is only fully usable for room creation if the production server
+currently has live worker targets available through `/targets`.
+
+If `/targets` is empty:
+
+- the console can still start
+- you can still open a known room id with `--room-id`
+- the lobby may still be empty on first run
+- the wizard may not be able to create a runnable room because there are no
+  workers to assign
 
 If you need fresh worker targets on production, use the existing worker wrappers:
 
@@ -211,12 +268,18 @@ wizard from the lobby.
 
 ## Common Options
 
+- `--debug`
+  Shortcut for `--log-level debug`
 - `--local`
   Force the local API base
 - `--prod`
   Force the deployed test API base
 - `--api-base-url`
   Override the API base directly
+- `--log-level`
+  Logger level for the example file logger: `debug`, `info`, `warning`, or `error`
+- `--log-file`
+  Write logs to a specific file instead of the default path
 - `--room-id`
   Open a room immediately instead of starting in the lobby
 - `--participant-id`
@@ -391,6 +454,8 @@ The console creates and reads these files under `~/.config/hive/`:
   Local room registry shown in the lobby
 - `credentials.json`
   Cached connector credentials used by the publish screen
+- `termui_console.log`
+  File logger output for debugging startup, render, and runtime failures
 
 Stale room ids are intentionally left visible in the lobby as removable rows if
 the server returns `404`.
@@ -478,6 +543,25 @@ Use the repo root gate when you touch multiple apps or shared docs.
 
 ## Troubleshooting
 
+### The lobby is empty and says "No room selected"
+
+On first run, this is expected.
+
+The lobby only shows room ids already saved in `~/.config/hive/rooms.json`. It
+does not automatically list every room on the server.
+
+Use one of these paths:
+
+- press `n` and create a new room through the wizard
+- or start with `--room-id <id>` if you already know the room id
+
+Example:
+
+```bash
+./hive console --room-id room-123 --participant-id alice
+./hive console --prod --room-id room-123 --participant-id alice
+```
+
 ### The wizard opens but shows no workers
 
 The wizard reads live `/targets` data. If no compatible worker targets are
@@ -493,6 +577,9 @@ or:
 bin/hive-clients --prod
 ```
 
+If you are on production and `/targets` is still empty after that, the deployed
+environment does not currently have usable worker targets registered.
+
 ### The room opens directly but I expected the lobby
 
 The console only skips the lobby when `--room-id <id>` is present.
@@ -505,6 +592,26 @@ Use `Ctrl+R` to refresh and confirm the selected API base is reachable.
 
 The room id still exists locally but the server returns `404`. Press `d` to
 remove it from `rooms.json`.
+
+### I see `[Render Error]`
+
+Run the console with debug logging enabled:
+
+```bash
+./hive console --debug --participant-id alice
+```
+
+Then inspect:
+
+```bash
+tail -n 100 ~/.config/hive/termui_console.log
+```
+
+You can also choose an explicit log file:
+
+```bash
+./hive console --debug --log-file /tmp/hive-termui.log --participant-id alice
+```
 
 ### Publish says auth is missing
 

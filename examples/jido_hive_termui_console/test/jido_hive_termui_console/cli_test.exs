@@ -26,4 +26,12 @@ defmodule JidoHiveTermuiConsole.CLITest do
              "https://example.com/api"
            ]) == [api_base_url: "https://example.com/api"]
   end
+
+  test "parse_console_opts maps --debug to debug log level" do
+    assert CLI.parse_console_opts(["--debug"]) == [log_level: "debug"]
+  end
+
+  test "parse_console_opts preserves explicit log level over --debug" do
+    assert CLI.parse_console_opts(["--debug", "--log-level", "error"]) == [log_level: "error"]
+  end
 end
