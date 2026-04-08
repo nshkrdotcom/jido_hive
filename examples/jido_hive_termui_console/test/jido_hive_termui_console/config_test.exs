@@ -32,13 +32,20 @@ defmodule JidoHiveTermuiConsole.ConfigTest do
            }
   end
 
-  test "list/add/remove room ids through rooms.json" do
-    assert Config.list_rooms() == []
-    assert :ok = Config.add_room("room-a")
-    assert :ok = Config.add_room("room-b")
-    assert Config.list_rooms() == ["room-a", "room-b"]
-    assert :ok = Config.remove_room("room-a")
-    assert Config.list_rooms() == ["room-b"]
+  test "list/add/remove room ids through rooms.json scoped by api base url" do
+    local_api_base_url = "http://127.0.0.1:4000/api"
+    prod_api_base_url = "https://jido-hive-server-test.app.nsai.online/api"
+
+    assert Config.list_rooms(local_api_base_url) == []
+    assert Config.list_rooms(prod_api_base_url) == []
+    assert :ok = Config.add_room("room-local-a", local_api_base_url)
+    assert :ok = Config.add_room("room-prod-a", prod_api_base_url)
+    assert :ok = Config.add_room("room-local-b", local_api_base_url)
+    assert Config.list_rooms(local_api_base_url) == ["room-local-a", "room-local-b"]
+    assert Config.list_rooms(prod_api_base_url) == ["room-prod-a"]
+    assert :ok = Config.remove_room("room-local-a", local_api_base_url)
+    assert Config.list_rooms(local_api_base_url) == ["room-local-b"]
+    assert Config.list_rooms(prod_api_base_url) == ["room-prod-a"]
   end
 
   test "corrupt files fall back silently" do
@@ -48,5 +55,6 @@ defmodule JidoHiveTermuiConsole.ConfigTest do
 
     assert Config.load()["api_base_url"] == "http://127.0.0.1:4000/api"
     assert Config.load_rooms() == []
+    assert Config.load_rooms("http://127.0.0.1:4000/api") == []
   end
 end

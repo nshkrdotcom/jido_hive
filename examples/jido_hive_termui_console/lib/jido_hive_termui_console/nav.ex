@@ -43,7 +43,7 @@ defmodule JidoHiveTermuiConsole.Nav do
 
   defp transition_to_lobby(%Model{} = state, opts) do
     stop_room_processes(state)
-    room_ids = state.config_module.list_rooms()
+    room_ids = config_list_rooms(state.config_module, state.api_base_url)
     app_pid = Keyword.get(opts, :app_pid)
 
     next_state =
@@ -335,5 +335,18 @@ defmodule JidoHiveTermuiConsole.Nav do
       "object_type" => "conflict_target",
       "title" => "[not in view]"
     }
+  end
+
+  defp config_list_rooms(config_module, api_base_url) do
+    cond do
+      function_exported?(config_module, :list_rooms, 1) ->
+        config_module.list_rooms(api_base_url)
+
+      function_exported?(config_module, :list_rooms, 0) ->
+        config_module.list_rooms()
+
+      true ->
+        []
+    end
   end
 end

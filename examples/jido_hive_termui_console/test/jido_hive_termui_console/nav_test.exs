@@ -4,7 +4,7 @@ defmodule JidoHiveTermuiConsole.NavTest do
   alias JidoHiveTermuiConsole.{Model, Nav}
 
   defmodule ConfigStub do
-    def list_rooms, do: ["room-a", "room-b"]
+    def list_rooms(_api_base_url), do: ["room-a", "room-b"]
   end
 
   defmodule HTTPStub do

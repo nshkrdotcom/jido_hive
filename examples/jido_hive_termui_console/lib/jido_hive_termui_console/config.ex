@@ -35,34 +35,90 @@ defmodule JidoHiveTermuiConsole.Config do
   @spec list_rooms() :: [String.t()]
   def list_rooms, do: load_rooms()
 
+  @spec list_rooms(String.t()) :: [String.t()]
+  def list_rooms(api_base_url) when is_binary(api_base_url), do: load_rooms(api_base_url)
+
   @spec load_rooms() :: [String.t()]
   def load_rooms do
     rooms_path()
     |> read_json(%{"rooms" => []})
-    |> Map.get("rooms", [])
-    |> Enum.filter(&is_binary/1)
-    |> Enum.uniq()
+    |> legacy_rooms()
+  end
+
+  @spec load_rooms(String.t()) :: [String.t()]
+  def load_rooms(api_base_url) when is_binary(api_base_url) do
+    rooms_path()
+    |> read_json(%{"rooms_by_api_base_url" => %{}})
+    |> namespaced_rooms(api_base_url)
   end
 
   @spec add_room(String.t()) :: :ok | {:error, term()}
   def add_room(room_id) when is_binary(room_id) do
+    add_room(room_id, nil)
+  end
+
+  @spec add_room(String.t(), String.t() | nil) :: :ok | {:error, term()}
+  def add_room(room_id, api_base_url) when is_binary(room_id) do
     room_id = String.trim(room_id)
 
     if room_id == "" do
       {:error, :invalid_room_id}
     else
-      current = load_rooms()
-      write_json(rooms_path(), %{"rooms" => Enum.uniq(current ++ [room_id])})
+      payload = read_json(rooms_path(), %{"rooms_by_api_base_url" => %{}, "rooms" => []})
+
+      next_payload =
+        if is_binary(api_base_url) and String.trim(api_base_url) != "" do
+          normalized_api_base_url = normalize_api_base_url(api_base_url)
+
+          rooms =
+            payload
+            |> namespaced_rooms(normalized_api_base_url)
+            |> Kernel.++([room_id])
+            |> Enum.uniq()
+
+          payload
+          |> Map.put(
+            "rooms_by_api_base_url",
+            Map.put(rooms_by_api_base_url(payload), normalized_api_base_url, rooms)
+          )
+          |> Map.put("rooms", legacy_rooms(payload) |> Enum.reject(&(&1 == room_id)))
+        else
+          Map.put(payload, "rooms", (legacy_rooms(payload) ++ [room_id]) |> Enum.uniq())
+        end
+
+      write_json(rooms_path(), next_payload)
     end
   end
 
   @spec remove_room(String.t()) :: :ok | {:error, term()}
   def remove_room(room_id) when is_binary(room_id) do
-    rooms =
-      load_rooms()
-      |> Enum.reject(&(&1 == room_id))
+    remove_room(room_id, nil)
+  end
 
-    write_json(rooms_path(), %{"rooms" => rooms})
+  @spec remove_room(String.t(), String.t() | nil) :: :ok | {:error, term()}
+  def remove_room(room_id, api_base_url) when is_binary(room_id) do
+    payload = read_json(rooms_path(), %{"rooms_by_api_base_url" => %{}, "rooms" => []})
+
+    next_payload =
+      if is_binary(api_base_url) and String.trim(api_base_url) != "" do
+        normalized_api_base_url = normalize_api_base_url(api_base_url)
+
+        rooms =
+          payload
+          |> namespaced_rooms(normalized_api_base_url)
+          |> Enum.reject(&(&1 == room_id))
+
+        payload
+        |> Map.put(
+          "rooms_by_api_base_url",
+          Map.put(rooms_by_api_base_url(payload), normalized_api_base_url, rooms)
+        )
+        |> Map.put("rooms", legacy_rooms(payload) |> Enum.reject(&(&1 == room_id)))
+      else
+        Map.put(payload, "rooms", legacy_rooms(payload) |> Enum.reject(&(&1 == room_id)))
+      end
+
+    write_json(rooms_path(), next_payload)
   end
 
   defp default_config do
@@ -98,5 +154,34 @@ defmodule JidoHiveTermuiConsole.Config do
 
   defp write_json(path, payload) do
     File.write(path, Jason.encode!(payload, pretty: true))
+  end
+
+  defp namespaced_rooms(payload, api_base_url) do
+    payload
+    |> rooms_by_api_base_url()
+    |> Map.get(normalize_api_base_url(api_base_url), [])
+    |> Enum.filter(&is_binary/1)
+    |> Enum.uniq()
+  end
+
+  defp legacy_rooms(payload) do
+    payload
+    |> Map.get("rooms", [])
+    |> Enum.filter(&is_binary/1)
+    |> Enum.uniq()
+  end
+
+  defp rooms_by_api_base_url(payload) do
+    case Map.get(payload, "rooms_by_api_base_url", %{}) do
+      map when is_map(map) -> map
+      _other -> %{}
+    end
+  end
+
+  defp normalize_api_base_url(api_base_url) do
+    api_base_url
+    |> to_string()
+    |> String.trim()
+    |> String.trim_trailing("/")
   end
 end

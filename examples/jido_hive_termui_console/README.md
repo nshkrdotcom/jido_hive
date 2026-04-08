@@ -35,6 +35,7 @@ The most important thing to understand is this:
 
 - the lobby is not a global room browser
 - the lobby is a local room registry backed by `~/.config/hive/rooms.json`
+- saved room ids are scoped to the current server API base
 - on first run, an empty lobby is normal
 
 What that means in practice:
@@ -53,7 +54,7 @@ So the intended operator loop is:
 5. Pick a dispatch policy.
 6. Pick one or more worker targets.
 7. Confirm to create the room.
-8. The room id is saved to `~/.config/hive/rooms.json`.
+8. The room id is saved to `~/.config/hive/rooms.json` for the current server.
 9. Future launches will show that room in the lobby.
 
 ## Local Onboarding
@@ -103,6 +104,7 @@ cd /home/home/p/g/n/jido_hive/examples/jido_hive_termui_console
 
 When the lobby first opens, it may be empty. That does not mean the console is
 broken. It usually means `~/.config/hive/rooms.json` has no saved room ids yet.
+The local and prod consoles do not share the same saved room list.
 
 If you see an empty lobby:
 
@@ -218,7 +220,7 @@ You can skip room creation entirely:
 The console is a five-screen operator shell:
 
 - lobby
-  Local room launcher backed by `~/.config/hive/rooms.json`
+  Local room launcher backed by `~/.config/hive/rooms.json`, scoped per server
 - room
   Conversation, context, event polling, and graph-authoring controls
 - conflict
@@ -402,7 +404,7 @@ wizard from the lobby.
 The normal room loop is:
 
 1. The console loads local config from `~/.config/hive/`.
-2. The lobby reads `rooms.json` and fetches each room snapshot over HTTP.
+2. The lobby reads the current server's saved room list from `rooms.json` and fetches each room snapshot over HTTP.
 3. Opening a room starts the embedded runtime plus a separate short-poll event log task.
 4. The room screen renders participant identity, room snapshot, event feed, and input.
 5. Pressing `Enter` sends the buffer through `Embedded.submit_chat/2`.
@@ -555,7 +557,8 @@ Use the repo root gate when you touch multiple apps or shared docs.
 On first run, this is expected.
 
 The lobby only shows room ids already saved in `~/.config/hive/rooms.json`. It
-does not automatically list every room on the server.
+does not automatically list every room on the server, and local/prod keep
+separate saved room lists.
 
 Use one of these paths:
 
@@ -598,8 +601,9 @@ Use `Ctrl+R` to refresh and confirm the selected API base is reachable.
 
 ### The lobby shows a broken room row
 
-The room id still exists locally but the server returns `404`. Press `d` to
-remove it from `rooms.json`.
+The room id still exists in the saved list for the current server, but that
+server returns `404`. Press `d` to remove it from the current server's saved
+room list.
 
 ### I see `[Render Error]`
 

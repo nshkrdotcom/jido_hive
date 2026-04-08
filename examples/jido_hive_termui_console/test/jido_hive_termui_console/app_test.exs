@@ -47,12 +47,12 @@ defmodule JidoHiveTermuiConsole.AppTest do
   end
 
   defmodule ConfigStub do
-    def add_room(room_id) do
-      send(test_pid(), {:add_room, room_id})
+    def add_room(room_id, api_base_url) do
+      send(test_pid(), {:add_room, room_id, api_base_url})
       :ok
     end
 
-    def list_rooms, do: []
+    def list_rooms(_api_base_url), do: []
 
     defp test_pid do
       Application.fetch_env!(:jido_hive_termui_console, :app_test_pid)
@@ -306,7 +306,7 @@ defmodule JidoHiveTermuiConsole.AppTest do
     assert next_state.status_line =~ "run started in background"
     assert_receive {:http_post, "/rooms", payload}
     assert payload["dispatch_policy_id"] == "round_robin/v2"
-    assert_receive {:add_room, room_id}
+    assert_receive {:add_room, room_id, "http://127.0.0.1:4000/api"}
     assert room_id == next_state.room_id
     assert_receive {:http_post, path, %{}}
     assert path == "/rooms/#{URI.encode_www_form(room_id)}/run"

@@ -72,7 +72,7 @@ defmodule JidoHiveTermuiConsole.App do
         {Model.set_status(state, "No room selected", :error), []}
 
       %{room_id: room_id} ->
-        case state.config_module.remove_room(room_id) do
+        case config_remove_room(state.config_module, room_id, state.api_base_url) do
           :ok ->
             {Nav.transition(state, :lobby, app_pid: self()), []}
 
@@ -683,7 +683,7 @@ defmodule JidoHiveTermuiConsole.App do
 
     next_state =
       with {:ok, _response} <- state.http_module.post(state.api_base_url, "/rooms", payload),
-           :ok <- state.config_module.add_room(room_id) do
+           :ok <- config_add_room(state.config_module, room_id, state.api_base_url) do
         start_room_run_async(state, room_id)
 
         state
@@ -767,6 +767,32 @@ defmodule JidoHiveTermuiConsole.App do
     end)
 
     :ok
+  end
+
+  defp config_add_room(config_module, room_id, api_base_url) do
+    cond do
+      function_exported?(config_module, :add_room, 2) ->
+        config_module.add_room(room_id, api_base_url)
+
+      function_exported?(config_module, :add_room, 1) ->
+        config_module.add_room(room_id)
+
+      true ->
+        {:error, :config_module_missing_add_room}
+    end
+  end
+
+  defp config_remove_room(config_module, room_id, api_base_url) do
+    cond do
+      function_exported?(config_module, :remove_room, 2) ->
+        config_module.remove_room(room_id, api_base_url)
+
+      function_exported?(config_module, :remove_room, 1) ->
+        config_module.remove_room(room_id)
+
+      true ->
+        {:error, :config_module_missing_remove_room}
+    end
   end
 
   defp submit_room_chat(state, text) do

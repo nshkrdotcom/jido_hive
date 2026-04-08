@@ -31,8 +31,11 @@ defmodule JidoHiveTermuiConsole.Screens.Lobby do
     lines = Projection.lobby_rows(state.lobby_rooms, state.lobby_cursor, width)
 
     stack(:vertical, [
-      text("Jido Hive Console  ·  workspace-local  ·  #{identity_label(state)}", header_style()),
-      text("Rooms: ~/.config/hive/rooms.json", meta_style()),
+      text(
+        "Jido Hive Console  ·  #{server_label(state)}  ·  #{identity_label(state)}",
+        header_style()
+      ),
+      text("Rooms: ~/.config/hive/rooms.json (scoped to current server)", meta_style()),
       box(Enum.map(lines, &text(&1)), width: width),
       text("Enter open  ·  n new room  ·  r refresh  ·  d remove  ·  q quit", meta_style()),
       text(state.status_line, status_style(state))
@@ -58,7 +61,7 @@ defmodule JidoHiveTermuiConsole.Screens.Lobby do
   def fetch_error_row(room_id) do
     %{
       room_id: room_id,
-      brief: "[fetch error — press d to remove]",
+      brief: "[not found on this server — press d to remove]",
       status: "failed",
       dispatch_policy_id: "",
       completed_slots: 0,
@@ -103,6 +106,17 @@ defmodule JidoHiveTermuiConsole.Screens.Lobby do
 
   defp identity_label(state) do
     "#{state.participant_id} (#{state.participant_role} / #{String.upcase(state.authority_level)})"
+  end
+
+  defp server_label(state) do
+    uri = URI.parse(state.api_base_url || "")
+
+    case uri.host do
+      "127.0.0.1" -> "local"
+      "localhost" -> "local"
+      host when is_binary(host) and host != "" -> host
+      _other -> state.api_base_url || "unknown server"
+    end
   end
 
   defp header_style, do: Style.new(fg: :cyan, attrs: [:bold])
