@@ -21,3 +21,6 @@ jido_hive_client-*.tar
 
 # Temporary files, for example, from tests.
 /tmp/
+
+# Generated escript binary.
+/hive

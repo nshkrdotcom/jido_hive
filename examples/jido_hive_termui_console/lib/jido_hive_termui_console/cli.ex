@@ -1,7 +1,7 @@
 defmodule JidoHiveTermuiConsole.CLI do
   @moduledoc false
 
-  alias JidoHiveTermuiConsole.{Auth, Config}
+  alias JidoHiveTermuiConsole.{Auth, Config, EscriptBootstrap}
 
   @local_api_base_url "http://127.0.0.1:4000/api"
   @prod_api_base_url "https://jido-hive-server-test.app.nsai.online/api"
@@ -47,10 +47,10 @@ defmodule JidoHiveTermuiConsole.CLI do
     opts = parse_console_opts(argv)
     route = parse_args(argv)
 
-    case JidoHiveTermuiConsole.run(Keyword.put(opts, :route, route)) do
-      :ok ->
-        System.halt(0)
-
+    with :ok <- EscriptBootstrap.start_console_dependencies(),
+         :ok <- JidoHiveTermuiConsole.run(Keyword.put(opts, :route, route)) do
+      System.halt(0)
+    else
       {:error, reason} ->
         IO.puts("Console failed: #{inspect(reason)}")
         System.halt(1)

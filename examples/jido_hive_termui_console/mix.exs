@@ -8,7 +8,12 @@ defmodule JidoHiveTermuiConsole.MixProject do
       elixir: "~> 1.19",
       elixirc_options: [warnings_as_errors: true],
       start_permanent: Mix.env() == :prod,
-      escript: [main_module: JidoHiveTermuiConsole.CLI, name: "hive"],
+      escript: [
+        app: nil,
+        include_priv_for: [:tzdata],
+        main_module: JidoHiveTermuiConsole.CLI,
+        name: "hive"
+      ],
       aliases: aliases(),
       deps: deps(),
       dialyzer: [plt_add_apps: [:ex_unit]],
