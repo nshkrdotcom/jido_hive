@@ -29,11 +29,15 @@ defmodule JidoHiveTermuiConsole.LoggerSetupTest do
 
   test "configure writes logs to the configured file", %{path: path} do
     assert :ok = LoggerSetup.configure(log_level: "debug", log_file: path)
+    Logger.flush()
+
+    assert File.read!(path) =~ "termui console logger configured"
 
     Logger.debug("termui logger setup test")
     Logger.flush()
     Process.sleep(50)
 
     assert File.read!(path) =~ "termui logger setup test"
+    refute File.read!(path) =~ "\e["
   end
 end

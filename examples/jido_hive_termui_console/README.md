@@ -635,6 +635,8 @@ Run the console with debug logging enabled:
 
 Inside the console, press `Ctrl+D` or `F2` to open the in-app debug popup. It shows the
 current screen, room, API base, status line, and whether a room-creation request is still pending.
+With `--debug`, the file log now records startup and async action boundaries, so `tail -f
+~/.config/hive/termui_console.log` should show activity immediately after launch.
 
 Then inspect:
 
@@ -652,6 +654,9 @@ You can also choose an explicit log file:
 
 Room creation runs in the background. After pressing `Enter` on the confirm step, the status line
 should switch to `Creating room ...`, and `Ctrl+D` should show the pending room id.
+
+Room chat submission also runs in the background. After pressing `Enter` in the draft box, the
+status line should switch to `Submitting chat message...` instead of freezing the UI.
 
 Recovery paths:
 

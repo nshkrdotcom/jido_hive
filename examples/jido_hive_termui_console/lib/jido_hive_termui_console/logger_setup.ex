@@ -21,7 +21,10 @@ defmodule JidoHiveTermuiConsole.LoggerSetup do
     File.mkdir_p!(Path.dirname(path))
     File.write!(path, "", [:append])
     :ok = Logger.configure(level: level)
-    attach_file_handler(path, level)
+    :ok = attach_file_handler(path, level)
+    Logger.log(level, "termui console logger configured path=#{path} level=#{level}")
+    Logger.flush()
+    :ok
   end
 
   @spec default_log_path() :: String.t()
@@ -60,7 +63,7 @@ defmodule JidoHiveTermuiConsole.LoggerSetup do
         filesync_repeat_interval: 5_000,
         file_check: 5_000
       },
-      formatter: Logger.Formatter.new()
+      formatter: Logger.Formatter.new(colors: [enabled: false])
     }
 
     case :logger.add_handler(@handler_name, :logger_std_h, config) do

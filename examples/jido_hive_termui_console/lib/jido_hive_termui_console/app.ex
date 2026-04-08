@@ -2,6 +2,7 @@ defmodule JidoHiveTermuiConsole.App do
   @moduledoc false
 
   use ExRatatui.App
+  require Logger
 
   alias ExRatatui.{Event, Frame}
   alias JidoHiveTermuiConsole.{Identity, Model, Nav, Projection}
@@ -11,6 +12,11 @@ defmodule JidoHiveTermuiConsole.App do
   def mount(opts) do
     {state, effects} = init(opts)
     state = state |> ensure_input_refs() |> sync_input_widgets()
+
+    Logger.info(
+      "console mounted screen=#{state.active_screen} room_id=#{state.room_id || "none"} participant_id=#{state.participant_id} api_base_url=#{state.api_base_url}"
+    )
+
     :ok = schedule_effects(effects)
     {:ok, state}
   end
@@ -176,12 +182,33 @@ defmodule JidoHiveTermuiConsole.App do
     if state.drill_context_id, do: {state, []}, else: {Model.move_selection(state, 1), []}
   end
 
+  def update(
+        {:room_input_key, _code},
+        %{active_screen: :room, pending_room_submit: pending} = state
+      )
+      when not is_nil(pending) do
+    {Model.set_status(state, "Chat submission is in progress", :warn), []}
+  end
+
   def update({:room_input_key, code}, %{active_screen: :room} = state) do
     {handle_room_input_key(state, code), []}
   end
 
+  def update(
+        {:input_append, _char},
+        %{active_screen: :room, pending_room_submit: pending} = state
+      )
+      when not is_nil(pending) do
+    {Model.set_status(state, "Chat submission is in progress", :warn), []}
+  end
+
   def update({:input_append, char}, %{active_screen: :room} = state) do
     {set_room_input(state, state.input_buffer <> char), []}
+  end
+
+  def update(:input_backspace, %{active_screen: :room, pending_room_submit: pending} = state)
+      when not is_nil(pending) do
+    {Model.set_status(state, "Chat submission is in progress", :warn), []}
   end
 
   def update(:input_backspace, %{active_screen: :room} = state) do
@@ -260,26 +287,46 @@ defmodule JidoHiveTermuiConsole.App do
   end
 
   def update(:room_escape, state) do
-    cond do
-      state.drill_context_id ->
-        {%{state | drill_context_id: nil, provenance_lines: []}, []}
+    if state.pending_room_submit do
+      {Model.set_status(
+         state,
+         "Chat submission is in progress; wait or press Ctrl+C to quit",
+         :warn
+       ), []}
+    else
+      cond do
+        state.drill_context_id ->
+          {%{state | drill_context_id: nil, provenance_lines: []}, []}
 
-      String.trim(state.input_buffer) != "" ->
-        {set_room_input(state, ""), []}
+        String.trim(state.input_buffer) != "" ->
+          {set_room_input(state, ""), []}
 
-      true ->
-        {Nav.transition(state, :lobby, app_pid: self()), []}
+        true ->
+          {Nav.transition(state, :lobby, app_pid: self()), []}
+      end
     end
+  end
+
+  def update(:back_to_lobby, %{pending_room_submit: pending} = state) when not is_nil(pending) do
+    {Model.set_status(
+       state,
+       "Chat submission is in progress; wait or press Ctrl+C to quit",
+       :warn
+     ), []}
   end
 
   def update(:back_to_lobby, state) do
     {Nav.transition(state, :lobby, app_pid: self()), []}
   end
 
+  def update(:room_enter, %{pending_room_submit: pending} = state) when not is_nil(pending) do
+    {Model.set_status(state, "Chat submission already in progress", :warn), []}
+  end
+
   def update(:room_enter, state) do
     case String.trim(state.input_buffer) do
       "" -> empty_room_enter(state)
-      text -> submit_room_chat(state, text)
+      text -> queue_room_chat_submit(state, text)
     end
   end
 
@@ -640,6 +687,46 @@ defmodule JidoHiveTermuiConsole.App do
     {%{state | publish_auth_state: auth_state}, []}
   end
 
+  def handle_message({:room_submit_result, room_id, text, {:ok, _contribution}}, state) do
+    next_state =
+      case state.pending_room_submit do
+        %{room_id: ^room_id, text: ^text} ->
+          Logger.info(
+            "room chat submit succeeded room_id=#{room_id} participant_id=#{state.participant_id} chars=#{String.length(text)}"
+          )
+
+          state
+          |> Map.put(:pending_room_submit, nil)
+          |> Nav.refresh_room_snapshot()
+          |> Model.set_status("Submitted chat message", :info)
+
+        _other ->
+          state
+      end
+
+    {next_state, []}
+  end
+
+  def handle_message({:room_submit_result, room_id, text, {:error, reason}}, state) do
+    next_state =
+      case state.pending_room_submit do
+        %{room_id: ^room_id, text: ^text} ->
+          Logger.error(
+            "room chat submit failed room_id=#{room_id} participant_id=#{state.participant_id} reason=#{inspect(reason)}"
+          )
+
+          state
+          |> Map.put(:pending_room_submit, nil)
+          |> set_room_input(text)
+          |> Model.set_status("Submit failed: #{inspect(reason)}", :error)
+
+        _other ->
+          state
+      end
+
+    {next_state, []}
+  end
+
   def handle_message({:wizard_create_result, room_id, {:ok, _response}}, state) do
     next_state =
       case state.pending_room_create do
@@ -910,6 +997,19 @@ defmodule JidoHiveTermuiConsole.App do
     :ok
   end
 
+  defp start_room_submit_async(state, room_id, text, submit_attrs) do
+    caller = self()
+    embedded_module = state.embedded_module
+    embedded = state.embedded
+
+    spawn(fn ->
+      result = embedded_module.submit_chat(embedded, submit_attrs)
+      send(caller, {:room_submit_result, room_id, text, result})
+    end)
+
+    :ok
+  end
+
   defp config_add_room(config_module, room_id, api_base_url) do
     cond do
       function_exported?(config_module, :add_room, 2) ->
@@ -936,22 +1036,21 @@ defmodule JidoHiveTermuiConsole.App do
     end
   end
 
-  defp submit_room_chat(state, text) do
+  defp queue_room_chat_submit(state, text) do
     submit_attrs = Identity.to_submit_attrs(identity(state), room_submit_attrs(text, state))
+    room_id = state.room_id
 
-    case state.embedded_module.submit_chat(state.embedded, submit_attrs) do
-      {:ok, _contribution} ->
-        next_state =
-          state
-          |> Model.clear_input()
-          |> Nav.refresh_room_snapshot()
-          |> Model.set_status("Submitted chat message", :info)
+    Logger.info(
+      "room chat submit started room_id=#{room_id} participant_id=#{state.participant_id} chars=#{String.length(text)}"
+    )
 
-        {next_state, []}
+    next_state =
+      state
+      |> Map.put(:pending_room_submit, %{room_id: room_id, text: text})
+      |> Model.clear_input()
+      |> Model.set_status("Submitting chat message...", :info)
 
-      {:error, reason} ->
-        {Model.set_status(state, "Submit failed: #{inspect(reason)}", :error), []}
-    end
+    {next_state, [{:submit_room_chat, room_id, text, submit_attrs}]}
   end
 
   defp room_submit_attrs(text, state) do
@@ -1010,6 +1109,10 @@ defmodule JidoHiveTermuiConsole.App do
 
         {:wizard_create_room, room_id, payload} ->
           start_room_create_async(current_state, room_id, payload)
+          {:cont, {:continue, current_state}}
+
+        {:submit_room_chat, room_id, text, submit_attrs} ->
+          start_room_submit_async(current_state, room_id, text, submit_attrs)
           {:cont, {:continue, current_state}}
 
         :quit ->

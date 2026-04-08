@@ -130,6 +130,12 @@ defmodule JidoHiveTermuiConsole.ScreenUI do
         _other -> "none"
       end
 
+    pending_submit =
+      case state.pending_room_submit do
+        %{room_id: room_id, text: text} -> "#{room_id} (#{String.length(text)} chars)"
+        _other -> "none"
+      end
+
     [
       "Screen: #{state.active_screen}",
       "Room: #{state.room_id || "none"}",
@@ -138,6 +144,7 @@ defmodule JidoHiveTermuiConsole.ScreenUI do
       "API: #{state.api_base_url}",
       "Status: [#{state.status_severity}] #{state.status_line}",
       "Pending room create: #{pending_room}",
+      "Pending room submit: #{pending_submit}",
       "Poll interval: #{state.poll_interval_ms}ms",
       "",
       "Ctrl+D or F2 closes this view.",

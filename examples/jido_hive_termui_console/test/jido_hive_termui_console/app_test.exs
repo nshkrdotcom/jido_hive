@@ -37,10 +37,18 @@ defmodule JidoHiveTermuiConsole.AppTest do
 
     def submit_chat(server, attrs) do
       Agent.update(server, &Map.put(&1, :submitted, attrs))
+      send(test_pid(), {:embedded_submit_chat, attrs})
       {:ok, %{"summary" => Map.get(attrs, :text) || Map.get(attrs, "text")}}
     end
 
-    def accept_context(_server, _context_id, _attrs), do: {:ok, %{"authority_level" => "binding"}}
+    def accept_context(_server, context_id, _attrs) do
+      send(test_pid(), {:embedded_accept_context, context_id})
+      {:ok, %{"authority_level" => "binding"}}
+    end
+
+    defp test_pid do
+      Application.fetch_env!(:jido_hive_termui_console, :app_test_pid)
+    end
   end
 
   defmodule PollerStub do
@@ -182,35 +190,58 @@ defmodule JidoHiveTermuiConsole.AppTest do
     %{embedded: embedded, model: model}
   end
 
-  test "room enter submits plain chat when relation mode is none", %{
+  test "room enter submits plain chat asynchronously when relation mode is none", %{
     embedded: embedded,
     model: model
   } do
     state = %{model | input_buffer: "plain update", relation_mode: :none}
 
-    {next_state, []} = App.update(:room_enter, state)
+    assert {:noreply, pending_state} = App.handle_event(%Key{code: "enter", kind: "press"}, state)
 
-    assert next_state.input_buffer == ""
+    assert pending_state.input_buffer == ""
+    assert pending_state.pending_room_submit == %{room_id: "room-1", text: "plain update"}
+    assert pending_state.status_line == "Submitting chat message..."
+    assert_receive {:embedded_submit_chat, attrs}
 
-    assert Agent.get(embedded, & &1.submitted) == %{
+    assert attrs == %{
              text: "plain update",
              authority_level: "binding",
              participant_id: "alice",
              participant_role: "coordinator"
            }
+
+    assert Agent.get(embedded, & &1.submitted) == attrs
+    assert_receive {:room_submit_result, "room-1", "plain update", {:ok, _contribution}}
+
+    assert {:noreply, next_state} =
+             App.handle_info(
+               {:room_submit_result, "room-1", "plain update",
+                {:ok, %{"summary" => "plain update"}}},
+               pending_state
+             )
+
+    assert next_state.pending_room_submit == nil
+    assert next_state.status_line == "Submitted chat message"
   end
 
-  test "room enter submits selected relation context with binding authority", %{
+  test "room enter submits selected relation context asynchronously with binding authority", %{
     embedded: embedded,
     model: model
   } do
     state = %{model | input_buffer: "I think auth is broken", relation_mode: :supports}
 
-    {next_state, []} = App.update(:room_enter, state)
+    assert {:noreply, pending_state} = App.handle_event(%Key{code: "enter", kind: "press"}, state)
 
-    assert next_state.input_buffer == ""
+    assert pending_state.input_buffer == ""
 
-    assert Agent.get(embedded, & &1.submitted) == %{
+    assert pending_state.pending_room_submit == %{
+             room_id: "room-1",
+             text: "I think auth is broken"
+           }
+
+    assert_receive {:embedded_submit_chat, attrs}
+
+    assert attrs == %{
              text: "I think auth is broken",
              selected_context_id: "ctx-1",
              selected_context_object_type: "belief",
@@ -219,6 +250,49 @@ defmodule JidoHiveTermuiConsole.AppTest do
              participant_id: "alice",
              participant_role: "coordinator"
            }
+
+    assert Agent.get(embedded, & &1.submitted) == attrs
+    assert_receive {:room_submit_result, "room-1", "I think auth is broken", {:ok, _contribution}}
+  end
+
+  test "room enter restores the draft when async submission fails", %{model: model} do
+    failing_embedded = self()
+
+    failing_state =
+      %{
+        model
+        | embedded: failing_embedded,
+          embedded_module: __MODULE__.FailingEmbeddedStub,
+          input_buffer: "retry me"
+      }
+
+    assert {:noreply, pending_state} =
+             App.handle_event(%Key{code: "enter", kind: "press"}, failing_state)
+
+    assert pending_state.input_buffer == ""
+    assert_receive {:embedded_submit_chat, %{text: "retry me"}}
+    assert_receive {:room_submit_result, "room-1", "retry me", {:error, :submit_failed}}
+
+    assert {:noreply, next_state} =
+             App.handle_info(
+               {:room_submit_result, "room-1", "retry me", {:error, :submit_failed}},
+               pending_state
+             )
+
+    assert next_state.pending_room_submit == nil
+    assert next_state.input_buffer == "retry me"
+    assert next_state.status_severity == :error
+  end
+
+  defmodule FailingEmbeddedStub do
+    def submit_chat(_server, attrs) do
+      send(
+        Application.fetch_env!(:jido_hive_termui_console, :app_test_pid),
+        {:embedded_submit_chat, attrs}
+      )
+
+      {:error, :submit_failed}
+    end
   end
 
   test "room view renders without crashing across width breakpoints", %{model: model} do
@@ -280,6 +354,9 @@ defmodule JidoHiveTermuiConsole.AppTest do
     state = %{model | help_visible: true}
 
     assert App.event_to_msg(%Key{code: "q", kind: "press"}, state) == :ignore
+
+    assert App.event_to_msg(%Key{code: "enter", kind: "press"}, state) ==
+             {:msg, :dismiss_help}
 
     assert App.event_to_msg(%Key{code: "g", kind: "press", modifiers: ["ctrl"]}, state) ==
              {:msg, :dismiss_help}
