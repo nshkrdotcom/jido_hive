@@ -48,7 +48,7 @@ defmodule JidoHiveTermuiConsole.MixProject do
     if File.dir?(local_path) do
       {:term_ui, path: local_path}
     else
-      {:term_ui, "~> 0.2.0"}
+      {:term_ui, github: "pcharbon70/term_ui", ref: "b707a69a4e68539f8cd81942ce41d118a6744d2d"}
     end
   end
 
