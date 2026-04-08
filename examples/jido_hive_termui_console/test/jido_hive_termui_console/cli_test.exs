@@ -12,4 +12,18 @@ defmodule JidoHiveTermuiConsole.CLITest do
     assert CLI.parse_args(["--room-id", "foo"]) == {:room, %{room_id: "foo"}}
     assert CLI.parse_args(["console", "--room-id", "foo"]) == {:room, %{room_id: "foo"}}
   end
+
+  test "parse_console_opts maps --prod to the production api base url" do
+    assert CLI.parse_console_opts(["--prod"]) == [
+             api_base_url: "https://jido-hive-server-test.app.nsai.online/api"
+           ]
+  end
+
+  test "parse_console_opts preserves explicit api base url over mode flags" do
+    assert CLI.parse_console_opts([
+             "--prod",
+             "--api-base-url",
+             "https://example.com/api"
+           ]) == [api_base_url: "https://example.com/api"]
+  end
 end

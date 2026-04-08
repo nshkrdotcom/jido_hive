@@ -3,7 +3,12 @@ defmodule JidoHiveTermuiConsole.CLI do
 
   alias JidoHiveTermuiConsole.{Auth, Config}
 
+  @local_api_base_url "http://127.0.0.1:4000/api"
+  @prod_api_base_url "https://jido-hive-server-test.app.nsai.online/api"
+
   @console_switches [
+    local: :boolean,
+    prod: :boolean,
     api_base_url: :string,
     room_id: :string,
     participant_id: :string,
@@ -39,9 +44,8 @@ defmodule JidoHiveTermuiConsole.CLI do
   end
 
   def main(argv) do
-    console_argv = strip_console_prefix(argv)
-    {opts, _args, _invalid} = OptionParser.parse(console_argv, strict: @console_switches)
-    route = parse_args(console_argv)
+    opts = parse_console_opts(argv)
+    route = parse_args(argv)
 
     case JidoHiveTermuiConsole.run(Keyword.put(opts, :route, route)) do
       :ok ->
@@ -53,12 +57,21 @@ defmodule JidoHiveTermuiConsole.CLI do
     end
   end
 
-  @spec parse_args([String.t()]) :: {:lobby, map()} | {:room, map()}
-  def parse_args(argv) do
+  @spec parse_console_opts([String.t()]) :: keyword()
+  def parse_console_opts(argv) do
     {opts, _args, _invalid} =
       argv
       |> strip_console_prefix()
       |> OptionParser.parse(strict: @console_switches)
+
+    opts
+    |> resolve_mode_api_base_url()
+    |> Keyword.drop([:local, :prod])
+  end
+
+  @spec parse_args([String.t()]) :: {:lobby, map()} | {:room, map()}
+  def parse_args(argv) do
+    opts = parse_console_opts(argv)
 
     case Keyword.get(opts, :room_id) do
       room_id when is_binary(room_id) and room_id != "" -> {:room, %{room_id: room_id}}
@@ -68,4 +81,20 @@ defmodule JidoHiveTermuiConsole.CLI do
 
   defp strip_console_prefix(["console" | rest]), do: rest
   defp strip_console_prefix(argv), do: argv
+
+  defp resolve_mode_api_base_url(opts) do
+    cond do
+      Keyword.has_key?(opts, :api_base_url) ->
+        opts
+
+      Keyword.get(opts, :prod, false) ->
+        Keyword.put(opts, :api_base_url, @prod_api_base_url)
+
+      Keyword.get(opts, :local, false) ->
+        Keyword.put(opts, :api_base_url, @local_api_base_url)
+
+      true ->
+        opts
+    end
+  end
 end
