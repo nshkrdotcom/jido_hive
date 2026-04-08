@@ -15,8 +15,21 @@ defmodule JidoHiveClient.ChatInputTest do
     assert input.participant_id == "alice"
     assert input.participant_role == "collaborator"
     assert input.participant_kind == "human"
+    assert input.authority_level == "advisory"
     assert %DateTime{} = input.submitted_at
     assert input.local_context == %{}
+  end
+
+  test "accepts explicit authority level" do
+    {:ok, input} =
+      ChatInput.new(%{
+        room_id: "room-1",
+        participant_id: "alice",
+        text: "Binding decision",
+        authority_level: "binding"
+      })
+
+    assert input.authority_level == "binding"
   end
 
   test "requires room_id, participant_id, and text" do

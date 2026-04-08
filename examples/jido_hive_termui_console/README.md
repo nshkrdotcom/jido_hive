@@ -46,24 +46,31 @@ that exercises the real participation path.
 
 ## Current UI shape
 
-The console is built around three visible regions:
+The console is now a five-screen operator shell:
 
-- left pane: conversation and room timeline projection
-- right pane: structured context object list
-- bottom pane: input buffer for normal chat text
+- lobby: local room launcher backed by `~/.config/hive/rooms.json`
+- room: conversation, context, event poller, input, and graph-authoring controls
+- conflict: contradiction side-by-side review plus manual or AI-assisted resolution
+- publish: server-driven publication plan with dynamic required bindings
+- wizard: new-room creation from live `/targets` and `/policies` data
 
-The footer shows current status and the key bindings.
+The room screen still uses a pane layout:
+
+- conversation pane: recent timeline projection
+- context pane: structured context objects or provenance drill-down
+- events pane: short-polled room activity feed
+- input pane: current chat buffer
 
 The important part is not the layout itself. The important part is that the UI
-is driven by the embedded client snapshot rather than by ad hoc HTTP calls spread
-throughout the view layer.
+is driven by the embedded client snapshot and thin HTTP boundary helpers rather
+than by ad hoc room logic spread throughout the view layer.
 
-The context pane is no longer just a flat list. Each row now carries lightweight
-graph cues:
+The context pane surfaces lightweight graph cues per row:
 
 - incoming and outgoing edge counts
 - stale markers
 - contradiction markers
+- `[BINDING]` authority markers
 
 ## How it is built
 
@@ -81,8 +88,18 @@ Important local files:
   Main `term_ui` application loop, update logic, and rendering.
 - `lib/jido_hive_termui_console/model.ex`
   Local UI model.
+- `lib/jido_hive_termui_console/nav.ex`
+  Screen transitions and room-process lifecycle.
 - `lib/jido_hive_termui_console/projection.ex`
   Snapshot-to-screen-line projection helpers.
+- `lib/jido_hive_termui_console/config.ex`
+  Local config, room registry, and config-file bootstrap.
+- `lib/jido_hive_termui_console/auth.ex`
+  Cached connector auth state for publish flows.
+- `lib/jido_hive_termui_console/http.ex`
+  Thin `:httpc` wrapper for lobby, publish, and wizard fetches.
+- `lib/jido_hive_termui_console/screens/`
+  Screen-specific key maps and rendering for lobby, room, conflict, publish, and wizard.
 
 The example depends on the local `term_ui` tree when present at:
 
@@ -102,7 +119,7 @@ Before running the console, you need:
 
 - repo setup completed with `bin/setup`
 - a running `jido_hive_server`
-- an existing room id
+- optionally one or more workers if you want live room execution
 
 The server will usually be started with one of:
 
@@ -126,45 +143,56 @@ From the example directory:
 
 ```bash
 cd /home/home/p/g/n/jido_hive/examples/jido_hive_termui_console
-mix deps.get
-mix run -- --room-id room-123 --participant-id alice
+mix setup
+mix escript.build
 ```
 
-That starts the embedded runtime, snapshots the current room, and opens the UI.
+Open the lobby:
+
+```bash
+./hive console
+```
+
+Open a room directly:
+
+```bash
+./hive console --room-id room-123
+```
+
+Bootstrap cached connector auth for publish flows:
+
+```bash
+./hive auth login github
+./hive auth login notion
+```
 
 ### Typical local workflow
 
 1. Start the server.
-2. Create or identify a room with `bin/hive-control` or `setup/hive`.
-3. Launch the console with that room id.
-4. Type chat into the input pane.
-5. Watch the timeline and context panes update after submission.
-6. Move selection in the context pane and accept a selected object when needed.
+2. Start workers with `bin/client-worker`, `bin/hive-clients`, or the live-demo helpers.
+3. Launch `./hive console`.
+4. Open an existing room from the lobby or create one with the wizard.
+5. Type chat into the room screen and watch timeline, context, and event panes refresh.
+6. Use provenance drill-down, conflict resolution, and publish when the room reaches those states.
 
 ## Interaction model
 
 The full interaction loop is:
 
-1. The CLI starts the embedded client runtime.
-2. The embedded runtime subscribes to its local runtime and polls the server room
-   APIs.
-3. The app renders a snapshot containing:
-   - participant info
-   - room timeline entries
-   - current context objects
-   - runtime status
-4. When the user presses `Enter`, the current text buffer is sent to
-   `submit_chat/2`.
-5. The client interceptor and backend turn that chat into a structured
-   contribution.
-6. The contribution is posted to the server.
-7. The embedded runtime refreshes its snapshot.
-8. The console redraws with the updated timeline and context.
+1. `hive console` loads local config from `~/.config/hive/`.
+2. The lobby screen reads `rooms.json` and fetches each room snapshot over HTTP.
+3. Opening a room starts the embedded runtime plus a separate short-poll event log task.
+4. The room screen renders participant identity, room snapshot, event feed, and current input.
+5. Pressing `Enter` sends the buffer through `Embedded.submit_chat/2`.
+6. The embedded client interceptor and backend turn chat into a structured contribution.
+7. The contribution is posted to the authoritative room server.
+8. The embedded runtime refreshes, the event poller advances, and the console redraws.
 
 Accepting a selected object follows the same shape, except it uses
-`accept_context/3` to create a decision-style contribution rooted in the selected
-context object. The resulting decision currently `derives_from` the selected
-node so it participates in the server-side graph immediately.
+`accept_context/3` to create a binding decision rooted in the selected context
+object. Conflict resolution is separate: the conflict screen submits one direct
+HTTP contribution with two `resolves` relations so it matches server graph
+semantics.
 
 ## Relation authoring modes
 
@@ -196,6 +224,8 @@ act like:
   New semantic objects support the selected node.
 - `contradicts`
   New semantic objects contradict the selected node.
+- `resolves`
+  New semantic objects resolve the selected node.
 - `none`
   Submit plain chat. No selected-context anchoring is applied.
 
@@ -206,7 +236,8 @@ Current contextual defaults are:
 - `hypothesis` -> `derives_from`
 - `evidence` -> `supports`
 - `contradiction` -> `contradicts`
-- `decision_candidate` -> `derives_from`
+- `decision` -> `resolves`
+- `decision_candidate` -> `resolves`
 - `question` -> `references`
 - `note` -> `references`
 
@@ -216,43 +247,114 @@ still shape the graph.
 
 ## CLI options
 
-Current options:
+### Commands
+
+- `./hive console`
+  Open the lobby using `~/.config/hive/config.json`.
+- `./hive console --room-id <id>`
+  Skip the lobby and open a room directly.
+- `./hive auth login github`
+  Start the v1 device-flow scaffold for GitHub.
+- `./hive auth login notion`
+  Start the v1 device-flow scaffold for Notion.
+- `./hive room create`
+  Intentionally not implemented; use the interactive wizard from the lobby.
+
+### Console options
 
 - `--api-base-url`
   Default: `http://127.0.0.1:4000/api`
 - `--room-id`
-  Required
+  Optional direct-open target
 - `--participant-id`
-  Default: `human-local`
+  Default: generated human identity or config file value
 - `--participant-role`
-  Default: `collaborator`
+  Default: `coordinator`
+- `--authority-level`
+  Default: `binding`
 - `--poll-interval-ms`
   Default: `500`
 
-## Keys
+## Keyboard shortcuts
 
-- `Enter`
-  Submit the current input buffer as chat.
-- `Up` / `Down`
-  Move the selected context object.
-- `Ctrl+A`
-  Accept the selected context object into a binding decision-style contribution.
-- `Ctrl+T`
-  Switch to `contextual` mode.
-- `Ctrl+F`
-  Switch to explicit `references` mode.
-- `Ctrl+D`
-  Switch to explicit `derives_from` mode.
-- `Ctrl+S`
-  Switch to explicit `supports` mode.
-- `Ctrl+X`
-  Switch to explicit `contradicts` mode.
-- `Ctrl+N`
-  Switch to `none` mode for plain chat.
-- `Ctrl+R`
-  Refresh immediately.
-- `Ctrl+Q`
-  Quit.
+### Lobby
+
+- `Up` / `Down`: move cursor
+- `Enter`: open selected room
+- `n`: open the room-creation wizard
+- `r`: refetch local room rows
+- `d`: remove the selected room id from `rooms.json`
+- `q` or `Ctrl+Q`: quit
+
+### Room
+
+- `Up` / `Down`: move selected context object
+- `Enter`: submit chat, or open conflict resolution when the selected object is a contradiction
+- `Tab`: cycle pane focus
+- `Esc`: clear drill mode, clear input, or go back to the lobby
+- `Ctrl+A`: accept selected context into a binding decision
+- `Ctrl+B`: return to lobby
+- `Ctrl+E`: toggle provenance drill-down for the selected object
+- `Ctrl+P`: open publish when the room is `publication_ready`
+- `Ctrl+R`: refresh the room snapshot
+- `Ctrl+T`: `contextual` relation mode
+- `Ctrl+F`: `references` relation mode
+- `Ctrl+D`: `derives_from` relation mode
+- `Ctrl+S`: `supports` relation mode
+- `Ctrl+X`: `contradicts` relation mode
+- `Ctrl+V`: `resolves` relation mode
+- `Ctrl+N`: plain chat mode with no anchoring
+- `Ctrl+Q`: quit
+
+### Conflict
+
+- `a`: prefill an accept-left resolution
+- `b`: prefill an accept-right resolution
+- `s`: dispatch AI synthesis through the chat path
+- `Enter`: submit one direct resolution contribution with two `resolves` edges
+- `Esc`: return to room
+- `Ctrl+Q`: quit
+
+### Publish
+
+- `Space`: toggle the focused channel
+- `Tab`: cycle channel and binding inputs
+- `Enter`: submit publications
+- `r`: refresh cached auth state
+- `Esc`: return to room
+- `Ctrl+Q`: quit
+
+### Wizard
+
+- `Up` / `Down`: move through policies and worker targets
+- `Backspace`: edit the brief on step 0
+- `Space`: toggle a worker on step 3
+- `Enter`: advance or create the room on the final step
+- `Esc`: go back a step or return to the lobby
+- `Ctrl+Q`: quit
+
+## Config files
+
+The console creates and reads these files under `~/.config/hive/`:
+
+- `config.json`
+  Default API URL, participant id, participant role, authority level, and poll interval.
+- `rooms.json`
+  Local room registry shown in the lobby. Stale room ids stay removable even when the server returns `404`.
+- `credentials.json`
+  Cached connector credentials used by the publish screen. File mode is locked to `0600`.
+
+## Auth setup
+
+`hive auth login <provider>` is a v1 device-flow scaffold. It prints:
+
+- a verification URL
+- a user code
+- the credentials file path
+
+The command does not complete OAuth inside the console yet. It exists so the
+publish screen can report a concrete connector path and persist cached auth
+state in one location.
 
 ## Development notes
 
@@ -287,18 +389,35 @@ mix ci
 
 ## Troubleshooting
 
-### `--room-id is required`
+### The room opens directly but I expected the lobby
 
-Pass a room id explicitly:
+The console only skips the lobby when `--room-id <id>` is present. Run:
 
 ```bash
-mix run -- --room-id room-123 --participant-id alice
+./hive console
 ```
 
 ### The UI opens but shows stale data
 
 Use `Ctrl+R` to force a refresh and confirm the server is reachable at the
 configured `--api-base-url`.
+
+### The lobby shows a broken room row
+
+The lobby keeps stale room ids visible as removable entries when the server
+returns `404`. Press `d` on that row to delete the local id from `rooms.json`.
+
+### Publish says auth is missing
+
+Run one of:
+
+```bash
+./hive auth login github
+./hive auth login notion
+```
+
+Then confirm that `~/.config/hive/credentials.json` contains the cached
+credential record expected by the publish screen.
 
 ### The example cannot start because `term_ui` is missing
 

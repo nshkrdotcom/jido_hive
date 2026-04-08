@@ -19,7 +19,7 @@ defmodule JidoHiveClient.AgentBackends.Mock do
        chat_text: chat_input.text,
        summary: chat_input.text,
        contribution_type: "chat",
-       authority_level: "advisory",
+       authority_level: chat_input.authority_level,
        context_objects: context_objects,
        tags: Enum.map(context_objects, &Map.fetch!(&1, "object_type")),
        raw_backend_output: %{"backend" => "mock", "rule_count" => length(context_objects) - 1}
@@ -184,7 +184,8 @@ defmodule JidoHiveClient.AgentBackends.Mock do
   defp contextual_relation("hypothesis"), do: "derives_from"
   defp contextual_relation("evidence"), do: "supports"
   defp contextual_relation("contradiction"), do: "contradicts"
-  defp contextual_relation("decision_candidate"), do: "derives_from"
+  defp contextual_relation("decision"), do: "resolves"
+  defp contextual_relation("decision_candidate"), do: "resolves"
   defp contextual_relation("question"), do: "references"
   defp contextual_relation("note"), do: "references"
   defp contextual_relation(_object_type), do: nil

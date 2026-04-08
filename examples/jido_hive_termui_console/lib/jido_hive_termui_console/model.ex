@@ -1,51 +1,120 @@
+# credo:disable-for-this-file Credo.Check.Warning.StructFieldAmount
 defmodule JidoHiveTermuiConsole.Model do
   @moduledoc false
 
   alias JidoHiveTermuiConsole.Projection
 
+  @default_snapshot %{
+    "timeline" => [],
+    "context_objects" => [],
+    "last_error" => nil
+  }
+
   defstruct [
     :embedded,
     :embedded_module,
-    :room_id,
+    :event_log_poller_pid,
+    :http_module,
+    :config_module,
+    :auth_module,
+    :event_log_poller_module,
+    :api_base_url,
     :participant_id,
     :participant_role,
-    :poll_interval_ms,
+    :authority_level,
+    :room_id,
     :snapshot,
+    active_screen: :lobby,
+    lobby_rooms: [],
+    lobby_cursor: 0,
+    lobby_loading: false,
     relation_mode: :contextual,
     input_buffer: "",
     selected_context_index: 0,
+    pane_focus: :context,
+    drill_context_id: nil,
+    provenance_lines: [],
+    event_log_lines: [],
+    event_log_cursor: nil,
+    conflict_left: nil,
+    conflict_right: nil,
+    conflict_input_buf: "",
+    publish_plan: nil,
+    publish_selected: [],
+    publish_cursor: 0,
+    publish_bindings: %{},
+    publish_auth_state: %{},
+    wizard_step: 0,
+    wizard_fields: %{},
+    wizard_cursor: 0,
+    wizard_available_targets: [],
+    wizard_available_policies: [],
     status_line: "Ready",
+    status_severity: :info,
+    sync_error: false,
     screen_width: 120,
-    screen_height: 32
+    screen_height: 40,
+    poll_interval_ms: 500
   ]
 
   @type t :: %__MODULE__{}
 
+  @type lobby_row :: %{
+          room_id: String.t(),
+          brief: String.t(),
+          status: String.t(),
+          dispatch_policy_id: String.t(),
+          completed_slots: non_neg_integer(),
+          total_slots: non_neg_integer(),
+          participant_count: non_neg_integer(),
+          flagged: boolean(),
+          fetch_error: boolean()
+        }
+
   @spec new(keyword()) :: t()
   def new(opts) do
-    snapshot = Keyword.get(opts, :snapshot, %{timeline: [], context_objects: []})
+    snapshot =
+      opts
+      |> Keyword.get(:snapshot, @default_snapshot)
+      |> normalize_snapshot()
 
     %__MODULE__{
-      embedded: Keyword.fetch!(opts, :embedded),
+      embedded: Keyword.get(opts, :embedded),
       embedded_module: Keyword.get(opts, :embedded_module, JidoHiveClient.Embedded),
-      room_id: Keyword.fetch!(opts, :room_id),
+      event_log_poller_pid: Keyword.get(opts, :event_log_poller_pid),
+      http_module: Keyword.get(opts, :http_module, JidoHiveTermuiConsole.HTTP),
+      config_module: Keyword.get(opts, :config_module, JidoHiveTermuiConsole.Config),
+      auth_module: Keyword.get(opts, :auth_module, JidoHiveTermuiConsole.Auth),
+      event_log_poller_module:
+        Keyword.get(opts, :event_log_poller_module, JidoHiveTermuiConsole.EventLogPoller),
+      api_base_url: Keyword.get(opts, :api_base_url, "http://127.0.0.1:4000/api"),
       participant_id: Keyword.get(opts, :participant_id, "human-local"),
-      participant_role: Keyword.get(opts, :participant_role, "collaborator"),
-      poll_interval_ms: Keyword.get(opts, :poll_interval_ms, 500),
+      participant_role: Keyword.get(opts, :participant_role, "coordinator"),
+      authority_level: Keyword.get(opts, :authority_level, "binding"),
+      active_screen: Keyword.get(opts, :active_screen, :lobby),
+      room_id: Keyword.get(opts, :room_id),
+      snapshot: snapshot,
       relation_mode: Keyword.get(opts, :relation_mode, :contextual),
-      snapshot: snapshot
+      poll_interval_ms: Keyword.get(opts, :poll_interval_ms, 500)
     }
     |> apply_snapshot(snapshot)
   end
 
   @spec apply_snapshot(t(), map()) :: t()
   def apply_snapshot(%__MODULE__{} = state, snapshot) when is_map(snapshot) do
+    normalized = normalize_snapshot(snapshot)
+
     selected_index =
-      snapshot
+      normalized
       |> Projection.display_context_objects()
       |> clamp_index(state.selected_context_index)
 
-    %{state | snapshot: snapshot, selected_context_index: selected_index}
+    %{
+      state
+      | snapshot: normalized,
+        selected_context_index: selected_index,
+        sync_error: not is_nil(value(normalized, "last_error"))
+    }
   end
 
   @spec append_input(t(), String.t()) :: t()
@@ -55,8 +124,7 @@ defmodule JidoHiveTermuiConsole.Model do
 
   @spec backspace(t()) :: t()
   def backspace(%__MODULE__{} = state) do
-    graphemes = String.graphemes(state.input_buffer)
-    %{state | input_buffer: graphemes |> Enum.drop(-1) |> Enum.join()}
+    %{state | input_buffer: drop_last_grapheme(state.input_buffer)}
   end
 
   @spec clear_input(t()) :: t()
@@ -69,6 +137,39 @@ defmodule JidoHiveTermuiConsole.Model do
     %{state | selected_context_index: next_index}
   end
 
+  @spec move_lobby_cursor(t(), integer()) :: t()
+  def move_lobby_cursor(%__MODULE__{} = state, delta) when is_integer(delta) do
+    max_index = max(length(state.lobby_rooms) - 1, 0)
+    next_index = min(max(state.lobby_cursor + delta, 0), max_index)
+    %{state | lobby_cursor: next_index}
+  end
+
+  @spec move_wizard_cursor(t(), integer()) :: t()
+  def move_wizard_cursor(%__MODULE__{} = state, delta) when is_integer(delta) do
+    size =
+      case state.wizard_step do
+        1 -> length(state.wizard_available_policies)
+        3 -> length(state.wizard_available_targets)
+        _other -> 1
+      end
+
+    max_index = max(size - 1, 0)
+    next_index = min(max(state.wizard_cursor + delta, 0), max_index)
+    %{state | wizard_cursor: next_index}
+  end
+
+  @spec cycle_pane_focus(t()) :: t()
+  def cycle_pane_focus(%__MODULE__{} = state) do
+    next_focus =
+      case state.pane_focus do
+        :context -> :conversation
+        :conversation -> :input
+        _other -> :context
+      end
+
+    %{state | pane_focus: next_focus}
+  end
+
   @spec selected_context(t()) :: map() | nil
   def selected_context(%__MODULE__{} = state) do
     state.snapshot
@@ -76,20 +177,33 @@ defmodule JidoHiveTermuiConsole.Model do
     |> Enum.at(state.selected_context_index)
   end
 
+  @spec selected_lobby_room(t()) :: lobby_row() | nil
+  def selected_lobby_room(%__MODULE__{} = state),
+    do: Enum.at(state.lobby_rooms, state.lobby_cursor)
+
   @spec resize(t(), pos_integer(), pos_integer()) :: t()
   def resize(%__MODULE__{} = state, width, height)
       when is_integer(width) and width > 0 and is_integer(height) and height > 0 do
     %{state | screen_width: width, screen_height: height}
   end
 
-  @spec set_status(t(), String.t()) :: t()
-  def set_status(%__MODULE__{} = state, message) when is_binary(message) do
-    %{state | status_line: message}
+  @spec set_status(t(), String.t(), :info | :warn | :error) :: t()
+  def set_status(%__MODULE__{} = state, message, severity \\ :info)
+      when is_binary(message) and severity in [:info, :warn, :error] do
+    %{state | status_line: message, status_severity: severity}
   end
 
   @spec set_relation_mode(t(), atom()) :: t()
   def set_relation_mode(%__MODULE__{} = state, mode)
-      when mode in [:contextual, :references, :derives_from, :supports, :contradicts, :none] do
+      when mode in [
+             :contextual,
+             :references,
+             :derives_from,
+             :supports,
+             :contradicts,
+             :none,
+             :resolves
+           ] do
     %{state | relation_mode: mode}
   end
 
@@ -98,5 +212,31 @@ defmodule JidoHiveTermuiConsole.Model do
   defp clamp_index(context_objects, selected_index) do
     max_index = max(length(context_objects) - 1, 0)
     min(max(selected_index, 0), max_index)
+  end
+
+  defp normalize_snapshot(snapshot) do
+    @default_snapshot
+    |> Map.merge(stringify_keys(snapshot))
+    |> Map.put("timeline", value(snapshot, "timeline") || [])
+    |> Map.put("context_objects", value(snapshot, "context_objects") || [])
+  end
+
+  defp stringify_keys(map) when is_map(map) do
+    Map.new(map, fn {key, value} ->
+      {to_string(key), value}
+    end)
+  end
+
+  defp value(map, key) when is_map(map) do
+    Map.get(map, key) || Map.get(map, String.to_existing_atom(key))
+  rescue
+    ArgumentError -> Map.get(map, key)
+  end
+
+  defp drop_last_grapheme(buffer) do
+    buffer
+    |> String.graphemes()
+    |> Enum.drop(-1)
+    |> Enum.join()
   end
 end

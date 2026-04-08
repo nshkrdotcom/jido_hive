@@ -1,0 +1,337 @@
+defmodule JidoHiveTermuiConsole.Nav do
+  @moduledoc false
+
+  alias JidoHiveTermuiConsole.{Identity, Model}
+  alias JidoHiveTermuiConsole.Screens.Lobby
+
+  @spec transition(Model.t(), :lobby | :room | :conflict | :publish | :wizard, keyword()) ::
+          Model.t()
+  def transition(%Model{} = state, destination, opts \\ []) do
+    case destination do
+      :lobby -> transition_to_lobby(state, opts)
+      :room -> transition_to_room(state, opts)
+      :conflict -> transition_to_conflict(state)
+      :publish -> transition_to_publish(state, opts)
+      :wizard -> transition_to_wizard(state, opts)
+    end
+  end
+
+  @spec refresh_room_snapshot(Model.t()) :: Model.t()
+  def refresh_room_snapshot(%Model{room_id: nil} = state), do: state
+
+  def refresh_room_snapshot(%Model{} = state) do
+    embedded_snapshot =
+      if state.embedded do
+        state.embedded_module.snapshot(state.embedded)
+      else
+        %{}
+      end
+
+    room_snapshot =
+      case state.http_module.get(
+             state.api_base_url,
+             "/rooms/#{URI.encode_www_form(state.room_id)}"
+           ) do
+        {:ok, %{"data" => snapshot}} -> merge_room_snapshot(snapshot, embedded_snapshot)
+        {:error, _reason} -> merge_room_snapshot(state.snapshot || %{}, embedded_snapshot)
+      end
+
+    Model.apply_snapshot(state, room_snapshot)
+  rescue
+    _error -> state
+  end
+
+  defp transition_to_lobby(%Model{} = state, opts) do
+    stop_room_processes(state)
+    room_ids = state.config_module.list_rooms()
+    app_pid = Keyword.get(opts, :app_pid)
+
+    next_state =
+      build_state(state, %{
+        active_screen: :lobby,
+        lobby_rooms: Enum.map(room_ids, &Lobby.placeholder_row/1),
+        lobby_loading: room_ids != [],
+        status_line: "Ready",
+        status_severity: :info
+      })
+
+    Enum.each(room_ids, fn room_id ->
+      if is_pid(app_pid), do: send(app_pid, {:fetch_room, room_id})
+    end)
+
+    next_state
+  end
+
+  defp transition_to_room(%Model{} = state, opts) do
+    room_id = Keyword.fetch!(opts, :room_id)
+    app_pid = Keyword.get(opts, :app_pid)
+    preserve_existing = Keyword.get(opts, :preserve_existing, false)
+
+    {embedded, poller_pid, embedded_snapshot} =
+      room_processes_for_transition(state, room_id, app_pid, preserve_existing, opts)
+
+    room_snapshot = fetch_room_snapshot(state, room_id, embedded_snapshot)
+
+    build_state(state, %{
+      active_screen: :room,
+      room_id: room_id,
+      embedded: embedded,
+      event_log_poller_pid: poller_pid,
+      snapshot: room_snapshot,
+      sync_error: not is_nil(Map.get(room_snapshot, "last_error"))
+    })
+  end
+
+  defp transition_to_conflict(%Model{} = state) do
+    case Model.selected_context(state) do
+      nil ->
+        Model.set_status(state, "No context object selected", :error)
+
+      conflict_left ->
+        conflict_right = find_conflict_partner(conflict_left, state.snapshot)
+
+        build_room_screen_state(state, %{
+          active_screen: :conflict,
+          conflict_left: conflict_left,
+          conflict_right: conflict_right,
+          conflict_input_buf: ""
+        })
+    end
+  end
+
+  defp transition_to_publish(%Model{} = state, opts) do
+    app_pid = Keyword.get(opts, :app_pid)
+
+    if is_pid(app_pid) do
+      send(app_pid, :fetch_publication_plan)
+      send(app_pid, :refresh_auth_state)
+    end
+
+    build_room_screen_state(state, %{
+      active_screen: :publish,
+      publish_plan: nil,
+      publish_selected: [],
+      publish_cursor: 0,
+      publish_bindings: %{},
+      publish_auth_state: %{}
+    })
+  end
+
+  defp transition_to_wizard(%Model{} = state, opts) do
+    app_pid = Keyword.get(opts, :app_pid)
+
+    if is_pid(app_pid) do
+      send(app_pid, :fetch_wizard_targets)
+      send(app_pid, :fetch_wizard_policies)
+    end
+
+    build_state(state, %{
+      active_screen: :wizard,
+      wizard_step: 0,
+      wizard_fields: %{},
+      wizard_cursor: 0,
+      wizard_available_targets: [],
+      wizard_available_policies: []
+    })
+  end
+
+  defp build_state(%Model{} = state, overrides) do
+    preserved =
+      %{
+        api_base_url: state.api_base_url,
+        participant_id: state.participant_id,
+        participant_role: state.participant_role,
+        authority_level: state.authority_level,
+        poll_interval_ms: state.poll_interval_ms,
+        screen_width: state.screen_width,
+        screen_height: state.screen_height,
+        embedded_module: state.embedded_module,
+        http_module: state.http_module,
+        config_module: state.config_module,
+        auth_module: state.auth_module,
+        event_log_poller_module: state.event_log_poller_module
+      }
+      |> Map.merge(overrides)
+
+    struct(Model, Map.merge(Map.from_struct(%Model{}), preserved))
+  end
+
+  defp build_room_screen_state(%Model{} = state, overrides) do
+    preserved =
+      %{
+        embedded: state.embedded,
+        embedded_module: state.embedded_module,
+        event_log_poller_pid: state.event_log_poller_pid,
+        room_id: state.room_id,
+        snapshot: state.snapshot,
+        event_log_lines: state.event_log_lines,
+        event_log_cursor: state.event_log_cursor,
+        sync_error: state.sync_error
+      }
+
+    build_state(state, Map.merge(preserved, overrides))
+  end
+
+  defp stop_room_processes(%Model{} = state) do
+    stop_poller(state.event_log_poller_pid)
+    stop_embedded(state.embedded_module, state.embedded)
+  end
+
+  defp stop_poller(pid) when is_pid(pid), do: Process.exit(pid, :shutdown)
+  defp stop_poller(_pid), do: :ok
+
+  defp stop_embedded(_module, nil), do: :ok
+
+  defp stop_embedded(module, embedded) do
+    if function_exported?(module, :shutdown, 1) do
+      module.shutdown(embedded)
+    else
+      Process.exit(embedded, :shutdown)
+    end
+  end
+
+  defp ensure_embedded(%Model{} = state, room_id, opts) do
+    case Keyword.get(opts, :embedded) do
+      nil ->
+        embedded_opts =
+          state
+          |> identity()
+          |> Identity.to_embedded_opts()
+          |> Keyword.merge(
+            room_id: room_id,
+            api_base_url: state.api_base_url,
+            poll_interval_ms: state.poll_interval_ms
+          )
+
+        {:ok, embedded} = state.embedded_module.start_link(embedded_opts)
+        embedded
+
+      embedded ->
+        embedded
+    end
+  end
+
+  defp start_event_log_poller(%Model{} = state, room_id, app_pid) when is_pid(app_pid) do
+    {:ok, pid} =
+      state.event_log_poller_module.start_link(
+        room_id: room_id,
+        app_pid: app_pid,
+        api_base_url: state.api_base_url,
+        cursor: state.event_log_cursor,
+        http_module: state.http_module
+      )
+
+    pid
+  end
+
+  defp start_event_log_poller(_state, _room_id, _app_pid), do: nil
+
+  defp identity(%Model{} = state) do
+    %Identity{
+      participant_id: state.participant_id,
+      participant_role: state.participant_role,
+      authority_level: state.authority_level,
+      display_name: state.participant_id
+    }
+  end
+
+  defp merge_room_snapshot(room_snapshot, embedded_snapshot) do
+    room_snapshot = stringify_keys(room_snapshot)
+    embedded_snapshot = stringify_keys(embedded_snapshot)
+
+    room_snapshot
+    |> Map.put(
+      "timeline",
+      Map.get(embedded_snapshot, "timeline", Map.get(room_snapshot, "timeline", []))
+    )
+    |> Map.put(
+      "context_objects",
+      Map.get(embedded_snapshot, "context_objects", Map.get(room_snapshot, "context_objects", []))
+    )
+    |> Map.put("next_cursor", Map.get(embedded_snapshot, "next_cursor"))
+    |> Map.put("last_sync_at", Map.get(embedded_snapshot, "last_sync_at"))
+    |> Map.put("last_error", Map.get(embedded_snapshot, "last_error"))
+    |> Map.put("participant", Map.get(embedded_snapshot, "participant"))
+    |> Map.put("runtime", Map.get(embedded_snapshot, "runtime"))
+  end
+
+  defp find_conflict_partner(conflict_left, snapshot) do
+    conflict_left
+    |> adjacency_edges()
+    |> Enum.find_value(&conflict_partner_from_edge(&1, snapshot)) ||
+      %{
+        "context_id" => "unknown",
+        "object_type" => "conflict_target",
+        "title" => "[not in view]"
+      }
+  end
+
+  defp adjacency_edges(object) do
+    adjacency = Map.get(object, "adjacency") || Map.get(object, :adjacency) || %{}
+    outgoing = Map.get(adjacency, "outgoing") || Map.get(adjacency, :outgoing) || []
+    incoming = Map.get(adjacency, "incoming") || Map.get(adjacency, :incoming) || []
+    outgoing ++ incoming
+  end
+
+  defp context_objects(snapshot),
+    do: Map.get(snapshot, "context_objects") || Map.get(snapshot, :context_objects) || []
+
+  defp stringify_keys(map) when is_map(map) do
+    Map.new(map, fn {key, value} -> {to_string(key), value} end)
+  end
+
+  defp stringify_keys(_other), do: %{}
+
+  defp room_processes_for_transition(state, room_id, app_pid, true, _opts)
+       when state.room_id == room_id and not is_nil(state.embedded) do
+    poller_pid = state.event_log_poller_pid || start_event_log_poller(state, room_id, app_pid)
+    {state.embedded, poller_pid, state.embedded_module.snapshot(state.embedded)}
+  end
+
+  defp room_processes_for_transition(state, room_id, app_pid, _preserve_existing, opts) do
+    stop_room_processes(state)
+    embedded = ensure_embedded(state, room_id, opts)
+    poller_pid = start_event_log_poller(state, room_id, app_pid)
+    {embedded, poller_pid, state.embedded_module.snapshot(embedded)}
+  end
+
+  defp fetch_room_snapshot(state, room_id, embedded_snapshot) do
+    case state.http_module.get(state.api_base_url, "/rooms/#{URI.encode_www_form(room_id)}") do
+      {:ok, %{"data" => snapshot}} -> merge_room_snapshot(snapshot, embedded_snapshot)
+      {:error, _reason} -> merge_room_snapshot(%{}, embedded_snapshot)
+    end
+  end
+
+  defp conflict_partner_from_edge(edge, snapshot) do
+    with true <- contradiction_edge?(edge),
+         target_id when is_binary(target_id) <- conflict_target_id(edge) do
+      find_context_object(snapshot, target_id) || missing_conflict_target(target_id)
+    else
+      _other -> nil
+    end
+  end
+
+  defp contradiction_edge?(edge) do
+    type = Map.get(edge, "type") || Map.get(edge, :type)
+    type in ["contradicts", :contradicts]
+  end
+
+  defp conflict_target_id(edge) do
+    Map.get(edge, "target_id") || Map.get(edge, :target_id) ||
+      Map.get(edge, "from_id") || Map.get(edge, :from_id)
+  end
+
+  defp find_context_object(snapshot, target_id) do
+    Enum.find(context_objects(snapshot), fn object ->
+      (Map.get(object, "context_id") || Map.get(object, :context_id)) == target_id
+    end)
+  end
+
+  defp missing_conflict_target(target_id) do
+    %{
+      "context_id" => target_id,
+      "object_type" => "conflict_target",
+      "title" => "[not in view]"
+    }
+  end
+end

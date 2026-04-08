@@ -341,39 +341,67 @@ the system while still exposing room internals.
 
 The first console consumer lives in `examples/jido_hive_termui_console`.
 
-Run it against an existing room:
+Build the local escript once:
 
 ```bash
 cd examples/jido_hive_termui_console
-mix run -- --room-id room-123 --participant-id alice
+mix escript.build
+```
+
+Open the lobby:
+
+```bash
+./hive console
+```
+
+Open a room directly:
+
+```bash
+./hive console --room-id room-123
+```
+
+Initialize cached connector auth when you need the publish screen:
+
+```bash
+./hive auth login github
+./hive auth login notion
 ```
 
 Useful flags:
 
 - `--api-base-url` default: `http://127.0.0.1:4000/api`
-- `--participant-role` default: `collaborator`
+- `--participant-id` default: generated human-local identity
+- `--participant-role` default: `coordinator`
+- `--authority-level` default: `binding`
 - `--poll-interval-ms` default: `500`
 
 Current keys:
 
-- `Enter`: submit chat
-- `Up` / `Down`: move the selected context object
-- `Ctrl+A`: accept the selected context object into a binding decision
-- `Ctrl+T`: contextual graph-authoring mode
-- `Ctrl+F`: explicit `references` mode
-- `Ctrl+D`: explicit `derives_from` mode
-- `Ctrl+S`: explicit `supports` mode
-- `Ctrl+X`: explicit `contradicts` mode
-- `Ctrl+N`: plain chat mode with no anchoring
-- `Ctrl+R`: refresh immediately
-- `Ctrl+Q`: quit
+- lobby: `Enter` open room, `n` wizard, `r` refresh, `d` remove local room id, `q` quit
+- room: `Ctrl+B` back to lobby, `Ctrl+E` provenance drill, `Ctrl+A` accept context, `Ctrl+P` publish, `Ctrl+Q` quit
+- graph authoring modes: `Ctrl+T` contextual, `Ctrl+F` references, `Ctrl+D` derives_from, `Ctrl+S` supports, `Ctrl+X` contradicts, `Ctrl+V` resolves, `Ctrl+N` plain chat
+- publish/conflict/wizard screens: `Esc` backs out of the current screen, `Ctrl+Q` quits globally
+
+The console persists local operator state under `~/.config/hive/`:
+
+- `config.json`: default API URL, participant identity, authority, poll interval
+- `rooms.json`: locally saved room ids shown in the lobby
+- `credentials.json`: cached connector credentials for publish flows
 
 The example depends on the local `term_ui` source tree when present at
 `/home/home/p/g/n/term_ui`, and otherwise falls back to the Hex release defined
 in the example package.
 
-The context pane is still list-based, but it now surfaces enough graph state to
-be useful in practice:
+The room screen remains list-and-pane oriented, but the full console is now a
+five-screen operator flow:
+
+- lobby for local room launch and cleanup
+- room for conversation, context, event polling, and authoring
+- conflict resolution for manual or AI-assisted contradiction handling
+- publish for server-driven publication plans and connector bindings
+- wizard for room creation from live targets and policies
+
+The context pane surfaces enough graph state to be useful in practice:
 
 - per-object incoming and outgoing edge counts
 - stale markers for downstream invalidation

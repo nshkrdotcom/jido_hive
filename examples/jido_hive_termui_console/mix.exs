@@ -8,7 +8,7 @@ defmodule JidoHiveTermuiConsole.MixProject do
       elixir: "~> 1.19",
       elixirc_options: [warnings_as_errors: true],
       start_permanent: Mix.env() == :prod,
-      escript: [main_module: JidoHiveTermuiConsole.CLI],
+      escript: [main_module: JidoHiveTermuiConsole.CLI, name: "hive"],
       aliases: aliases(),
       deps: deps(),
       dialyzer: [plt_add_apps: [:ex_unit]],
@@ -20,9 +20,21 @@ defmodule JidoHiveTermuiConsole.MixProject do
     [extra_applications: [:logger]]
   end
 
+  def cli do
+    [
+      preferred_envs: [
+        credo: :test,
+        dialyzer: :test,
+        docs: :dev,
+        quality: :test
+      ]
+    ]
+  end
+
   defp deps do
     [
       term_ui_dependency(),
+      {:jason, "~> 1.4"},
       {:jido_hive_client, path: "../../jido_hive_client"},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
       {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false},

@@ -170,6 +170,7 @@ The current local context contract supports:
 - `selected_context_id`
 - `selected_context_object_type`
 - `selected_relation`
+- `authority_level`
 
 Supported relation modes are:
 
@@ -178,6 +179,7 @@ Supported relation modes are:
 - `derives_from`
 - `supports`
 - `contradicts`
+- `resolves`
 - `none`
 
 Behavior:
@@ -185,6 +187,8 @@ Behavior:
 - `contextual` uses a simple per-object default relation
 - explicit canonical relation modes use that exact relation to the selected node
 - `none` submits plain chat with no graph anchoring
+- `authority_level` is threaded from `submit_chat/2` into `ChatInput`, the
+  intercepted contribution, and the final contribution payload
 - if a selected context exists and heuristics would otherwise emit only a
   `message`, the mock backend adds one anchored `note` so the action can still
   shape the graph
@@ -194,9 +198,23 @@ Current contextual defaults are intentionally narrow:
 - `hypothesis` -> `derives_from`
 - `evidence` -> `supports`
 - `contradiction` -> `contradicts`
-- `decision_candidate` -> `derives_from`
+- `decision` -> `resolves`
+- `decision_candidate` -> `resolves`
 - `question` -> `references`
 - `note` -> `references`
+
+### Authority threading
+
+`submit_chat/2` now accepts `authority_level` explicitly.
+
+Behavior:
+
+- `ChatInput.new/1` defaults `authority_level` to `"advisory"` when absent
+- embedded human tools can pass `"binding"` when they need the chat-derived
+  contribution to carry binding authority
+- this is the Path A chat flow only
+- direct HTTP contribution posts remain a separate Path B and are used by the
+  TUI conflict-resolution screen for its one-object-two-`resolves` submission
 
 ### Conceptual example
 
@@ -213,7 +231,8 @@ Current contextual defaults are intentionally narrow:
 
 {:ok, _contribution} =
   JidoHiveClient.Embedded.submit_chat(embedded, %{
-    text: "I think Redis is dropping connections"
+    text: "I think Redis is dropping connections",
+    authority_level: "binding"
   })
 
 snapshot = JidoHiveClient.Embedded.snapshot(embedded)

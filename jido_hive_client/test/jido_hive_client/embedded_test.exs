@@ -209,4 +209,15 @@ defmodule JidoHiveClient.EmbeddedTest do
              Map.has_key?(object, "relations")
            end)
   end
+
+  test "threads explicit authority_level through the embedded chat path", %{embedded: embedded} do
+    {:ok, _contribution} =
+      Embedded.submit_chat(embedded, %{
+        text: "Binding human direction",
+        authority_level: "binding"
+      })
+
+    assert_receive {:submit_contribution, "room-1", payload}
+    assert payload["authority_level"] == "binding"
+  end
 end

@@ -242,6 +242,8 @@ defmodule JidoHiveClient.Embedded do
       participant_id: state.participant.participant_id,
       participant_role: state.participant.participant_role,
       participant_kind: state.participant.participant_kind,
+      authority_level:
+        Map.get(attrs, :authority_level) || Map.get(attrs, "authority_level") || "advisory",
       text: Map.get(attrs, :text) || Map.get(attrs, "text"),
       local_context: %{
         "timeline_count" => length(state.timeline),

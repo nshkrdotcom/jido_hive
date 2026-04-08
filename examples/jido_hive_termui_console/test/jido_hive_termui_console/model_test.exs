@@ -3,57 +3,30 @@ defmodule JidoHiveTermuiConsole.ModelTest do
 
   alias JidoHiveTermuiConsole.Model
 
-  defmodule EmbeddedStub do
-    def snapshot(_pid) do
-      %{
-        timeline: [%{"body" => "alice: hello"}],
-        context_objects: [
-          %{"context_id" => "ctx-1", "object_type" => "hypothesis", "title" => "Redis timeout"},
-          %{"context_id" => "ctx-2", "object_type" => "decision_candidate", "title" => "Rollback"}
-        ]
-      }
-    end
+  test "new/1 exposes the multi-screen defaults" do
+    model = Model.new(participant_id: "alice", api_base_url: "http://localhost:4000/api")
+
+    assert model.active_screen == :lobby
+    assert model.lobby_rooms == []
+    assert model.pane_focus == :context
+    assert model.publish_bindings == %{}
+    assert model.wizard_fields == %{}
+    assert model.status_line == "Ready"
+    assert model.poll_interval_ms == 500
   end
 
-  test "applies snapshots and clamps selection" do
-    model =
-      Model.new(
-        embedded: self(),
-        embedded_module: EmbeddedStub,
-        room_id: "room-1",
-        snapshot: EmbeddedStub.snapshot(self())
-      )
+  test "selection and relation mode helpers remain bounded" do
+    snapshot = %{
+      "context_objects" => [
+        %{"context_id" => "ctx-1", "object_type" => "belief", "title" => "One"},
+        %{"context_id" => "ctx-2", "object_type" => "question", "title" => "Two"}
+      ]
+    }
 
-    assert model.selected_context_index == 0
+    model = Model.new(snapshot: snapshot)
+
     assert Model.move_selection(model, 10).selected_context_index == 1
     assert Model.move_selection(model, -10).selected_context_index == 0
-  end
-
-  test "tracks input edits" do
-    model =
-      Model.new(
-        embedded: self(),
-        embedded_module: EmbeddedStub,
-        room_id: "room-1",
-        snapshot: EmbeddedStub.snapshot(self())
-      )
-
-    model = model |> Model.append_input("h") |> Model.append_input("i") |> Model.backspace()
-    assert model.input_buffer == "h"
-    assert Model.clear_input(model).input_buffer == ""
-  end
-
-  test "tracks graph relation authoring mode" do
-    model =
-      Model.new(
-        embedded: self(),
-        embedded_module: EmbeddedStub,
-        room_id: "room-1",
-        snapshot: EmbeddedStub.snapshot(self())
-      )
-
-    assert model.relation_mode == :contextual
-    assert Model.set_relation_mode(model, :supports).relation_mode == :supports
-    assert Model.set_relation_mode(model, :none).relation_mode == :none
+    assert Model.set_relation_mode(model, :resolves).relation_mode == :resolves
   end
 end

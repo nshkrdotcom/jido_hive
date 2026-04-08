@@ -145,4 +145,17 @@ defmodule JidoHiveClient.InterceptorTest do
 
     assert contribution["execution"]["backend"] == "mock"
   end
+
+  test "preserves authority level from chat input through interception" do
+    {:ok, input} =
+      ChatInput.new(%{
+        room_id: "room-1",
+        participant_id: "alice",
+        text: "We should resolve this",
+        authority_level: "binding"
+      })
+
+    {:ok, intercepted} = Interceptor.extract(input, backend: Mock)
+    assert intercepted.authority_level == "binding"
+  end
 end

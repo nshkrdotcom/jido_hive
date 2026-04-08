@@ -9,6 +9,7 @@ defmodule JidoHiveClient.ChatInput do
     :submitted_at,
     participant_role: "collaborator",
     participant_kind: "human",
+    authority_level: "advisory",
     local_context: %{}
   ]
 
@@ -17,6 +18,7 @@ defmodule JidoHiveClient.ChatInput do
           participant_id: String.t(),
           participant_role: String.t(),
           participant_kind: String.t(),
+          authority_level: String.t(),
           text: String.t(),
           submitted_at: DateTime.t(),
           local_context: map()
@@ -35,6 +37,7 @@ defmodule JidoHiveClient.ChatInput do
          participant_id: value(attrs, "participant_id"),
          participant_role: value(attrs, "participant_role") || "collaborator",
          participant_kind: value(attrs, "participant_kind") || "human",
+         authority_level: value(attrs, "authority_level") || "advisory",
          text: value(attrs, "text"),
          submitted_at: datetime_value(value(attrs, "submitted_at")) || DateTime.utc_now(),
          local_context: normalize_map(value(attrs, "local_context"))
