@@ -1,5 +1,5 @@
 defmodule JidoHiveTermuiConsole.AppTest do
-  use ExUnit.Case, async: true
+  use ExUnit.Case, async: false
 
   alias JidoHiveTermuiConsole.{App, Model, TestSupport}
 
@@ -18,6 +18,19 @@ defmodule JidoHiveTermuiConsole.AppTest do
   end
 
   defmodule EmbeddedStub do
+    def start_link(_opts) do
+      Agent.start_link(fn ->
+        %{
+          snapshot: %{
+            "timeline" => [],
+            "context_objects" => [],
+            "last_error" => nil
+          },
+          submitted: nil
+        }
+      end)
+    end
+
     def snapshot(server), do: Agent.get(server, & &1.snapshot)
     def refresh(server), do: {:ok, snapshot(server)}
 
@@ -29,7 +42,58 @@ defmodule JidoHiveTermuiConsole.AppTest do
     def accept_context(_server, _context_id, _attrs), do: {:ok, %{"authority_level" => "binding"}}
   end
 
+  defmodule PollerStub do
+    def start_link(_opts), do: {:ok, spawn(fn -> Process.sleep(:infinity) end)}
+  end
+
+  defmodule ConfigStub do
+    def add_room(room_id) do
+      send(test_pid(), {:add_room, room_id})
+      :ok
+    end
+
+    def list_rooms, do: []
+
+    defp test_pid do
+      Application.fetch_env!(:jido_hive_termui_console, :app_test_pid)
+    end
+  end
+
+  defmodule WizardHTTPStub do
+    def get(_base, "/rooms/" <> room_id) do
+      {:ok,
+       %{
+         "data" => %{
+           "room_id" => room_id,
+           "status" => "running",
+           "dispatch_state" => %{"completed_slots" => 0, "total_slots" => 3},
+           "participants" => []
+         }
+       }}
+    end
+
+    def post(_base, "/rooms", payload) do
+      send(test_pid(), {:http_post, "/rooms", payload})
+      {:ok, %{"data" => %{"room_id" => payload["room_id"], "status" => "idle"}}}
+    end
+
+    def post(_base, path, payload) do
+      send(test_pid(), {:http_post, path, payload})
+      {:ok, %{"data" => %{"status" => "publication_ready"}}}
+    end
+
+    defp test_pid do
+      Application.fetch_env!(:jido_hive_termui_console, :app_test_pid)
+    end
+  end
+
   setup do
+    Application.put_env(:jido_hive_termui_console, :app_test_pid, self())
+
+    on_exit(fn ->
+      Application.delete_env(:jido_hive_termui_console, :app_test_pid)
+    end)
+
     snapshot = %{
       "timeline" => [],
       "context_objects" => [
@@ -185,5 +249,66 @@ defmodule JidoHiveTermuiConsole.AppTest do
 
     assert next_state.status_line == "No worker targets available on this server"
     assert next_state.status_severity == :warn
+  end
+
+  test "wizard submit workers clears stale warning on confirm step" do
+    model =
+      Model.new([])
+      |> Map.put(:active_screen, :wizard)
+      |> Map.put(:wizard_step, 3)
+      |> Map.put(:status_line, "Select at least one worker")
+      |> Map.put(:status_severity, :error)
+      |> Map.put(:wizard_fields, %{
+        "participants" => [
+          %{
+            "participant_id" => "worker-01",
+            "target_id" => "target-01",
+            "capability_id" => "codex.exec.session"
+          }
+        ]
+      })
+
+    {next_state, []} = App.update(:wizard_enter, model)
+
+    assert next_state.wizard_step == 4
+    assert next_state.status_line == "Press Enter to create and start the room"
+    assert next_state.status_severity == :info
+  end
+
+  test "wizard create room transitions immediately and runs room in background" do
+    model =
+      Model.new(
+        http_module: WizardHTTPStub,
+        config_module: ConfigStub,
+        embedded_module: EmbeddedStub,
+        event_log_poller_module: PollerStub
+      )
+      |> Map.put(:active_screen, :wizard)
+      |> Map.put(:wizard_step, 4)
+      |> Map.put(:wizard_fields, %{
+        "brief" => "Develop specs for debugging term ui",
+        "dispatch_policy_id" => "round_robin/v2",
+        "phases" => [%{"phase" => "analysis"}],
+        "participants" => [
+          %{
+            "participant_id" => "worker-01",
+            "participant_role" => "worker",
+            "provider" => "test",
+            "target_id" => "target-01",
+            "capability_id" => "codex.exec.session"
+          }
+        ]
+      })
+
+    {next_state, []} = App.update(:wizard_enter, model)
+
+    assert next_state.active_screen == :room
+    assert next_state.status_line =~ "run started in background"
+    assert_receive {:http_post, "/rooms", payload}
+    assert payload["dispatch_policy_id"] == "round_robin/v2"
+    assert_receive {:add_room, room_id}
+    assert room_id == next_state.room_id
+    assert_receive {:http_post, path, %{}}
+    assert path == "/rooms/#{URI.encode_www_form(room_id)}/run"
   end
 end

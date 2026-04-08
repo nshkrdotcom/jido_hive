@@ -157,6 +157,7 @@ defmodule JidoHiveTermuiConsole.Screens.Wizard do
 
   defp help_line(%{wizard_step: 0}), do: "Type brief  ·  Enter next  ·  ESC cancel"
   defp help_line(%{wizard_step: 3}), do: "Space toggle  ·  ↑↓ move  ·  Enter next  ·  ESC back"
+  defp help_line(%{wizard_step: 4}), do: "Enter create room  ·  ESC back"
   defp help_line(_state), do: "↑↓ move  ·  Enter next  ·  ESC back"
 
   defp generate_room_id(brief) do

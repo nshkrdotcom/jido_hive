@@ -554,6 +554,30 @@ defmodule JidoHiveTermuiConsole.App do
     {%{state | publish_auth_state: state.auth_module.load_all()}, []}
   end
 
+  def handle_info({:run_room_result, room_id, {:ok, _snapshot}}, state) do
+    next_state =
+      if state.room_id == room_id do
+        state
+        |> Nav.refresh_room_snapshot()
+        |> Model.set_status("Room run completed", :info)
+      else
+        state
+      end
+
+    {next_state, []}
+  end
+
+  def handle_info({:run_room_result, room_id, {:error, reason}}, state) do
+    next_state =
+      if state.room_id == room_id do
+        Model.set_status(state, "Room run failed: #{inspect(reason)}", :error)
+      else
+        state
+      end
+
+    {next_state, []}
+  end
+
   def handle_info({:event_log_update, entries, cursor}, state) do
     formatted =
       entries
@@ -631,7 +655,13 @@ defmodule JidoHiveTermuiConsole.App do
 
     cond do
       workers != [] ->
-        {%{state | wizard_step: 4, wizard_cursor: 0}, []}
+        next_state =
+          state
+          |> Map.put(:wizard_step, 4)
+          |> Map.put(:wizard_cursor, 0)
+          |> Model.set_status("Press Enter to create and start the room", :info)
+
+        {next_state, []}
 
       state.wizard_targets_state in [:idle, :loading] ->
         {Model.set_status(state, "Worker targets are still loading", :warn), []}
@@ -654,16 +684,11 @@ defmodule JidoHiveTermuiConsole.App do
     next_state =
       with {:ok, _response} <- state.http_module.post(state.api_base_url, "/rooms", payload),
            :ok <- state.config_module.add_room(room_id) do
-        _ =
-          state.http_module.post(
-            state.api_base_url,
-            "/rooms/#{URI.encode_www_form(room_id)}/run",
-            %{}
-          )
+        start_room_run_async(state, room_id)
 
         state
         |> Nav.transition(:room, room_id: room_id, app_pid: self())
-        |> Model.set_status("Created room #{room_id}", :info)
+        |> Model.set_status("Created room #{room_id}; run started in background", :info)
       else
         {:error, reason} ->
           Model.set_status(state, "Room creation failed: #{inspect(reason)}", :error)
@@ -724,6 +749,25 @@ defmodule JidoHiveTermuiConsole.App do
     do: Model.set_status(state, "No policies available on this server", :warn)
 
   defp maybe_set_empty_policy_warning(state, _policies), do: state
+
+  defp start_room_run_async(state, room_id) do
+    caller = self()
+    http_module = state.http_module
+    api_base_url = state.api_base_url
+
+    spawn(fn ->
+      result =
+        http_module.post(
+          api_base_url,
+          "/rooms/#{URI.encode_www_form(room_id)}/run",
+          %{}
+        )
+
+      send(caller, {:run_room_result, room_id, result})
+    end)
+
+    :ok
+  end
 
   defp submit_room_chat(state, text) do
     submit_attrs = Identity.to_submit_attrs(identity(state), room_submit_attrs(text, state))

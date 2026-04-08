@@ -113,7 +113,8 @@ If you see an empty lobby:
 5. Press `Enter` on the confirm step.
 
 That will create the room on the server, save the room id locally, start the
-room, and transition you into it.
+room, and transition you into it. The console opens the room immediately; the
+server-side run continues in the background.
 
 ### What to do next
 
@@ -134,8 +135,9 @@ If you already have a room id, you can skip the lobby:
 
 ## Production Onboarding
 
-The console now supports the same kind of mode shortcut used elsewhere in the
-repo.
+Use production mode only after at least one prod worker is connected.
+
+The console supports the same server shortcuts used elsewhere in the repo:
 
 - `--local`
   Force `http://127.0.0.1:4000/api`
@@ -151,56 +153,61 @@ Precedence is:
 3. `~/.config/hive/config.json`
 4. built-in local default
 
-### Recommended production setup
+### From Scratch
 
-If you want to use the deployed test server:
+This is the exact production flow.
 
-Terminal 1, optionally inspect prod targets and rooms first:
+1. Open a terminal in the repo root:
 
 ```bash
-bin/hive-control --prod
+cd /home/home/p/g/n/jido_hive
 ```
 
-or:
+2. Start one or more workers against production:
 
 ```bash
+bin/hive-clients --prod
+```
+
+3. In a second terminal, confirm production now has targets:
+
+```bash
+cd /home/home/p/g/n/jido_hive
 setup/hive --prod targets
 ```
 
-Terminal 2, start the first console:
+4. If that command shows no targets, stop here.
+
+Production room creation will not work yet. The console can still open, but
+step 3 of the wizard will say `No worker targets available on this server.`
+
+5. If that command shows at least one target, build the console:
 
 ```bash
 cd /home/home/p/g/n/jido_hive/examples/jido_hive_termui_console
+mix escript.build
+```
+
+6. Start the first human console:
+
+```bash
 ./hive console --prod --participant-id alice
 ```
 
-Terminal 3, start the second console:
+7. In the console, press `n` to create a room.
+   On the confirm step, press `Enter`. The console opens the room immediately
+   and the room run continues in the background.
+
+8. If you want a second human participant, open another terminal and run:
 
 ```bash
 cd /home/home/p/g/n/jido_hive/examples/jido_hive_termui_console
 ./hive console --prod --participant-id bob
 ```
 
-### Important production caveat
+### If You Already Know The Room ID
 
-Production mode is only fully usable for room creation if the production server
-currently has live worker targets available through `/targets`.
-
-If `/targets` is empty:
-
-- the console can still start
-- you can still open a known room id with `--room-id`
-- the lobby may still be empty on first run
-- step 3 of the wizard will say `No worker targets available on this server.`
-- room creation cannot proceed until at least one worker target is registered
-
-If you need fresh worker targets on production, use the existing worker wrappers:
-
-```bash
-bin/hive-clients --prod
-```
-
-If you already know the room id:
+You can skip room creation entirely:
 
 ```bash
 ./hive console --prod --room-id room-123 --participant-id alice
