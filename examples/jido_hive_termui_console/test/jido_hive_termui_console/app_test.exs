@@ -550,6 +550,20 @@ defmodule JidoHiveTermuiConsole.AppTest do
   end
 
   test "refresh_auth_state loads server-backed publish auth for the current participant" do
+    config_dir = TestSupport.tmp_dir()
+    previous_config_dir = Application.get_env(:jido_hive_termui_console, :config_dir)
+    Application.put_env(:jido_hive_termui_console, :config_dir, config_dir)
+
+    on_exit(fn ->
+      if previous_config_dir do
+        Application.put_env(:jido_hive_termui_console, :config_dir, previous_config_dir)
+      else
+        Application.delete_env(:jido_hive_termui_console, :config_dir)
+      end
+
+      File.rm_rf!(config_dir)
+    end)
+
     state =
       Model.new(
         http_module: PublishHTTPStub,

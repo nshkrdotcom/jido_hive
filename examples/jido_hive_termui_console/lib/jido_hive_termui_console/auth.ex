@@ -128,12 +128,14 @@ defmodule JidoHiveTermuiConsole.Auth do
   defp fetch_remote_state(api_base_url, subject, channel, http_module, credentials) do
     path = "/connectors/#{channel}/connections?subject=#{URI.encode_www_form(subject)}"
 
+    local = local_state(channel, credentials)
+
     case http_module.get(api_base_url, path) do
       {:ok, %{"data" => connections}} when is_list(connections) ->
-        remote_state(connections)
+        merge_remote_and_local(remote_state(connections), local)
 
       _other ->
-        local_state(channel, credentials)
+        local
     end
   end
 
@@ -205,6 +207,10 @@ defmodule JidoHiveTermuiConsole.Auth do
       status: :missing
     }
   end
+
+  defp merge_remote_and_local(%{status: :cached} = remote, _local), do: remote
+  defp merge_remote_and_local(_remote, %{status: :cached} = local), do: local
+  defp merge_remote_and_local(remote, _local), do: remote
 
   defp expired?(%{"expires_at" => expires_at}) when is_binary(expires_at) do
     case DateTime.from_iso8601(expires_at) do

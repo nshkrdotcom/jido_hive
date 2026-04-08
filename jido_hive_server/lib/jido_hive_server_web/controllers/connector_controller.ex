@@ -58,6 +58,7 @@ defmodule JidoHiveServerWeb.ConnectorController do
       params
       |> Map.drop(["connector_id", "tenant_id"])
       |> normalize_install_attrs()
+      |> maybe_infer_requested_scopes(connector_id)
 
     case V2.start_install(connector_id, tenant_id, attrs) do
       {:ok, result} ->
@@ -73,6 +74,7 @@ defmodule JidoHiveServerWeb.ConnectorController do
       params
       |> Map.drop(["install_id"])
       |> normalize_install_attrs()
+      |> maybe_infer_granted_scopes(install_id)
 
     case V2.complete_install(install_id, attrs) do
       {:ok, result} ->
@@ -115,6 +117,59 @@ defmodule JidoHiveServerWeb.ConnectorController do
   end
 
   defp normalize_install_value(_key, value), do: value
+
+  defp maybe_infer_requested_scopes(attrs, connector_id) do
+    case Map.get(attrs, :requested_scopes) do
+      scopes when is_list(scopes) and scopes != [] ->
+        attrs
+
+      _other ->
+        put_scopes_if_present(attrs, :requested_scopes, connector_requested_scopes(connector_id))
+    end
+  end
+
+  defp maybe_infer_granted_scopes(attrs, install_id) do
+    case Map.get(attrs, :granted_scopes) do
+      scopes when is_list(scopes) and scopes != [] ->
+        attrs
+
+      _other ->
+        install_requested_scopes(install_id)
+        |> case do
+          [] ->
+            attrs
+
+          scopes ->
+            Map.put(attrs, :granted_scopes, scopes)
+        end
+    end
+  end
+
+  defp install_requested_scopes(install_id) do
+    case V2.fetch_install(install_id) do
+      {:ok, %{requested_scopes: scopes}} when is_list(scopes) and scopes != [] ->
+        scopes
+
+      {:ok, %{connector_id: connector_id}} ->
+        connector_requested_scopes(connector_id)
+
+      _other ->
+        []
+    end
+  end
+
+  defp connector_requested_scopes(connector_id) do
+    case V2.fetch_connector(connector_id) do
+      {:ok, %{auth: %{requested_scopes: scopes}}} when is_list(scopes) and scopes != [] ->
+        scopes
+
+      _other ->
+        []
+    end
+  end
+
+  defp put_scopes_if_present(attrs, _key, []), do: attrs
+  defp put_scopes_if_present(attrs, key, scopes), do: Map.put(attrs, key, scopes)
 
   defp maybe_put(map, _key, nil), do: map
   defp maybe_put(map, key, value), do: Map.put(map, key, value)

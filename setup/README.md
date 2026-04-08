@@ -203,3 +203,7 @@ Start and complete a Notion install:
 setup/hive start-install notion --subject notion-workspace
 setup/hive complete-install <install-id> --subject notion-workspace
 ```
+
+If `--scope` is omitted, the server now infers the connector's authored default
+scope set from the connector manifest. That prevents manual installs from
+creating connected-but-unusable connections with empty scope metadata.

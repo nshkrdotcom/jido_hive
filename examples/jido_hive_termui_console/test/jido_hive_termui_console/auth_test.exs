@@ -146,4 +146,53 @@ defmodule JidoHiveTermuiConsole.AuthTest do
              }
            }
   end
+
+  test "load_all/3 prefers local cached credentials over stale remote non-connected states" do
+    File.write!(
+      Config.credentials_path(),
+      Jason.encode!(%{
+        "notion" => %{
+          "connection_id" => "conn-local-notion",
+          "subject" => "alice"
+        }
+      })
+    )
+
+    {:ok, server} =
+      TestHTTPServer.start_link(fn request ->
+        case request.path do
+          "/connectors/github/connections?subject=alice" ->
+            {200, %{}, Jason.encode!(%{"data" => []})}
+
+          "/connectors/notion/connections?subject=alice" ->
+            {200, %{},
+             Jason.encode!(%{
+               "data" => [
+                 %{
+                   "connection_id" => "conn-remote-pending",
+                   "state" => "installing",
+                   "updated_at" => "2026-04-08T23:18:36Z"
+                 }
+               ]
+             })}
+        end
+      end)
+
+    on_exit(fn -> TestHTTPServer.stop(server) end)
+
+    assert Auth.load_all(TestHTTPServer.base_url(server), "alice", HTTP) == %{
+             "github" => %{
+               connection_id: nil,
+               source: :server,
+               state: nil,
+               status: :missing
+             },
+             "notion" => %{
+               connection_id: "conn-local-notion",
+               source: :local,
+               state: "cached",
+               status: :cached
+             }
+           }
+  end
 end

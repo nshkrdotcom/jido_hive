@@ -268,6 +268,10 @@ These commands are v1 device-flow scaffolds. They print a verification URL, a
 user code, and the credentials file path. They do not complete OAuth inside the
 console, but they give the publish flow a stable local credential surface.
 
+Production publish auth is ultimately driven by server-side connector
+connections. The console prefers those connection records and only falls back to
+local cached credentials when the server view is stale or unavailable.
+
 ### Intentionally not implemented
 
 - `./hive room create`
@@ -679,6 +683,18 @@ Run:
 
 Then confirm that `~/.config/hive/credentials.json` contains the expected cached
 credential record.
+
+If you are using the production server, also confirm the connector install is
+completed server-side:
+
+```bash
+setup/hive --prod connections github --subject <subject>
+setup/hive --prod connections notion --subject <subject>
+```
+
+Environment variables alone do not mark a channel as connected in the publish
+screen. The install must be completed so the server has a durable connection
+record for the current subject.
 
 ### I need a different server than local or prod
 
