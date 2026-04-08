@@ -5,9 +5,7 @@ defmodule JidoHiveTermuiConsole.Screens.Publish do
   alias ExRatatui.Layout
   alias ExRatatui.Style
   alias ExRatatui.Widgets.{List, Paragraph, TextInput}
-  alias JidoHiveTermuiConsole.{Model, Projection, ScreenUI}
-
-  @input_keys ["backspace", "delete", "left", "right", "home", "end"]
+  alias JidoHiveTermuiConsole.{InputKey, Model, Projection, ScreenUI}
 
   @spec event_to_msg(Event.t(), Model.t()) :: term() | nil
   def event_to_msg(%Event.Key{code: "tab"}, _state), do: :publish_next_focus
@@ -23,17 +21,9 @@ defmodule JidoHiveTermuiConsole.Screens.Publish do
     end
   end
 
-  def event_to_msg(%Event.Key{code: code, modifiers: []}, state) when code in @input_keys do
-    case current_focus(state) do
-      %{type: :binding} -> {:publish_input_key, code}
-      _other -> nil
-    end
-  end
-
-  def event_to_msg(%Event.Key{code: code, modifiers: []}, state)
-      when is_binary(code) and byte_size(code) > 0 do
-    case current_focus(state) do
-      %{type: :binding} -> {:publish_input_key, code}
+  def event_to_msg(%Event.Key{} = event, state) do
+    case {current_focus(state), InputKey.text_input_key(event)} do
+      {%{type: :binding}, {:ok, code}} -> {:publish_input_key, code}
       _other -> nil
     end
   end

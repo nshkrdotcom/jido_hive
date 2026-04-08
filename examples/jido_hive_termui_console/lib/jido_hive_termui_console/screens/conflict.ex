@@ -5,9 +5,7 @@ defmodule JidoHiveTermuiConsole.Screens.Conflict do
   alias ExRatatui.Layout
   alias ExRatatui.Style
   alias ExRatatui.Widgets.{Paragraph, TextInput}
-  alias JidoHiveTermuiConsole.{Model, Projection, ScreenUI}
-
-  @input_keys ["backspace", "delete", "left", "right", "home", "end"]
+  alias JidoHiveTermuiConsole.{InputKey, Model, Projection, ScreenUI}
 
   @spec event_to_msg(Event.t(), Model.t()) :: term() | nil
   def event_to_msg(%Event.Key{code: "enter"}, _state), do: :submit_conflict_resolution
@@ -17,11 +15,12 @@ defmodule JidoHiveTermuiConsole.Screens.Conflict do
   def event_to_msg(%Event.Key{code: "b"}, _state), do: {:prefill_conflict, :right}
   def event_to_msg(%Event.Key{code: "s"}, _state), do: :dispatch_ai_synthesis
 
-  def event_to_msg(%Event.Key{code: code, modifiers: []}, _state) when code in @input_keys,
-    do: {:conflict_input_key, code}
-
-  def event_to_msg(%Event.Key{code: code, modifiers: []}, _state)
-      when is_binary(code) and byte_size(code) > 0, do: {:conflict_input_key, code}
+  def event_to_msg(%Event.Key{} = event, _state) do
+    case InputKey.text_input_key(event) do
+      {:ok, code} -> {:conflict_input_key, code}
+      :error -> nil
+    end
+  end
 
   def event_to_msg(_event, _state), do: nil
 

@@ -3,6 +3,38 @@ defmodule JidoHiveServerWeb.ConnectorController do
 
   alias Jido.Integration.V2
 
+  @install_attr_keys %{
+    "actor_id" => :actor_id,
+    "auth_type" => :auth_type,
+    "profile_id" => :profile_id,
+    "flow_kind" => :flow_kind,
+    "subject" => :subject,
+    "requested_scopes" => :requested_scopes,
+    "metadata" => :metadata,
+    "now" => :now,
+    "callback_uri" => :callback_uri,
+    "state_token" => :state_token,
+    "pkce_verifier_digest" => :pkce_verifier_digest,
+    "install_ttl_seconds" => :install_ttl_seconds,
+    "connection_id" => :connection_id,
+    "management_mode" => :management_mode,
+    "secret_source" => :secret_source,
+    "external_secret_ref" => :external_secret_ref,
+    "environment" => :environment,
+    "granted_scopes" => :granted_scopes,
+    "secret" => :secret,
+    "lease_fields" => :lease_fields,
+    "expires_at" => :expires_at,
+    "refresh_token_expires_at" => :refresh_token_expires_at,
+    "callback_received_at" => :callback_received_at,
+    "source" => :source,
+    "source_ref" => :source_ref,
+    "reason" => :reason
+  }
+
+  @atom_value_keys [:auth_type, :environment, :flow_kind, :management_mode, :secret_source, :source]
+  @datetime_value_keys [:now, :expires_at, :refresh_token_expires_at, :callback_received_at]
+
   def connections(conn, %{"connector_id" => connector_id} = params) do
     filters =
       %{}
@@ -55,17 +87,26 @@ defmodule JidoHiveServerWeb.ConnectorController do
   end
 
   defp normalize_install_attrs(attrs) do
-    attrs
-    |> maybe_atomize_key("auth_type")
-    |> maybe_atomize_key("environment")
+    Enum.reduce(attrs, %{}, fn {key, value}, acc ->
+      normalized_key = Map.get(@install_attr_keys, key, key)
+      Map.put(acc, normalized_key, normalize_install_value(normalized_key, value))
+    end)
   end
 
-  defp maybe_atomize_key(attrs, key) do
-    case Map.get(attrs, key) do
-      value when is_binary(value) -> Map.put(attrs, key, String.to_atom(value))
-      _other -> attrs
+  defp normalize_install_value(key, value)
+
+  defp normalize_install_value(key, value) when key in @atom_value_keys and is_binary(value) do
+    String.to_atom(value)
+  end
+
+  defp normalize_install_value(key, value) when key in @datetime_value_keys and is_binary(value) do
+    case DateTime.from_iso8601(value) do
+      {:ok, datetime, _offset} -> datetime
+      {:error, _reason} -> value
     end
   end
+
+  defp normalize_install_value(_key, value), do: value
 
   defp maybe_put(map, _key, nil), do: map
   defp maybe_put(map, key, value), do: Map.put(map, key, value)

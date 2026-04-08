@@ -5,9 +5,7 @@ defmodule JidoHiveTermuiConsole.Screens.Room do
   alias ExRatatui.Layout
   alias ExRatatui.Style
   alias ExRatatui.Widgets.{Paragraph, TextInput}
-  alias JidoHiveTermuiConsole.{Model, Projection, ScreenUI}
-
-  @input_keys ["backspace", "delete", "left", "right", "home", "end"]
+  alias JidoHiveTermuiConsole.{InputKey, Model, Projection, ScreenUI}
 
   @spec event_to_msg(Event.t(), Model.t()) :: term() | nil
   def event_to_msg(%Event.Key{code: "up"}, _state), do: :select_prev
@@ -21,12 +19,11 @@ defmodule JidoHiveTermuiConsole.Screens.Room do
     ctrl_shortcut(code)
   end
 
-  def event_to_msg(%Event.Key{code: code, modifiers: []}, _state) when code in @input_keys,
-    do: {:room_input_key, code}
-
-  def event_to_msg(%Event.Key{code: code, modifiers: []}, _state)
-      when is_binary(code) and byte_size(code) > 0 do
-    {:room_input_key, code}
+  def event_to_msg(%Event.Key{} = event, _state) do
+    case InputKey.text_input_key(event) do
+      {:ok, code} -> {:room_input_key, code}
+      :error -> nil
+    end
   end
 
   def event_to_msg(_event, _state), do: nil

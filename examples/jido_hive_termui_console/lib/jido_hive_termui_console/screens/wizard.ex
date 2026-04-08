@@ -5,9 +5,7 @@ defmodule JidoHiveTermuiConsole.Screens.Wizard do
   alias ExRatatui.Layout
   alias ExRatatui.Style
   alias ExRatatui.Widgets.{List, Paragraph, TextInput}
-  alias JidoHiveTermuiConsole.{Model, ScreenUI}
-
-  @input_keys ["backspace", "delete", "left", "right", "home", "end"]
+  alias JidoHiveTermuiConsole.{InputKey, Model, ScreenUI}
 
   @spec event_to_msg(Event.t(), Model.t()) :: term() | nil
   def event_to_msg(%Event.Key{code: "up"}, _state), do: :wizard_prev_option
@@ -19,11 +17,12 @@ defmodule JidoHiveTermuiConsole.Screens.Wizard do
   def event_to_msg(%Event.Key{code: " ", modifiers: []}, %{wizard_step: 3}),
     do: :wizard_toggle_worker
 
-  def event_to_msg(%Event.Key{code: code, modifiers: []}, %{wizard_step: 0})
-      when code in @input_keys, do: {:wizard_input_key, code}
-
-  def event_to_msg(%Event.Key{code: code, modifiers: []}, %{wizard_step: 0})
-      when is_binary(code) and byte_size(code) > 0, do: {:wizard_input_key, code}
+  def event_to_msg(%Event.Key{} = event, %{wizard_step: 0}) do
+    case InputKey.text_input_key(event) do
+      {:ok, code} -> {:wizard_input_key, code}
+      :error -> nil
+    end
+  end
 
   def event_to_msg(_event, _state), do: nil
 
