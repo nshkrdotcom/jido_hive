@@ -206,6 +206,7 @@ defmodule JidoHiveTermuiConsole.Screens.Wizard do
   defp body_widget(%Model{wizard_step: 4} = state) do
     participants = Map.get(state.wizard_fields, "participants", [])
     phases = Map.get(state.wizard_fields, "phases", [])
+    pending_room_id = pending_room_id(state)
 
     ScreenUI.pane(
       "Confirm",
@@ -215,7 +216,10 @@ defmodule JidoHiveTermuiConsole.Screens.Wizard do
         "Phases: #{phase_summary(phases)}",
         "Workers: #{Enum.map_join(participants, ", ", & &1["participant_id"])}",
         "",
-        "Enter to create and run the room."
+        if(pending_room_id,
+          do: "Creating room #{pending_room_id} in the background. Ctrl+D shows debug details.",
+          else: "Enter to create and run the room."
+        )
       ],
       border_fg: :green,
       wrap: true
@@ -240,7 +244,7 @@ defmodule JidoHiveTermuiConsole.Screens.Wizard do
     do: ["Up/Down move", "Space toggle worker", "Enter continue", "Esc back", "Ctrl+Q quit"]
 
   defp help_lines(%{wizard_step: 4}),
-    do: ["Review plan", "Enter create room", "Esc back", "Ctrl+Q quit"]
+    do: ["Review plan", "Enter create room", "Esc back", "Ctrl+D debug", "Ctrl+C quit"]
 
   defp help_lines(_state), do: ["Up/Down move", "Enter continue", "Esc back", "Ctrl+Q quit"]
 
@@ -290,6 +294,9 @@ defmodule JidoHiveTermuiConsole.Screens.Wizard do
   defp title_for_step(%{wizard_step: 2}), do: "NEW ROOM — Step 2 of 4: Phases"
   defp title_for_step(%{wizard_step: 3}), do: "NEW ROOM — Step 3 of 4: Select Workers"
   defp title_for_step(%{wizard_step: 4}), do: "NEW ROOM — Step 4 of 4: Confirm"
+
+  defp pending_room_id(%{pending_room_create: %{room_id: room_id}}), do: room_id
+  defp pending_room_id(_state), do: nil
 
   defp generate_room_id(brief) do
     slug =

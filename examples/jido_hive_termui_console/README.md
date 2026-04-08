@@ -278,7 +278,7 @@ wizard from the lobby.
 ## Common Options
 
 - `--debug`
-  Shortcut for `--log-level debug`
+  Shortcut for `--log-level debug`. This enables file logging; it is separate from the in-app debug popup.
 - `--local`
   Force the local API base
 - `--prod`
@@ -320,6 +320,10 @@ wizard from the lobby.
   Remove the selected room id from `rooms.json`
 - `q` or `Ctrl+Q`
   Quit
+- `Ctrl+C`
+  Emergency quit path. Use this if a network operation is slow and you want out immediately.
+- `Ctrl+D` or `F2`
+  Open the in-app debug popup with current screen, room, API, status, and pending-operation state
 
 ### Room
 
@@ -629,6 +633,9 @@ Run the console with debug logging enabled:
 ./hive console --debug --participant-id alice
 ```
 
+Inside the console, press `Ctrl+D` or `F2` to open the in-app debug popup. It shows the
+current screen, room, API base, status line, and whether a room-creation request is still pending.
+
 Then inspect:
 
 ```bash
@@ -640,6 +647,20 @@ You can also choose an explicit log file:
 ```bash
 ./hive console --debug --log-file /tmp/hive-termui.log --participant-id alice
 ```
+
+### The wizard confirm step appears stuck
+
+Room creation runs in the background. After pressing `Enter` on the confirm step, the status line
+should switch to `Creating room ...`, and `Ctrl+D` should show the pending room id.
+
+Recovery paths:
+
+- `Ctrl+C` or `Ctrl+Q`
+  Quit the console immediately
+- `Ctrl+D` or `F2`
+  Open the in-app debug popup
+- `reset`
+  Restore the shell if a previous crash left the terminal in a bad state
 
 ### Publish says auth is missing
 

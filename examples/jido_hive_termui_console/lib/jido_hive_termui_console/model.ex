@@ -57,12 +57,14 @@ defmodule JidoHiveTermuiConsole.Model do
     wizard_targets_state: :idle,
     wizard_available_policies: [],
     wizard_policies_state: :idle,
+    pending_room_create: nil,
     status_line: "Ready",
     status_severity: :info,
     sync_error: false,
     screen_width: 120,
     screen_height: 40,
     poll_interval_ms: 500,
+    debug_visible: false,
     help_visible: false,
     help_seen: MapSet.new()
   ]
@@ -193,6 +195,12 @@ defmodule JidoHiveTermuiConsole.Model do
   def dismiss_help(%__MODULE__{} = state) do
     %{state | help_visible: false, help_seen: MapSet.put(state.help_seen, state.active_screen)}
   end
+
+  @spec show_debug(t()) :: t()
+  def show_debug(%__MODULE__{} = state), do: %{state | debug_visible: true}
+
+  @spec dismiss_debug(t()) :: t()
+  def dismiss_debug(%__MODULE__{} = state), do: %{state | debug_visible: false}
 
   @spec selected_context(t()) :: map() | nil
   def selected_context(%__MODULE__{} = state) do

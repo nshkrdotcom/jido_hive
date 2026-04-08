@@ -285,6 +285,23 @@ defmodule JidoHiveTermuiConsole.AppTest do
              {:msg, :dismiss_help}
   end
 
+  test "global Ctrl+C quits and Ctrl+D toggles debug mode", %{model: model} do
+    assert App.event_to_msg(%Key{code: "c", kind: "press", modifiers: ["ctrl"]}, model) ==
+             {:msg, :quit}
+
+    assert App.event_to_msg(%Key{code: "d", kind: "press", modifiers: ["ctrl"]}, model) ==
+             {:msg, :toggle_debug}
+  end
+
+  test "debug popup swallows normal typing until dismissed", %{model: model} do
+    state = %{model | debug_visible: true}
+
+    assert App.event_to_msg(%Key{code: "q", kind: "press"}, state) == :ignore
+
+    assert App.event_to_msg(%Key{code: "d", kind: "press", modifiers: ["ctrl"]}, state) ==
+             {:msg, :dismiss_debug}
+  end
+
   test "event log updates append formatted lines", %{model: model} do
     assert {:noreply, next_state} =
              App.handle_info(
@@ -386,7 +403,7 @@ defmodule JidoHiveTermuiConsole.AppTest do
     assert next_state.status_severity == :info
   end
 
-  test "wizard create room transitions immediately and runs room in background" do
+  test "wizard create room runs asynchronously and keeps the app responsive" do
     model =
       Model.new(
         http_module: WizardHTTPStub,
@@ -411,16 +428,48 @@ defmodule JidoHiveTermuiConsole.AppTest do
         ]
       })
 
-    {next_state, []} = App.update(:wizard_enter, model)
+    assert {:noreply, pending_state} =
+             App.handle_event(%Key{code: "enter", kind: "press"}, model)
 
-    assert next_state.active_screen == :room
-    assert next_state.status_line =~ "run started in background"
+    assert pending_state.active_screen == :wizard
+    assert pending_state.pending_room_create
+    assert pending_state.status_line =~ "Creating room"
+
     assert_receive {:http_post, "/rooms", payload}
     assert payload["dispatch_policy_id"] == "round_robin/v2"
+
     assert_receive {:add_room, room_id, "http://127.0.0.1:4000/api"}
+    assert room_id == pending_state.pending_room_create.room_id
+
+    assert_receive {:wizard_create_result, ^room_id, {:ok, _response}}
+
+    {:noreply, next_state} =
+      App.handle_info(
+        {:wizard_create_result, room_id, {:ok, %{"data" => %{"room_id" => room_id}}}},
+        pending_state
+      )
+
+    assert next_state.active_screen == :room
+    assert next_state.pending_room_create == nil
+    assert next_state.status_line =~ "run started in background"
     assert room_id == next_state.room_id
+
     assert_receive {:http_post, path, %{}}
     assert path == "/rooms/#{URI.encode_www_form(room_id)}/run"
+  end
+
+  test "wizard escape warns instead of trapping the terminal while creation is pending" do
+    state =
+      Model.new([])
+      |> Map.put(:active_screen, :wizard)
+      |> Map.put(:wizard_step, 4)
+      |> Map.put(:pending_room_create, %{room_id: "room-123"})
+
+    {next_state, []} = App.update(:wizard_escape, state)
+
+    assert next_state.wizard_step == 4
+    assert next_state.status_line =~ "Room creation is in progress"
+    assert next_state.status_severity == :warn
   end
 
   test "refresh_auth_state loads server-backed publish auth for the current participant" do

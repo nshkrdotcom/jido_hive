@@ -99,10 +99,19 @@ defmodule JidoHiveTermuiConsole.App do
   def update(:quit, state), do: {state, [:quit]}
   def update(:show_help, state), do: {Model.show_help(state), []}
   def update(:dismiss_help, state), do: {Model.dismiss_help(state), []}
+  def update(:show_debug, state), do: {Model.show_debug(state), []}
+  def update(:dismiss_debug, state), do: {Model.dismiss_debug(state), []}
 
   def update(:toggle_help, state) do
     next_state =
       if(state.help_visible, do: Model.dismiss_help(state), else: Model.show_help(state))
+
+    {next_state, []}
+  end
+
+  def update(:toggle_debug, state) do
+    next_state =
+      if(state.debug_visible, do: Model.dismiss_debug(state), else: Model.show_debug(state))
 
     {next_state, []}
   end
@@ -522,12 +531,22 @@ defmodule JidoHiveTermuiConsole.App do
     {%{state | wizard_fields: Map.put(state.wizard_fields, "participants", next_workers)}, []}
   end
 
+  def update(:wizard_escape, %{pending_room_create: pending} = state) when not is_nil(pending) do
+    {Model.set_status(state, "Room creation is in progress; wait or press Ctrl+C to quit", :warn),
+     []}
+  end
+
   def update(:wizard_escape, state) do
     if state.wizard_step == 0 do
       {Nav.transition(state, :lobby, app_pid: self()), []}
     else
       {%{state | wizard_step: state.wizard_step - 1, wizard_cursor: 0}, []}
     end
+  end
+
+  def update(:wizard_enter, %{wizard_step: 4, pending_room_create: pending} = state)
+      when not is_nil(pending) do
+    {Model.set_status(state, "Room creation already in progress", :warn), []}
   end
 
   def update(:wizard_enter, state) do
@@ -619,6 +638,41 @@ defmodule JidoHiveTermuiConsole.App do
       state.auth_module.load_all(state.api_base_url, state.participant_id, state.http_module)
 
     {%{state | publish_auth_state: auth_state}, []}
+  end
+
+  def handle_message({:wizard_create_result, room_id, {:ok, _response}}, state) do
+    next_state =
+      case state.pending_room_create do
+        %{room_id: ^room_id} ->
+          state
+          |> Map.put(:pending_room_create, nil)
+          |> Nav.transition(:room, room_id: room_id, app_pid: self())
+          |> Model.set_status("Created room #{room_id}; run started in background", :info)
+
+        _other ->
+          state
+      end
+
+    if next_state.room_id == room_id do
+      start_room_run_async(next_state, room_id)
+    end
+
+    {next_state, []}
+  end
+
+  def handle_message({:wizard_create_result, room_id, {:error, reason}}, state) do
+    next_state =
+      case state.pending_room_create do
+        %{room_id: ^room_id} ->
+          state
+          |> Map.put(:pending_room_create, nil)
+          |> Model.set_status("Room creation failed: #{inspect(reason)}", :error)
+
+        _other ->
+          state
+      end
+
+    {next_state, []}
   end
 
   def handle_message({:run_room_result, room_id, {:ok, _snapshot}}, state) do
@@ -745,19 +799,11 @@ defmodule JidoHiveTermuiConsole.App do
     room_id = payload["room_id"]
 
     next_state =
-      with {:ok, _response} <- state.http_module.post(state.api_base_url, "/rooms", payload),
-           :ok <- config_add_room(state.config_module, room_id, state.api_base_url) do
-        start_room_run_async(state, room_id)
+      state
+      |> Map.put(:pending_room_create, %{room_id: room_id})
+      |> Model.set_status("Creating room #{room_id}...", :info)
 
-        state
-        |> Nav.transition(:room, room_id: room_id, app_pid: self())
-        |> Model.set_status("Created room #{room_id}; run started in background", :info)
-      else
-        {:error, reason} ->
-          Model.set_status(state, "Room creation failed: #{inspect(reason)}", :error)
-      end
-
-    {next_state, []}
+    {next_state, [{:wizard_create_room, room_id, payload}]}
   end
 
   defp screen_module(%{active_screen: :lobby}), do: Lobby
@@ -765,6 +811,22 @@ defmodule JidoHiveTermuiConsole.App do
   defp screen_module(%{active_screen: :publish}), do: Publish
   defp screen_module(%{active_screen: :wizard}), do: Wizard
   defp screen_module(_state), do: Room
+
+  defp global_event_to_msg(%Event.Key{code: code, modifiers: ["ctrl"]}, _state)
+       when code in ["c", "q"],
+       do: :quit
+
+  defp global_event_to_msg(%Event.Key{code: code, modifiers: ["ctrl"]}, %{debug_visible: true})
+       when code == "d",
+       do: :dismiss_debug
+
+  defp global_event_to_msg(%Event.Key{code: code}, %{debug_visible: true})
+       when code in ["enter", "esc", "f2"],
+       do: :dismiss_debug
+
+  defp global_event_to_msg(%Event.Key{}, %{debug_visible: true}), do: :ignore
+  defp global_event_to_msg(%Event.Key{code: "d", modifiers: ["ctrl"]}, _state), do: :toggle_debug
+  defp global_event_to_msg(%Event.Key{code: "f2"}, _state), do: :toggle_debug
 
   defp global_event_to_msg(%Event.Key{code: code, modifiers: ["ctrl"]}, %{help_visible: true})
        when code == "g", do: :dismiss_help
@@ -824,6 +886,25 @@ defmodule JidoHiveTermuiConsole.App do
     spawn(fn ->
       result = http_module.post(api_base_url, "/rooms/#{URI.encode_www_form(room_id)}/run", %{})
       send(caller, {:run_room_result, room_id, result})
+    end)
+
+    :ok
+  end
+
+  defp start_room_create_async(state, room_id, payload) do
+    caller = self()
+    http_module = state.http_module
+    api_base_url = state.api_base_url
+    config_module = state.config_module
+
+    spawn(fn ->
+      result =
+        with {:ok, response} <- http_module.post(api_base_url, "/rooms", payload),
+             :ok <- config_add_room(config_module, room_id, api_base_url) do
+          {:ok, response}
+        end
+
+      send(caller, {:wizard_create_result, room_id, result})
     end)
 
     :ok
@@ -925,6 +1006,10 @@ defmodule JidoHiveTermuiConsole.App do
       case effect do
         {:timer, timeout_ms, message} ->
           Process.send_after(self(), message, timeout_ms)
+          {:cont, {:continue, current_state}}
+
+        {:wizard_create_room, room_id, payload} ->
+          start_room_create_async(current_state, room_id, payload)
           {:cont, {:continue, current_state}}
 
         :quit ->
