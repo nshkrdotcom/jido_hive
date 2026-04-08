@@ -19,6 +19,8 @@ defmodule JidoHiveTermuiConsole.Model do
     :auth_module,
     :event_log_poller_module,
     :api_base_url,
+    :tenant_id,
+    :actor_id,
     :participant_id,
     :participant_role,
     :authority_level,
@@ -96,6 +98,8 @@ defmodule JidoHiveTermuiConsole.Model do
       event_log_poller_module:
         Keyword.get(opts, :event_log_poller_module, JidoHiveTermuiConsole.EventLogPoller),
       api_base_url: Keyword.get(opts, :api_base_url, "http://127.0.0.1:4000/api"),
+      tenant_id: Keyword.get(opts, :tenant_id, "workspace-local"),
+      actor_id: Keyword.get(opts, :actor_id, "operator-1"),
       participant_id: Keyword.get(opts, :participant_id, "human-local"),
       participant_role: Keyword.get(opts, :participant_role, "coordinator"),
       authority_level: Keyword.get(opts, :authority_level, "binding"),

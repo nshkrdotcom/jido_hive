@@ -88,6 +88,65 @@ defmodule JidoHiveTermuiConsole.AppTest do
     end
   end
 
+  defmodule PublishHTTPStub do
+    def get(_base, "/rooms/room-1") do
+      {:ok,
+       %{
+         "data" => %{
+           "room_id" => "room-1",
+           "status" => "publication_ready",
+           "dispatch_state" => %{"completed_slots" => 6, "total_slots" => 6},
+           "participants" => []
+         }
+       }}
+    end
+
+    def get(_base, "/rooms/room-1/publication_plan") do
+      {:ok,
+       %{
+         "data" => %{
+           "publications" => [
+             %{
+               "channel" => "github",
+               "required_bindings" => [
+                 %{"field" => "repo", "description" => "Repository to publish into."}
+               ]
+             }
+           ]
+         }
+       }}
+    end
+
+    def get(_base, "/connectors/github/connections?subject=alice") do
+      {:ok,
+       %{
+         "data" => [
+           %{
+             "connection_id" => "connection-12",
+             "state" => "connected",
+             "updated_at" => "2026-04-08T21:44:31Z"
+           }
+         ]
+       }}
+    end
+
+    def get(_base, "/connectors/notion/connections?subject=alice"), do: {:ok, %{"data" => []}}
+
+    def post(_base, "/rooms/room-1/publications", payload) do
+      send(test_pid(), {:publish_payload, payload})
+      {:ok, %{"data" => %{"status" => "submitted"}}}
+    end
+
+    def post(_base, path, payload) do
+      send(test_pid(), {:http_post, path, payload})
+      {:ok, %{"data" => %{"status" => "ok"}}}
+    end
+
+    defp test_pid do
+      Application.fetch_env!(:jido_hive_termui_console, :app_test_pid)
+    end
+  end
+
   setup do
     Application.put_env(:jido_hive_termui_console, :app_test_pid, self())
 
@@ -362,5 +421,80 @@ defmodule JidoHiveTermuiConsole.AppTest do
     assert room_id == next_state.room_id
     assert_receive {:http_post, path, %{}}
     assert path == "/rooms/#{URI.encode_www_form(room_id)}/run"
+  end
+
+  test "refresh_auth_state loads server-backed publish auth for the current participant" do
+    state =
+      Model.new(
+        http_module: PublishHTTPStub,
+        room_id: "room-1",
+        participant_id: "alice"
+      )
+      |> Map.put(:active_screen, :publish)
+
+    {next_state, []} = App.handle_message(:refresh_auth_state, state)
+
+    assert next_state.publish_auth_state == %{
+             "github" => %{
+               connection_id: "connection-12",
+               source: :server,
+               state: "connected",
+               status: :cached
+             },
+             "notion" => %{
+               connection_id: nil,
+               source: :server,
+               state: nil,
+               status: :missing
+             }
+           }
+  end
+
+  test "publish_submit sends server-backed connection ids" do
+    state =
+      Model.new(
+        http_module: PublishHTTPStub,
+        room_id: "room-1",
+        participant_id: "alice"
+      )
+      |> Map.put(:active_screen, :publish)
+      |> Map.put(:snapshot, %{"timeline" => [], "context_objects" => []})
+      |> Map.put(:publish_plan, %{
+        "publications" => [
+          %{
+            "channel" => "github",
+            "required_bindings" => [
+              %{"field" => "repo", "description" => "Repository to publish into."}
+            ]
+          }
+        ]
+      })
+      |> Map.put(:publish_selected, ["github"])
+      |> Map.put(:publish_bindings, %{"github" => %{"repo" => "nshkrdotcom/cluster_test"}})
+      |> Map.put(:publish_auth_state, %{
+        "github" => %{
+          connection_id: "connection-12",
+          source: :server,
+          state: "connected",
+          status: :cached
+        },
+        "notion" => %{
+          connection_id: nil,
+          source: :server,
+          state: nil,
+          status: :missing
+        }
+      })
+
+    {next_state, []} = App.update(:publish_submit, state)
+
+    assert_receive {:publish_payload, payload}
+    assert payload["channels"] == ["github"]
+    assert payload["bindings"] == %{"github" => %{"repo" => "nshkrdotcom/cluster_test"}}
+    assert payload["connections"] == %{"github" => "connection-12"}
+    assert payload["tenant_id"] == "workspace-local"
+    assert payload["actor_id"] == "operator-1"
+    assert next_state.status_line == "Publication submitted"
+    assert next_state.status_severity == :info
   end
 end

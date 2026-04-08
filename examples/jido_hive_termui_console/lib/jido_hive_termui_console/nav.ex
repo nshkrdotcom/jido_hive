@@ -154,6 +154,8 @@ defmodule JidoHiveTermuiConsole.Nav do
     preserved =
       %{
         api_base_url: state.api_base_url,
+        tenant_id: state.tenant_id,
+        actor_id: state.actor_id,
         participant_id: state.participant_id,
         participant_role: state.participant_role,
         authority_level: state.authority_level,

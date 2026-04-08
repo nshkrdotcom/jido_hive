@@ -441,7 +441,10 @@ defmodule JidoHiveTermuiConsole.App do
   end
 
   def update(:publish_refresh_auth, state) do
-    {%{state | publish_auth_state: state.auth_module.load_all()}, []}
+    auth_state =
+      state.auth_module.load_all(state.api_base_url, state.participant_id, state.http_module)
+
+    {%{state | publish_auth_state: auth_state}, []}
   end
 
   def update(:cancel_publish, state) do
@@ -458,9 +461,11 @@ defmodule JidoHiveTermuiConsole.App do
         payload = %{
           "channels" => state.publish_selected,
           "bindings" => state.publish_bindings,
+          "tenant_id" => state.tenant_id,
+          "actor_id" => state.actor_id,
           "connections" =>
             Map.new(state.publish_selected, fn channel ->
-              {channel, state.auth_module.connection_id(channel)}
+              {channel, state.auth_module.connection_id(state.publish_auth_state, channel)}
             end)
         }
 
@@ -610,7 +615,10 @@ defmodule JidoHiveTermuiConsole.App do
   end
 
   def handle_message(:refresh_auth_state, state) do
-    {%{state | publish_auth_state: state.auth_module.load_all()}, []}
+    auth_state =
+      state.auth_module.load_all(state.api_base_url, state.participant_id, state.http_module)
+
+    {%{state | publish_auth_state: auth_state}, []}
   end
 
   def handle_message({:run_room_result, room_id, {:ok, _snapshot}}, state) do

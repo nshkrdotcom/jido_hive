@@ -16,6 +16,8 @@ defmodule JidoHiveTermuiConsole.CLI do
     participant_role: :string,
     authority_level: :string,
     poll_interval_ms: :integer,
+    tenant_id: :string,
+    actor_id: :string,
     log_level: :string,
     log_file: :string
   ]

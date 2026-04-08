@@ -1,7 +1,7 @@
 defmodule JidoHiveTermuiConsole.Auth do
   @moduledoc false
 
-  alias JidoHiveTermuiConsole.Config
+  alias JidoHiveTermuiConsole.{Config, HTTP}
 
   @channels ~w[github notion]
 
@@ -11,6 +11,26 @@ defmodule JidoHiveTermuiConsole.Auth do
 
     Enum.into(@channels, %{}, fn channel ->
       {channel, status_for(channel, credentials)}
+    end)
+  end
+
+  @spec load_all(String.t() | nil, String.t() | nil, module()) :: map()
+  def load_all(api_base_url, subject, http_module \\ HTTP)
+
+  def load_all(api_base_url, subject, http_module)
+      when is_binary(api_base_url) and api_base_url != "" and is_binary(subject) and subject != "" do
+    credentials = load_credentials()
+
+    Enum.into(@channels, %{}, fn channel ->
+      {channel, fetch_remote_state(api_base_url, subject, channel, http_module, credentials)}
+    end)
+  end
+
+  def load_all(_api_base_url, _subject, _http_module) do
+    credentials = load_credentials()
+
+    Enum.into(@channels, %{}, fn channel ->
+      {channel, local_state(channel, credentials)}
     end)
   end
 
@@ -25,6 +45,29 @@ defmodule JidoHiveTermuiConsole.Auth do
 
       _other ->
         nil
+    end
+  end
+
+  @spec connection_id(map(), String.t()) :: String.t() | nil
+  def connection_id(auth_state, channel) when is_map(auth_state) and is_binary(channel) do
+    case Map.get(auth_state, channel) do
+      %{connection_id: connection_id} when is_binary(connection_id) and connection_id != "" ->
+        connection_id
+
+      %{"connection_id" => connection_id} when is_binary(connection_id) and connection_id != "" ->
+        connection_id
+
+      _other ->
+        nil
+    end
+  end
+
+  @spec status(map(), String.t()) :: :cached | :missing | :pending
+  def status(auth_state, channel) when is_map(auth_state) and is_binary(channel) do
+    case Map.get(auth_state, channel) do
+      %{status: status} when status in [:cached, :missing, :pending] -> status
+      %{"status" => status} when status in [:cached, :missing, :pending] -> status
+      _other -> :missing
     end
   end
 
@@ -80,6 +123,87 @@ defmodule JidoHiveTermuiConsole.Auth do
       %{} = credential -> if(expired?(credential), do: :missing, else: :cached)
       _other -> :missing
     end
+  end
+
+  defp fetch_remote_state(api_base_url, subject, channel, http_module, credentials) do
+    path = "/connectors/#{channel}/connections?subject=#{URI.encode_www_form(subject)}"
+
+    case http_module.get(api_base_url, path) do
+      {:ok, %{"data" => connections}} when is_list(connections) ->
+        remote_state(connections)
+
+      _other ->
+        local_state(channel, credentials)
+    end
+  end
+
+  defp remote_state(connections) do
+    cond do
+      connection = latest_connection(connections, &connected?/1) ->
+        %{
+          connection_id: Map.get(connection, "connection_id"),
+          source: :server,
+          state: Map.get(connection, "state", "connected"),
+          status: :cached
+        }
+
+      connection = latest_connection(connections, &(not connected?(&1))) ->
+        %{
+          connection_id: Map.get(connection, "connection_id"),
+          source: :server,
+          state: Map.get(connection, "state"),
+          status: :pending
+        }
+
+      true ->
+        %{
+          connection_id: nil,
+          source: :server,
+          state: nil,
+          status: :missing
+        }
+    end
+  end
+
+  defp local_state(channel, credentials) do
+    case Map.get(credentials, channel) do
+      %{"connection_id" => connection_id} = credential
+      when is_binary(connection_id) and connection_id != "" ->
+        if expired?(credential) do
+          missing_state()
+        else
+          %{
+            connection_id: connection_id,
+            source: :local,
+            state: "cached",
+            status: :cached
+          }
+        end
+
+      _other ->
+        missing_state()
+    end
+  end
+
+  defp latest_connection(connections, predicate) do
+    connections
+    |> Enum.filter(predicate)
+    |> Enum.max_by(&connection_timestamp/1, fn -> nil end)
+  end
+
+  defp connected?(connection), do: Map.get(connection, "state") == "connected"
+
+  defp connection_timestamp(connection) do
+    Map.get(connection, "updated_at") || Map.get(connection, "inserted_at") || ""
+  end
+
+  defp missing_state do
+    %{
+      connection_id: nil,
+      source: :missing,
+      state: nil,
+      status: :missing
+    }
   end
 
   defp expired?(%{"expires_at" => expires_at}) when is_binary(expires_at) do

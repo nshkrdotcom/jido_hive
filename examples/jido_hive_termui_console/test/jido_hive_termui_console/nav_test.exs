@@ -263,15 +263,17 @@ defmodule JidoHiveTermuiConsole.NavTest do
   end
 
   test "transition to publish and wizard enqueues fetch work" do
-    state = Model.new([])
+    state = Model.new(tenant_id: "workspace-demo", actor_id: "operator-demo")
 
-    _publish =
+    publish =
       Nav.transition(%{state | active_screen: :room, room_id: "room-1"}, :publish,
         app_pid: self()
       )
 
     assert_receive :fetch_publication_plan
     assert_receive :refresh_auth_state
+    assert publish.tenant_id == "workspace-demo"
+    assert publish.actor_id == "operator-demo"
 
     _wizard = Nav.transition(state, :wizard, app_pid: self())
     assert_receive :fetch_wizard_targets

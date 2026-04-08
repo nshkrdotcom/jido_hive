@@ -299,6 +299,10 @@ wizard from the lobby.
   Defaults to `binding`
 - `--poll-interval-ms`
   Defaults to `500`
+- `--tenant-id`
+  Override the publish tenant id used for connector policy checks. Defaults to `workspace-local`
+- `--actor-id`
+  Override the publish actor id used for connector policy checks. Defaults to `operator-1`
 
 ## Keyboard Shortcuts
 
@@ -378,7 +382,7 @@ wizard from the lobby.
 - `Enter`
   Submit publications
 - `r`
-  Refresh cached auth state
+  Refresh server auth state when focus is on a channel row. When a binding field is focused, plain `r` edits the field like any other character.
 - `Esc`
   Return to room
 - `Ctrl+Q`
@@ -458,11 +462,11 @@ still shape the graph.
 The console creates and reads these files under `~/.config/hive/`:
 
 - `config.json`
-  Default API URL, participant id, participant role, authority level, and poll interval
+  Default API URL, tenant id, actor id, participant id, participant role, authority level, and poll interval
 - `rooms.json`
   Local room registry shown in the lobby
 - `credentials.json`
-  Cached connector credentials used by the publish screen
+  Local auth fallback used only when the server-backed connector lookup is unavailable
 - `termui_console.log`
   File logger output for debugging startup, render, and runtime failures
 
@@ -475,9 +479,19 @@ The publish screen fetches the publication plan from the server and renders
 channels dynamically from `required_bindings`. Binding field names are not
 hardcoded in the TUI.
 
-Auth state is loaded from `credentials.json` and rendered as either:
+Primary auth state is loaded from the server connector API:
 
-- cached and ready
+- `GET /connectors/<provider>/connections?subject=<participant_id>`
+
+The screen selects the newest `connected` connection for each provider and
+submits that connection id back to the publication endpoint. Local
+`credentials.json` entries are only a fallback for offline/dev scaffolding or
+when the server lookup fails.
+
+Auth state is rendered as either:
+
+- connected and ready
+- pending connector setup
 - missing, with a concrete `hive auth login <provider>` recovery path
 
 ## Prerequisites And Dependencies
@@ -518,7 +532,7 @@ This section is for people changing the console itself.
 - `lib/jido_hive_termui_console/config.ex`
   Config bootstrap and local room registry
 - `lib/jido_hive_termui_console/auth.ex`
-  Cached publish auth state
+  Server-backed publish auth resolution with local fallback
 - `lib/jido_hive_termui_console/http.ex`
   Thin `:httpc` boundary
 - `lib/jido_hive_termui_console/event_log_poller.ex`

@@ -27,6 +27,15 @@ defmodule JidoHiveTermuiConsole.CLITest do
            ]) == [api_base_url: "https://example.com/api"]
   end
 
+  test "parse_console_opts preserves tenant and actor ids" do
+    assert CLI.parse_console_opts([
+             "--tenant-id",
+             "workspace-demo",
+             "--actor-id",
+             "operator-demo"
+           ]) == [tenant_id: "workspace-demo", actor_id: "operator-demo"]
+  end
+
   test "parse_console_opts maps --debug to debug log level" do
     assert CLI.parse_console_opts(["--debug"]) == [log_level: "debug"]
   end

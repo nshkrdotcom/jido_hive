@@ -17,6 +17,8 @@ defmodule JidoHiveTermuiConsole do
       [
         route: route,
         api_base_url: option_or_config(opts, :api_base_url, config, @default_api_base_url),
+        tenant_id: option_or_config(opts, :tenant_id, config, "workspace-local"),
+        actor_id: option_or_config(opts, :actor_id, config, "operator-1"),
         participant_id: identity.participant_id,
         participant_role: identity.participant_role,
         authority_level: identity.authority_level,

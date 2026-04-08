@@ -12,7 +12,13 @@ defmodule JidoHiveTermuiConsole.Screens.Publish do
   def event_to_msg(%Event.Key{code: "enter"}, _state), do: :publish_submit
   def event_to_msg(%Event.Key{code: "esc"}, _state), do: :cancel_publish
   def event_to_msg(%Event.Key{code: "q", modifiers: ["ctrl"]}, _state), do: :quit
-  def event_to_msg(%Event.Key{code: "r"}, _state), do: :publish_refresh_auth
+
+  def event_to_msg(%Event.Key{code: "r"}, state) do
+    case current_focus(state) do
+      %{type: :binding} -> {:publish_input_key, "r"}
+      _other -> :publish_refresh_auth
+    end
+  end
 
   def event_to_msg(%Event.Key{code: " ", modifiers: []}, state) do
     case current_focus(state) do
@@ -230,9 +236,17 @@ defmodule JidoHiveTermuiConsole.Screens.Publish do
   defp auth_summary(state) do
     state.publish_selected
     |> Enum.map(fn channel ->
-      case state.auth_module.connection_id(channel) do
-        connection_id when is_binary(connection_id) and connection_id != "" ->
-          "#{channel}: cached (#{connection_id})"
+      case Map.get(state.publish_auth_state, channel) do
+        %{status: :cached, connection_id: connection_id, source: :server}
+        when is_binary(connection_id) and connection_id != "" ->
+          "#{channel}: connected (#{connection_id})"
+
+        %{status: :cached, connection_id: connection_id}
+        when is_binary(connection_id) and connection_id != "" ->
+          "#{channel}: cached locally (#{connection_id})"
+
+        %{status: :pending, state: auth_state} when is_binary(auth_state) and auth_state != "" ->
+          "#{channel}: #{auth_state} — finish connector setup before publishing"
 
         _other ->
           "#{channel}: not configured — run hive auth login #{channel}"
@@ -257,9 +271,12 @@ defmodule JidoHiveTermuiConsole.Screens.Publish do
   end
 
   defp publication_channel_auth(channel, state) do
-    if state.auth_module.connection_id(channel) in [nil, ""],
-      do: "auth:missing",
-      else: "auth:cached"
+    case Map.get(state.publish_auth_state, channel) do
+      %{status: :cached, source: :server} -> "auth:connected"
+      %{status: :cached} -> "auth:cached"
+      %{status: :pending, state: auth_state} when is_binary(auth_state) -> "auth:#{auth_state}"
+      _other -> "auth:missing"
+    end
   end
 
   defp publication_binding_lines(publication, channel, state, focus) do
@@ -307,8 +324,11 @@ defmodule JidoHiveTermuiConsole.Screens.Publish do
   end
 
   defp validate_cached_auth(state) do
-    if Enum.any?(state.publish_selected, &(state.auth_module.connection_id(&1) in [nil, ""])) do
-      {:error, "Missing cached auth for at least one selected channel"}
+    if Enum.any?(
+         state.publish_selected,
+         &(state.auth_module.status(state.publish_auth_state, &1) != :cached)
+       ) do
+      {:error, "Authentication incomplete for at least one selected channel"}
     else
       :ok
     end
@@ -335,7 +355,7 @@ defmodule JidoHiveTermuiConsole.Screens.Publish do
       "Use Tab to cycle through channels and binding fields.",
       "Press Space to toggle the currently focused channel on or off.",
       "When a binding field is focused, typing edits that field in the editor below.",
-      "Press r to refresh cached auth state.",
+      "Press r to refresh server auth state.",
       "Press Enter to publish the selected channels once validation passes.",
       "Press Esc to return to the room."
     ]

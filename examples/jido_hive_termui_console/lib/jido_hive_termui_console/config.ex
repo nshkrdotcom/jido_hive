@@ -127,7 +127,9 @@ defmodule JidoHiveTermuiConsole.Config do
       "participant_id" => nil,
       "participant_role" => "coordinator",
       "authority_level" => "binding",
-      "poll_interval_ms" => 500
+      "poll_interval_ms" => 500,
+      "tenant_id" => "workspace-local",
+      "actor_id" => "operator-1"
     }
   end
 

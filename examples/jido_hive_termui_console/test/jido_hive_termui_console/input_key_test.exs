@@ -59,4 +59,22 @@ defmodule JidoHiveTermuiConsole.InputKeyTest do
     assert App.event_to_msg(%Event.Key{code: "n", modifiers: ["shift"]}, state) ==
              {:msg, {:publish_input_key, "N"}}
   end
+
+  test "publish binding editor does not steal plain r for refresh" do
+    state =
+      Model.new([])
+      |> Map.put(:active_screen, :publish)
+      |> Map.put(:publish_plan, %{
+        "publications" => [
+          %{
+            "channel" => "github",
+            "required_bindings" => [%{"field" => "repo", "description" => "Repository"}]
+          }
+        ]
+      })
+      |> Map.put(:publish_cursor, 1)
+
+    assert App.event_to_msg(%Event.Key{code: "r", modifiers: []}, state) ==
+             {:msg, {:publish_input_key, "r"}}
+  end
 end
