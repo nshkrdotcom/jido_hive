@@ -636,7 +636,8 @@ Run the console with debug logging enabled:
 Inside the console, press `Ctrl+D` or `F2` to open the in-app debug popup. It shows the
 current screen, room, API base, status line, and whether a room-creation request is still pending.
 With `--debug`, the file log now records startup and async action boundaries, so `tail -f
-~/.config/hive/termui_console.log` should show activity immediately after launch.
+~/.config/hive/termui_console.log` should show activity immediately after launch. Those logger
+lines are file-only and should not paint into the TUI surface.
 
 Then inspect:
 

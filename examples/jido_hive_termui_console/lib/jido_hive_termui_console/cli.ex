@@ -54,12 +54,22 @@ defmodule JidoHiveTermuiConsole.CLI do
     opts = parse_console_opts(argv)
     route = parse_args(argv)
 
-    with :ok <- LoggerSetup.configure(opts),
-         :ok <- log_console_start(opts, route),
-         :ok <- EscriptBootstrap.start_console_dependencies(),
-         :ok <- JidoHiveTermuiConsole.run(Keyword.put(opts, :route, route)) do
-      System.halt(0)
-    else
+    result =
+      with :ok <- LoggerSetup.configure(opts),
+           :ok <- log_console_start(opts, route),
+           :ok <- EscriptBootstrap.start_console_dependencies(),
+           :ok <- JidoHiveTermuiConsole.run(Keyword.put(opts, :route, route)) do
+        :ok
+      else
+        {:error, reason} -> {:error, reason}
+      end
+
+    :ok = LoggerSetup.restore()
+
+    case result do
+      :ok ->
+        System.halt(0)
+
       {:error, reason} ->
         IO.puts("Console failed: #{inspect(reason)}")
         System.halt(1)

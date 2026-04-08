@@ -6,6 +6,8 @@ defmodule JidoHiveTermuiConsole.LoggerSetup do
   alias JidoHiveTermuiConsole.Config
 
   @handler_name :jido_hive_termui_console_file
+  @default_handler :default
+  @default_handler_filter_key {__MODULE__, :default_handler_filter_default}
   @default_level "info"
   @env_level "JIDO_HIVE_TERMUI_LOG_LEVEL"
   @env_path "JIDO_HIVE_TERMUI_LOG_PATH"
@@ -22,9 +24,22 @@ defmodule JidoHiveTermuiConsole.LoggerSetup do
     File.write!(path, "", [:append])
     :ok = Logger.configure(level: level)
     :ok = attach_file_handler(path, level)
+    :ok = suppress_default_handler()
     Logger.log(level, "termui console logger configured path=#{path} level=#{level}")
     Logger.flush()
     :ok
+  end
+
+  @spec restore() :: :ok
+  def restore do
+    case :persistent_term.get(@default_handler_filter_key, :unset) do
+      :unset ->
+        :ok
+
+      previous_filter_default ->
+        :persistent_term.erase(@default_handler_filter_key)
+        :logger.set_handler_config(@default_handler, :filter_default, previous_filter_default)
+    end
   end
 
   @spec default_log_path() :: String.t()
@@ -75,6 +90,20 @@ defmodule JidoHiveTermuiConsole.LoggerSetup do
 
       {:error, reason} ->
         raise "failed to attach logger handler: #{inspect(reason)}"
+    end
+  end
+
+  defp suppress_default_handler do
+    case :logger.get_handler_config(@default_handler) do
+      {:ok, %{filter_default: filter_default}} ->
+        if :persistent_term.get(@default_handler_filter_key, :unset) == :unset do
+          :persistent_term.put(@default_handler_filter_key, filter_default)
+        end
+
+        :logger.set_handler_config(@default_handler, :filter_default, :stop)
+
+      _other ->
+        :ok
     end
   end
 end
