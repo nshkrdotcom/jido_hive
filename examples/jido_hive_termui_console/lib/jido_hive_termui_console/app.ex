@@ -149,7 +149,7 @@ defmodule JidoHiveTermuiConsole.App do
         {Model.set_status(state, "No room selected", :error), []}
 
       %{room_id: room_id} ->
-        case config_remove_room(state.config_module, room_id, state.api_base_url) do
+        case state.operator_module.remove_saved_room(room_id, state.api_base_url) do
           :ok ->
             {Nav.transition(state, :lobby, app_pid: self()), []}
 
@@ -421,9 +421,9 @@ defmodule JidoHiveTermuiConsole.App do
         })
 
       next_state =
-        case state.http_module.post(
+        case state.operator_module.submit_contribution(
                state.api_base_url,
-               "/rooms/#{URI.encode_www_form(state.room_id)}/contributions",
+               state.room_id,
                payload
              ) do
           {:ok, _response} ->
@@ -499,8 +499,7 @@ defmodule JidoHiveTermuiConsole.App do
   end
 
   def update(:publish_refresh_auth, state) do
-    auth_state =
-      state.auth_module.load_all(state.api_base_url, state.participant_id, state.http_module)
+    auth_state = state.operator_module.load_auth_state(state.api_base_url, state.participant_id)
 
     {%{state | publish_auth_state: auth_state}, []}
   end
@@ -523,16 +522,12 @@ defmodule JidoHiveTermuiConsole.App do
           "actor_id" => state.actor_id,
           "connections" =>
             Map.new(state.publish_selected, fn channel ->
-              {channel, state.auth_module.connection_id(state.publish_auth_state, channel)}
+              {channel, state.operator_module.connection_id(state.publish_auth_state, channel)}
             end)
         }
 
         next_state =
-          case state.http_module.post(
-                 state.api_base_url,
-                 "/rooms/#{URI.encode_www_form(state.room_id)}/publications",
-                 payload
-               ) do
+          case state.operator_module.publish_room(state.api_base_url, state.room_id, payload) do
             {:ok, _response} ->
               state
               |> Nav.refresh_room_snapshot()
@@ -614,8 +609,8 @@ defmodule JidoHiveTermuiConsole.App do
   @spec handle_message(term(), Model.t()) :: {Model.t(), [term()]}
   def handle_message({:fetch_room, room_id}, state) do
     next_state =
-      case state.http_module.get(state.api_base_url, "/rooms/#{URI.encode_www_form(room_id)}") do
-        {:ok, %{"data" => snapshot}} ->
+      case state.operator_module.fetch_room(state.api_base_url, room_id) do
+        {:ok, snapshot} ->
           Lobby.upsert_row(state, Lobby.row_from_snapshot(room_id, snapshot))
 
         {:error, :not_found} ->
@@ -630,8 +625,8 @@ defmodule JidoHiveTermuiConsole.App do
 
   def handle_message(:fetch_wizard_targets, state) do
     next_state =
-      case state.http_module.get(state.api_base_url, "/targets") do
-        {:ok, %{"data" => targets}} ->
+      case state.operator_module.list_targets(state.api_base_url) do
+        {:ok, targets} ->
           state
           |> Map.put(:wizard_available_targets, targets)
           |> Map.put(:wizard_targets_state, :ready)
@@ -649,8 +644,8 @@ defmodule JidoHiveTermuiConsole.App do
 
   def handle_message(:fetch_wizard_policies, state) do
     next_state =
-      case state.http_module.get(state.api_base_url, "/policies") do
-        {:ok, %{"data" => policies}} ->
+      case state.operator_module.list_policies(state.api_base_url) do
+        {:ok, policies} ->
           state
           |> Map.put(:wizard_available_policies, policies)
           |> Map.put(:wizard_policies_state, :ready)
@@ -668,11 +663,8 @@ defmodule JidoHiveTermuiConsole.App do
 
   def handle_message(:fetch_publication_plan, state) do
     next_state =
-      case state.http_module.get(
-             state.api_base_url,
-             "/rooms/#{URI.encode_www_form(state.room_id)}/publication_plan"
-           ) do
-        {:ok, %{"data" => plan}} ->
+      case state.operator_module.fetch_publication_plan(state.api_base_url, state.room_id) do
+        {:ok, plan} ->
           %{state | publish_plan: plan}
 
         {:error, reason} ->
@@ -683,8 +675,7 @@ defmodule JidoHiveTermuiConsole.App do
   end
 
   def handle_message(:refresh_auth_state, state) do
-    auth_state =
-      state.auth_module.load_all(state.api_base_url, state.participant_id, state.http_module)
+    auth_state = state.operator_module.load_auth_state(state.api_base_url, state.participant_id)
 
     {%{state | publish_auth_state: auth_state}, []}
   end
@@ -693,10 +684,6 @@ defmodule JidoHiveTermuiConsole.App do
     next_state =
       case state.pending_room_submit do
         %{room_id: ^room_id, text: ^text} ->
-          Logger.info(
-            "room chat submit succeeded room_id=#{room_id} participant_id=#{state.participant_id} chars=#{String.length(text)}"
-          )
-
           state
           |> Map.put(:pending_room_submit, nil)
           |> Nav.refresh_room_snapshot()
@@ -962,14 +949,17 @@ defmodule JidoHiveTermuiConsole.App do
 
   defp start_room_run_async(state, room_id) do
     caller = self()
-    http_module = state.http_module
+    operator_module = state.operator_module
     api_base_url = state.api_base_url
+    operation_id = JidoHiveClient.Operation.new_id("room_run")
 
     spawn(fn ->
       result =
         safe_async_result(fn ->
-          http_module.post(api_base_url, "/rooms/#{URI.encode_www_form(room_id)}/run", %{})
+          operator_module.run_room(api_base_url, room_id)
         end)
+
+      log_async_operation(operation_id, "room run", room_id, state.participant_id, result)
 
       send(caller, {:run_room_result, room_id, result})
     end)
@@ -979,21 +969,17 @@ defmodule JidoHiveTermuiConsole.App do
 
   defp start_room_create_async(state, room_id, payload) do
     caller = self()
-    http_module = state.http_module
+    operator_module = state.operator_module
     api_base_url = state.api_base_url
-    config_module = state.config_module
+    operation_id = JidoHiveClient.Operation.new_id("room_create")
 
     spawn(fn ->
       result =
         safe_async_result(fn ->
-          create_room_and_store_config(
-            http_module,
-            api_base_url,
-            config_module,
-            room_id,
-            payload
-          )
+          create_room_and_store_config(operator_module, api_base_url, room_id, payload)
         end)
+
+      log_async_operation(operation_id, "room create", room_id, state.participant_id, result)
 
       send(caller, {:wizard_create_result, room_id, result})
     end)
@@ -1005,6 +991,7 @@ defmodule JidoHiveTermuiConsole.App do
     caller = self()
     embedded_module = state.embedded_module
     embedded = state.embedded
+    operation_id = JidoHiveClient.Operation.new_id("room_submit")
 
     spawn(fn ->
       result =
@@ -1012,42 +999,18 @@ defmodule JidoHiveTermuiConsole.App do
           embedded_module.submit_chat(embedded, submit_attrs)
         end)
 
+      log_async_operation(operation_id, "room chat submit", room_id, state.participant_id, result)
+
       send(caller, {:room_submit_result, room_id, text, result})
     end)
 
     :ok
   end
 
-  defp create_room_and_store_config(http_module, api_base_url, config_module, room_id, payload) do
-    with {:ok, response} <- http_module.post(api_base_url, "/rooms", payload),
-         :ok <- config_add_room(config_module, room_id, api_base_url) do
+  defp create_room_and_store_config(operator_module, api_base_url, room_id, payload) do
+    with {:ok, response} <- operator_module.create_room(api_base_url, payload),
+         :ok <- operator_module.add_saved_room(room_id, api_base_url) do
       {:ok, response}
-    end
-  end
-
-  defp config_add_room(config_module, room_id, api_base_url) do
-    cond do
-      function_exported?(config_module, :add_room, 2) ->
-        config_module.add_room(room_id, api_base_url)
-
-      function_exported?(config_module, :add_room, 1) ->
-        config_module.add_room(room_id)
-
-      true ->
-        {:error, :config_module_missing_add_room}
-    end
-  end
-
-  defp config_remove_room(config_module, room_id, api_base_url) do
-    cond do
-      function_exported?(config_module, :remove_room, 2) ->
-        config_module.remove_room(room_id, api_base_url)
-
-      function_exported?(config_module, :remove_room, 1) ->
-        config_module.remove_room(room_id)
-
-      true ->
-        {:error, :config_module_missing_remove_room}
     end
   end
 
@@ -1083,11 +1046,7 @@ defmodule JidoHiveTermuiConsole.App do
     end
   end
 
-  defp reconcile_room_submit_failure(%Model{} = state, room_id, text, reason) do
-    Logger.error(
-      "room chat submit failed room_id=#{room_id} participant_id=#{state.participant_id} reason=#{inspect(reason)}"
-    )
-
+  defp reconcile_room_submit_failure(%Model{} = state, _room_id, text, reason) do
     refreshed_state =
       state
       |> Map.put(:pending_room_submit, nil)
@@ -1155,6 +1114,18 @@ defmodule JidoHiveTermuiConsole.App do
   catch
     :exit, reason -> {:error, {:exit, reason}}
     kind, reason -> {:error, {kind, reason}}
+  end
+
+  defp log_async_operation(operation_id, label, room_id, participant_id, {:ok, _result}) do
+    Logger.info(
+      "#{label} completed operation_id=#{operation_id} room_id=#{room_id} participant_id=#{participant_id}"
+    )
+  end
+
+  defp log_async_operation(operation_id, label, room_id, participant_id, {:error, reason}) do
+    Logger.error(
+      "#{label} failed operation_id=#{operation_id} room_id=#{room_id} participant_id=#{participant_id} reason=#{inspect(reason)}"
+    )
   end
 
   defp room_submit_attrs(text, state) do

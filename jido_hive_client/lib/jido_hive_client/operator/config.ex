@@ -1,4 +1,4 @@
-defmodule JidoHiveTermuiConsole.Config do
+defmodule JidoHiveClient.Operator.Config do
   @moduledoc false
 
   @default_api_base_url "http://127.0.0.1:4000/api"
@@ -8,12 +8,13 @@ defmodule JidoHiveTermuiConsole.Config do
     File.mkdir_p!(config_dir())
     write_if_missing(config_path(), default_config())
     write_if_missing(rooms_path(), %{"rooms" => []})
+    write_if_missing(credentials_path(), %{})
     :ok
   end
 
   @spec config_dir() :: String.t()
   def config_dir do
-    Application.get_env(:jido_hive_termui_console, :config_dir) ||
+    Application.get_env(:jido_hive_client, :config_dir) ||
       Path.join([System.user_home!(), ".config", "hive"])
   end
 
@@ -32,12 +33,6 @@ defmodule JidoHiveTermuiConsole.Config do
     |> Map.merge(read_json(config_path(), default_config()))
   end
 
-  @spec list_rooms() :: [String.t()]
-  def list_rooms, do: load_rooms()
-
-  @spec list_rooms(String.t()) :: [String.t()]
-  def list_rooms(api_base_url) when is_binary(api_base_url), do: load_rooms(api_base_url)
-
   @spec load_rooms() :: [String.t()]
   def load_rooms do
     rooms_path()
@@ -52,13 +47,8 @@ defmodule JidoHiveTermuiConsole.Config do
     |> namespaced_rooms(api_base_url)
   end
 
-  @spec add_room(String.t()) :: :ok | {:error, term()}
-  def add_room(room_id) when is_binary(room_id) do
-    add_room(room_id, nil)
-  end
-
   @spec add_room(String.t(), String.t() | nil) :: :ok | {:error, term()}
-  def add_room(room_id, api_base_url) when is_binary(room_id) do
+  def add_room(room_id, api_base_url \\ nil) when is_binary(room_id) do
     room_id = String.trim(room_id)
 
     if room_id == "" do
@@ -90,13 +80,8 @@ defmodule JidoHiveTermuiConsole.Config do
     end
   end
 
-  @spec remove_room(String.t()) :: :ok | {:error, term()}
-  def remove_room(room_id) when is_binary(room_id) do
-    remove_room(room_id, nil)
-  end
-
   @spec remove_room(String.t(), String.t() | nil) :: :ok | {:error, term()}
-  def remove_room(room_id, api_base_url) when is_binary(room_id) do
+  def remove_room(room_id, api_base_url \\ nil) when is_binary(room_id) do
     payload = read_json(rooms_path(), %{"rooms_by_api_base_url" => %{}, "rooms" => []})
 
     next_payload =
@@ -119,6 +104,23 @@ defmodule JidoHiveTermuiConsole.Config do
       end
 
     write_json(rooms_path(), next_payload)
+  end
+
+  @spec write_credentials(map()) :: :ok | {:error, term()}
+  def write_credentials(credentials) when is_map(credentials) do
+    :ok = ensure_initialized()
+
+    with :ok <- write_json(credentials_path(), credentials),
+         :ok <- :file.change_mode(String.to_charlist(credentials_path()), 0o600) do
+      :ok
+    else
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  @spec load_credentials() :: map()
+  def load_credentials do
+    read_json(credentials_path(), %{})
   end
 
   defp default_config do

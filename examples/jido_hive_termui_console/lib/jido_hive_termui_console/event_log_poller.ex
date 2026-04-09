@@ -9,26 +9,44 @@ defmodule JidoHiveTermuiConsole.EventLogPoller do
     app_pid = Keyword.fetch!(opts, :app_pid)
     api_base_url = Keyword.get(opts, :api_base_url, "http://127.0.0.1:4000/api")
     cursor = Keyword.get(opts, :cursor)
-    http_module = Keyword.get(opts, :http_module, JidoHiveTermuiConsole.HTTP)
+    operator_module = Keyword.get(opts, :operator_module, JidoHiveClient.Operator)
     poll_interval_ms = Keyword.get(opts, :poll_interval_ms, @poll_interval_ms)
 
     Task.start_link(fn ->
-      loop(room_id, app_pid, api_base_url, http_module, cursor, MapSet.new(), 0, poll_interval_ms)
+      loop(
+        room_id,
+        app_pid,
+        api_base_url,
+        operator_module,
+        cursor,
+        MapSet.new(),
+        0,
+        poll_interval_ms
+      )
     end)
   end
 
-  defp loop(room_id, app_pid, api_base_url, http_module, cursor, seen_ids, failures, interval_ms) do
+  defp loop(
+         room_id,
+         app_pid,
+         api_base_url,
+         operator_module,
+         cursor,
+         seen_ids,
+         failures,
+         interval_ms
+       ) do
     Process.sleep(interval_ms)
 
     {next_cursor, next_seen_ids, next_failures} =
-      http_module.get(api_base_url, timeline_path(room_id, cursor))
+      operator_module.fetch_room_timeline(api_base_url, room_id, after: cursor)
       |> handle_poll_response(app_pid, cursor, seen_ids, failures)
 
     loop(
       room_id,
       app_pid,
       api_base_url,
-      http_module,
+      operator_module,
       next_cursor,
       next_seen_ids,
       next_failures,
@@ -65,14 +83,8 @@ defmodule JidoHiveTermuiConsole.EventLogPoller do
       Map.get(entry, "event_id") || Map.get(entry, :event_id)
   end
 
-  defp timeline_path(room_id, nil), do: "/rooms/#{URI.encode_www_form(room_id)}/timeline"
-
-  defp timeline_path(room_id, cursor) do
-    "/rooms/#{URI.encode_www_form(room_id)}/timeline?after=#{URI.encode_www_form(cursor)}"
-  end
-
   defp handle_poll_response(
-         {:ok, %{"data" => entries, "next_cursor" => next_cursor}},
+         {:ok, %{entries: entries, next_cursor: next_cursor}},
          app_pid,
          cursor,
          seen_ids,

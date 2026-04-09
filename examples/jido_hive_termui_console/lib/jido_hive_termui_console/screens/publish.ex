@@ -326,7 +326,7 @@ defmodule JidoHiveTermuiConsole.Screens.Publish do
   defp validate_cached_auth(state) do
     if Enum.any?(
          state.publish_selected,
-         &(state.auth_module.status(state.publish_auth_state, &1) != :cached)
+         &(state.operator_module.auth_status(state.publish_auth_state, &1) != :cached)
        ) do
       {:error, "Authentication incomplete for at least one selected channel"}
     else

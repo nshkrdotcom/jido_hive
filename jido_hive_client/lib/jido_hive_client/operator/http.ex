@@ -1,5 +1,8 @@
-defmodule JidoHiveTermuiConsole.HTTP do
+defmodule JidoHiveClient.Operator.HTTP do
   @moduledoc false
+
+  @request_options [timeout: 15_000, connect_timeout: 5_000]
+  @response_options [body_format: :binary]
 
   @spec get(String.t(), String.t()) :: {:ok, map()} | {:error, term()}
   def get(api_base_url, path), do: request(:get, api_base_url, path, nil)
@@ -15,6 +18,7 @@ defmodule JidoHiveTermuiConsole.HTTP do
     base_url =
       api_base_url
       |> to_string()
+      |> String.trim()
       |> String.trim_trailing("/")
 
     url = String.to_charlist(base_url <> path)
@@ -26,7 +30,7 @@ defmodule JidoHiveTermuiConsole.HTTP do
         :post -> {url, headers, ~c"application/json", Jason.encode!(payload)}
       end
 
-    case :httpc.request(method, request, [], body_format: :binary) do
+    case :httpc.request(method, request, @request_options, @response_options) do
       {:ok, {{_version, status, _phrase}, _response_headers, body}} when status in 200..299 ->
         {:ok, decode_body(body)}
 

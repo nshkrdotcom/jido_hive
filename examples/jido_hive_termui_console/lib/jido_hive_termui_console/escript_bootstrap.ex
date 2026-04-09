@@ -1,7 +1,7 @@
 defmodule JidoHiveTermuiConsole.EscriptBootstrap do
   @moduledoc false
 
-  alias JidoHiveTermuiConsole.Config
+  alias JidoHiveClient.Operator
 
   @ex_ratatui_archive_prefix "ex_ratatui/"
   @release_ets_prefix "tzdata/priv/release_ets/"
@@ -170,11 +170,11 @@ defmodule JidoHiveTermuiConsole.EscriptBootstrap do
   end
 
   defp tzdata_data_dir do
-    Path.join(Config.config_dir(), "tzdata")
+    Path.join(Operator.config_dir(), "tzdata")
   end
 
   defp ex_ratatui_app_dir do
-    Path.join(Config.config_dir(), "escript_apps/ex_ratatui")
+    Path.join(Operator.config_dir(), "escript_apps/ex_ratatui")
   end
 
   defp tzdata_release_files_present?(release_dir) do

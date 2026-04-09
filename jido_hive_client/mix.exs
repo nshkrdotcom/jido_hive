@@ -10,6 +10,7 @@ defmodule JidoHiveClient.MixProject do
       app: :jido_hive_client,
       version: "0.1.0",
       elixir: "~> 1.19",
+      elixirc_paths: elixirc_paths(Mix.env()),
       elixirc_options: [warnings_as_errors: true],
       start_permanent: Mix.env() == :prod,
       escript: [main_module: JidoHiveClient.CLI],
@@ -36,6 +37,9 @@ defmodule JidoHiveClient.MixProject do
       mod: {JidoHiveClient.Application, []}
     ]
   end
+
+  defp elixirc_paths(:test), do: ["lib", "test_support"]
+  defp elixirc_paths(_env), do: ["lib"]
 
   defp deps do
     [

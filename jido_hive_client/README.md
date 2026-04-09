@@ -1,28 +1,61 @@
 # JidoHiveClient
 
-`jido_hive_client` is the participant runtime for `jido_hive`.
+`jido_hive_client` is the reusable client/runtime platform for `jido_hive`.
 
-It has two jobs:
+It has three distinct roles:
 
-- run long-lived workers against the server relay
-- provide an embedded Elixir API for local human-facing tools
+- run long-lived worker participants against the relay
+- provide a headless operator API and JSON CLI for scripts and debugging
+- provide a room-scoped local session boundary for human-facing tools such as the ExRatatui console
 
-It does not own room truth. The server still does.
+It does not own room truth.
+The server still does.
 
-Start with the root [README](/home/home/p/g/n/jido_hive/README.md) if you want
-repo-wide context.
+Start with the root [README](/home/home/p/g/n/jido_hive/README.md) if you want repo-wide context first.
 
 ## Table of contents
 
 - [Quick start](#quick-start)
-- [Runtime architecture](#runtime-architecture)
+- [Architecture](#architecture)
+- [Public surfaces](#public-surfaces)
+- [Headless CLI](#headless-cli)
+- [RoomSession library API](#roomsession-library-api)
 - [Worker mode](#worker-mode)
-- [Embedded mode](#embedded-mode)
-- [Public API surface](#public-api-surface)
 - [Developer guide](#developer-guide)
+- [Debugging order](#debugging-order)
 - [Related docs](#related-docs)
 
 ## Quick start
+
+### Build the headless CLI
+
+```bash
+cd jido_hive_client
+mix deps.get
+mix escript.build
+```
+
+### Inspect room state without the TUI
+
+```bash
+./jido_hive_client room list --api-base-url http://127.0.0.1:4000/api
+./jido_hive_client room show --api-base-url http://127.0.0.1:4000/api --room-id <room-id>
+./jido_hive_client room tail --api-base-url http://127.0.0.1:4000/api --room-id <room-id>
+```
+
+### Submit human actions headlessly
+
+```bash
+./jido_hive_client room submit --api-base-url http://127.0.0.1:4000/api --room-id <room-id> --participant-id alice --text "hello"
+./jido_hive_client room accept --api-base-url http://127.0.0.1:4000/api --room-id <room-id> --participant-id alice --context-id <context-id>
+./jido_hive_client room resolve --api-base-url http://127.0.0.1:4000/api --room-id <room-id> --participant-id alice --left <ctx-a> --right <ctx-b> --text "resolution"
+```
+
+### Inspect connector auth state
+
+```bash
+./jido_hive_client auth state --api-base-url https://jido-hive-server-test.app.nsai.online/api --subject alice
+```
 
 ### Worker mode
 
@@ -31,67 +64,205 @@ bin/client-worker --worker-index 1
 bin/client-worker --worker-index 2
 ```
 
-### Embedded mode
-
-```elixir
-{:ok, embedded} =
-  JidoHiveClient.Embedded.start_link(
-    room_id: "room-123",
-    participant_id: "alice",
-    participant_role: "collaborator",
-    api_base_url: "http://127.0.0.1:4000/api"
-  )
-
-:ok = JidoHiveClient.Embedded.subscribe(embedded)
-{:ok, _} = JidoHiveClient.Embedded.snapshot(embedded)
-```
-
-## Runtime architecture
+## Architecture
 
 ```mermaid
 flowchart LR
-    subgraph Consumer[Client consumers]
-      WorkerCLI[bin/client-worker]
+    subgraph Consumers[Client consumers]
+      WorkerCLI[worker runtime CLI]
+      Headless[headless operator CLI]
       Console[ExRatatui console]
-      Other[future local tools]
+      Other[other local tools]
     end
 
     subgraph Client[jido_hive_client]
-      Runtime[Runtime and relay worker]
-      Embedded[Embedded API]
-      Intercept[Chat interceptor and local shaping]
+      Operator[JidoHiveClient.Operator]
+      Session[JidoHiveClient.RoomSession]
+      Embedded[JidoHiveClient.Embedded implementation]
+      Runtime[relay worker runtime]
       Boundary[HTTP and relay boundaries]
     end
 
     subgraph Server[jido_hive_server]
-      Relay[relay]
       API[REST API]
-      Rooms[room reducer]
+      Relay[websocket relay]
+      Rooms[room reducer and snapshots]
     end
 
     WorkerCLI --> Runtime
-    Console --> Embedded
-    Other --> Embedded
-    Embedded --> Intercept
+    Headless --> Operator
+    Headless --> Session
+    Console --> Operator
+    Console --> Session
+    Other --> Session
+    Session --> Embedded
+    Operator --> Boundary
     Runtime --> Boundary
-    Intercept --> Boundary
-    Boundary --> Relay
+    Embedded --> Boundary
     Boundary --> API
-    Relay --> Rooms
+    Boundary --> Relay
     API --> Rooms
+    Relay --> Rooms
 ```
 
-### Boundary rule
+### Boundary rules
 
-- client executes
-- server decides
+- `JidoHiveClient.Operator` owns server-facing operator workflows such as room inspection, publication planning, connector auth state, and room creation.
+- `JidoHiveClient.RoomSession` owns room-scoped human participation semantics such as snapshot, refresh, submit-chat, and accept-context.
+- `JidoHiveClient.Embedded` is the implementation behind `RoomSession`, not the surface new callers should reach for first.
+- worker runtime code remains separate from operator/session flows.
 
-That boundary is what lets the same room support both worker runtimes and local
-human tools without splitting authority.
+## Public surfaces
+
+### `JidoHiveClient.Operator`
+
+Use this for headless operator actions that do not require a live room session.
+
+Current responsibilities:
+
+- config/bootstrap under `~/.config/hive`
+- saved-room registry scoped by API base URL
+- connector auth-state loading
+- room fetch and timeline fetch
+- target/policy listing
+- room creation and run
+- publication plan fetch and publish submit
+- connector install start/complete
+- direct contribution submission for scriptable conflict resolution
+
+Representative functions:
+
+- `ensure_initialized/0`
+- `load_config/0`
+- `list_saved_rooms/1`
+- `fetch_room/2`
+- `fetch_room_timeline/3`
+- `create_room/2`
+- `run_room/2`
+- `fetch_publication_plan/2`
+- `publish_room/3`
+- `load_auth_state/2`
+- `start_install/4`
+- `complete_install/4`
+- `submit_contribution/3`
+
+### `JidoHiveClient.RoomSession`
+
+Use this for room-scoped local participation.
+
+Representative functions:
+
+- `start_link/1`
+- `snapshot/1`
+- `refresh/1`
+- `submit_chat/2`
+- `accept_context/3`
+- `shutdown/1`
+- `sync_health/1`
+
+### `JidoHiveClient.CLI`
+
+This is the escript entrypoint. It supports both:
+
+- worker runtime startup when invoked with worker/runtime flags
+- headless operator/session commands when invoked with `room ...`, `auth ...`, `targets ...`, `policies ...`, `config show`, or `session ...`
+
+## Headless CLI
+
+### Room inspection
+
+```bash
+./jido_hive_client room list --api-base-url https://jido-hive-server-test.app.nsai.online/api
+./jido_hive_client room show --api-base-url https://jido-hive-server-test.app.nsai.online/api --room-id <room-id>
+./jido_hive_client room tail --api-base-url https://jido-hive-server-test.app.nsai.online/api --room-id <room-id>
+```
+
+### Room mutation
+
+```bash
+./jido_hive_client room create --api-base-url https://jido-hive-server-test.app.nsai.online/api --payload-file room.json
+./jido_hive_client room run --api-base-url https://jido-hive-server-test.app.nsai.online/api --room-id <room-id>
+./jido_hive_client room publish --api-base-url https://jido-hive-server-test.app.nsai.online/api --room-id <room-id> --payload-file publish.json
+./jido_hive_client room submit --api-base-url https://jido-hive-server-test.app.nsai.online/api --room-id <room-id> --participant-id alice --text "hello"
+./jido_hive_client room accept --api-base-url https://jido-hive-server-test.app.nsai.online/api --room-id <room-id> --participant-id alice --context-id <context-id>
+./jido_hive_client room resolve --api-base-url https://jido-hive-server-test.app.nsai.online/api --room-id <room-id> --participant-id alice --left <ctx-a> --right <ctx-b> --text "resolution"
+```
+
+### Connector auth and install
+
+Validated manual-install tokens:
+
+- GitHub: `GITHUB_TOKEN`
+- Notion: `NOTION_TOKEN`
+
+Do not default to these unless revalidated:
+
+- `GITHUB_OAUTH_ACCESS_TOKEN`
+- `NOTION_OAUTH_ACCESS_TOKEN`
+
+Typical production-safe flow:
+
+```bash
+./jido_hive_client auth install start --api-base-url https://jido-hive-server-test.app.nsai.online/api --channel github --subject alice
+./jido_hive_client auth install complete --api-base-url https://jido-hive-server-test.app.nsai.online/api --install-id <install-id> --subject alice --access-token "$GITHUB_TOKEN"
+./jido_hive_client auth install start --api-base-url https://jido-hive-server-test.app.nsai.online/api --channel notion --subject alice
+./jido_hive_client auth install complete --api-base-url https://jido-hive-server-test.app.nsai.online/api --install-id <install-id> --subject alice --access-token "$NOTION_TOKEN"
+```
+
+```bash
+./jido_hive_client auth state --api-base-url https://jido-hive-server-test.app.nsai.online/api --subject alice
+./jido_hive_client auth install start --api-base-url https://jido-hive-server-test.app.nsai.online/api --channel github --subject alice --scope repo
+./jido_hive_client auth install complete --api-base-url https://jido-hive-server-test.app.nsai.online/api --install-id <install-id> --subject alice --access-token "$GITHUB_TOKEN"
+```
+
+### Output contract
+
+- read commands return JSON-ready room/auth/config data
+- mutating commands return JSON with an explicit `operation_id`
+- session snapshot/refresh commands return both `snapshot` and `sync_health`
+
+This is the preferred way to reproduce or debug client behavior without involving the TUI.
+
+## RoomSession library API
+
+### Start a session
+
+```elixir
+{:ok, session} =
+  JidoHiveClient.RoomSession.start_link(
+    room_id: "room-123",
+    participant_id: "alice",
+    participant_role: "coordinator",
+    participant_kind: "human",
+    api_base_url: "http://127.0.0.1:4000/api"
+  )
+```
+
+### Submit chat
+
+```elixir
+{:ok, result} =
+  JidoHiveClient.RoomSession.submit_chat(session, %{
+    text: "This contradicts the selected context.",
+    selected_context_id: "ctx-12",
+    selected_context_object_type: "belief",
+    selected_relation: "contradicts",
+    authority_level: "binding",
+    participant_id: "alice",
+    participant_role: "coordinator"
+  })
+```
+
+### Inspect sync health
+
+```elixir
+snapshot = JidoHiveClient.RoomSession.snapshot(session)
+JidoHiveClient.RoomSession.sync_health(snapshot)
+```
 
 ## Worker mode
 
-Worker mode is used by:
+Worker mode is still used by:
 
 - `bin/client-worker`
 - `bin/hive-clients`
@@ -107,101 +278,31 @@ Lifecycle:
 6. submit `contribution.submit`
 7. wait for the next assignment
 
-## Embedded mode
-
-Embedded mode is used by the console and any local Elixir tool that wants
-participant behavior without running a separate daemon.
-
-Current embedded responsibilities:
-
-- maintain a local room snapshot
-- subscribe to room updates
-- poll timeline and context surfaces
-- accept human chat input
-- shape that input into structured contributions
-- submit those contributions back to the server
-
-### Embedded action semantics
-
-The embedded path is intentionally narrow:
-
-- submission success means the contribution was accepted by the server boundary
-- follow-up room sync happens after that acceptance and may complete later
-- local refresh failure must not be treated as proof that the server rejected the contribution
-- room truth is always re-read from the server instead of being finalized locally
-
-### Current human authoring contract
-
-The embedded path supports:
-
-- `selected_context_id`
-- `selected_context_object_type`
-- `selected_relation`
-- `authority_level`
-
-Supported relation modes:
-
-- `contextual`
-- `references`
-- `derives_from`
-- `supports`
-- `contradicts`
-- `resolves`
-- `none`
-
-## Public API surface
-
-Primary embedded entry points:
-
-- `JidoHiveClient.Embedded.start_link/1`
-- `JidoHiveClient.Embedded.snapshot/1`
-- `JidoHiveClient.Embedded.subscribe/1`
-- `JidoHiveClient.Embedded.submit_chat/2`
-- `JidoHiveClient.Embedded.accept_context/3`
-- `JidoHiveClient.Embedded.refresh/1`
-- `JidoHiveClient.Embedded.shutdown/1`
-
-Typical embedded submit:
-
-```elixir
-{:ok, _contribution} =
-  JidoHiveClient.Embedded.submit_chat(embedded, %{
-    text: "I think this claim contradicts the selected context.",
-    selected_context_id: "ctx-12",
-    selected_relation: "contradicts",
-    authority_level: "binding"
-  })
-```
-
 ## Developer guide
 
 ### Code map
 
-High-value areas:
+High-value client areas:
 
-- boundary adapters and transport: `lib/jido_hive_client/boundary/`
-- worker runtime: `lib/jido_hive_client/runtime/`
-- embedded API: `lib/jido_hive_client/embedded/`
-- chat shaping and interception: `lib/jido_hive_client/interceptor/`
+- `lib/jido_hive_client/operator.ex`: shared operator boundary
+- `lib/jido_hive_client/room_session.ex`: room-scoped session surface
+- `lib/jido_hive_client/embedded.ex`: session implementation details
+- `lib/jido_hive_client/headless_cli.ex`: scriptable CLI dispatch layer
+- `lib/jido_hive_client/cli.ex`: escript entrypoint and worker/headless dispatch
+- `lib/jido_hive_client/boundary/`: HTTP and relay boundaries
+- `lib/jido_hive_client/runtime/`: worker runtime
 
-### Design constraints
+### Design rules
 
-Keep the client narrow:
+Keep the client narrow and explicit:
 
 - do not move room truth into the client
-- do not duplicate server-side context-manager decisions locally
-- do not let the embedded path invent new room semantics
-- do keep the embedded API ergonomic for local tools
+- do not let the TUI become the only executable path for a room action
+- prefer `Operator` for server workflows and `RoomSession` for local session workflows
+- do not add console-local transport helpers back into the TUI app
+- keep output JSON-ready for shell scripts and operator tooling
 
-### Architecture discussion
-
-The client exists to make the server usable, not to compete with it:
-
-- worker mode optimizes execution against the relay contract
-- embedded mode optimizes human participation against the REST room surface
-- both modes should converge on the same room semantics and contribution contract
-
-### Local quality loop
+### Quality loop
 
 From `jido_hive_client/`:
 
@@ -217,6 +318,15 @@ Or from the repo root:
 ```bash
 mix ci
 ```
+
+## Debugging order
+
+When a bug is reported in the console:
+
+1. reproduce through the headless CLI first
+2. if it reproduces there, debug `Operator`, `RoomSession`, or server behavior
+3. if it does not, debug the ExRatatui console
+4. if the client surface is missing the needed headless action, add it before changing more UI code
 
 ## Related docs
 

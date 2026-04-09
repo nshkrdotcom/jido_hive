@@ -14,9 +14,7 @@ defmodule JidoHiveTermuiConsole.Model do
     :embedded,
     :embedded_module,
     :event_log_poller_pid,
-    :http_module,
-    :config_module,
-    :auth_module,
+    :operator_module,
     :event_log_poller_module,
     :api_base_url,
     :tenant_id,
@@ -93,11 +91,9 @@ defmodule JidoHiveTermuiConsole.Model do
 
     %__MODULE__{
       embedded: Keyword.get(opts, :embedded),
-      embedded_module: Keyword.get(opts, :embedded_module, JidoHiveClient.Embedded),
+      embedded_module: Keyword.get(opts, :embedded_module, JidoHiveClient.RoomSession),
       event_log_poller_pid: Keyword.get(opts, :event_log_poller_pid),
-      http_module: Keyword.get(opts, :http_module, JidoHiveTermuiConsole.HTTP),
-      config_module: Keyword.get(opts, :config_module, JidoHiveTermuiConsole.Config),
-      auth_module: Keyword.get(opts, :auth_module, JidoHiveTermuiConsole.Auth),
+      operator_module: Keyword.get(opts, :operator_module, JidoHiveClient.Operator),
       event_log_poller_module:
         Keyword.get(opts, :event_log_poller_module, JidoHiveTermuiConsole.EventLogPoller),
       api_base_url: Keyword.get(opts, :api_base_url, "http://127.0.0.1:4000/api"),

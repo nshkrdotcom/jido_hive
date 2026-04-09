@@ -3,7 +3,7 @@ defmodule JidoHiveTermuiConsole.LoggerSetup do
 
   require Logger
 
-  alias JidoHiveTermuiConsole.Config
+  alias JidoHiveClient.Operator
 
   @handler_name :jido_hive_termui_console_file
   @default_handler :default
@@ -15,10 +15,11 @@ defmodule JidoHiveTermuiConsole.LoggerSetup do
   @spec configure(keyword()) :: :ok
   def configure(opts \\ []) do
     {:ok, _apps} = Application.ensure_all_started(:logger)
-    :ok = Config.ensure_initialized()
+    operator_module = Keyword.get(opts, :operator_module, Operator)
+    :ok = operator_module.ensure_initialized()
 
     level = resolve_level(opts)
-    path = resolve_path(opts)
+    path = resolve_path(opts, operator_module)
 
     File.mkdir_p!(Path.dirname(path))
     File.write!(path, "", [:append])
@@ -44,7 +45,7 @@ defmodule JidoHiveTermuiConsole.LoggerSetup do
 
   @spec default_log_path() :: String.t()
   def default_log_path do
-    Path.join(Config.config_dir(), "termui_console.log")
+    Path.join(Operator.config_dir(), "termui_console.log")
   end
 
   defp resolve_level(opts) do
@@ -53,8 +54,12 @@ defmodule JidoHiveTermuiConsole.LoggerSetup do
     |> normalize_level()
   end
 
-  defp resolve_path(opts) do
-    Keyword.get(opts, :log_file, System.get_env(@env_path, default_log_path()))
+  defp resolve_path(opts, operator_module) do
+    Keyword.get(
+      opts,
+      :log_file,
+      System.get_env(@env_path, Path.join(operator_module.config_dir(), "termui_console.log"))
+    )
   end
 
   defp normalize_level("debug"), do: :debug

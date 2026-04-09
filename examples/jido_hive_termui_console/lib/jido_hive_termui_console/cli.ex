@@ -3,7 +3,8 @@ defmodule JidoHiveTermuiConsole.CLI do
 
   require Logger
 
-  alias JidoHiveTermuiConsole.{Auth, Config, EscriptBootstrap, LoggerSetup}
+  alias JidoHiveClient.Operator
+  alias JidoHiveTermuiConsole.{EscriptBootstrap, LoggerSetup}
 
   @local_api_base_url "http://127.0.0.1:4000/api"
   @prod_api_base_url "https://jido-hive-server-test.app.nsai.online/api"
@@ -26,13 +27,13 @@ defmodule JidoHiveTermuiConsole.CLI do
 
   @spec main([String.t()]) :: no_return()
   def main(["auth", "login", channel | _rest]) do
-    :ok = Config.ensure_initialized()
+    :ok = Operator.ensure_initialized()
 
-    case Auth.start_device_flow(channel) do
+    case Operator.start_device_flow(channel) do
       {:ok, %{user_code: code, verification_uri: uri}} ->
         IO.puts("Open: #{uri}")
         IO.puts("Enter code: #{code}")
-        IO.puts("Credentials file: #{Config.credentials_path()}")
+        IO.puts("Credentials file: #{Operator.credentials_path()}")
         IO.puts("This is the v1 device-flow scaffold. Complete authorization externally.")
         System.halt(0)
 

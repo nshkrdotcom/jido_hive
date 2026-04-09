@@ -4,18 +4,18 @@ defmodule JidoHiveTermuiConsole.AppTest do
   alias ExRatatui.Event.Key
   alias JidoHiveTermuiConsole.{App, Model, TestSupport}
 
-  defmodule HTTPStub do
-    def get(_base, _path) do
+  defmodule OperatorStub do
+    def fetch_room(_base, _room_id) do
       {:ok,
        %{
-         "data" => %{
-           "room_id" => "room-1",
-           "status" => "running",
-           "dispatch_state" => %{"completed_slots" => 0, "total_slots" => 2},
-           "participants" => []
-         }
+         "room_id" => "room-1",
+         "status" => "running",
+         "dispatch_state" => %{"completed_slots" => 0, "total_slots" => 2},
+         "participants" => []
        }}
     end
+
+    def list_saved_rooms(_api_base_url), do: []
   end
 
   defmodule EmbeddedStub do
@@ -55,151 +55,144 @@ defmodule JidoHiveTermuiConsole.AppTest do
     def start_link(_opts), do: {:ok, spawn(fn -> Process.sleep(:infinity) end)}
   end
 
-  defmodule ConfigStub do
-    def add_room(room_id, api_base_url) do
+  defmodule WizardOperatorStub do
+    def fetch_room(_base, room_id) do
+      {:ok,
+       %{
+         "room_id" => room_id,
+         "status" => "running",
+         "dispatch_state" => %{"completed_slots" => 0, "total_slots" => 3},
+         "participants" => []
+       }}
+    end
+
+    def create_room(_base, payload) do
+      send(test_pid(), {:operator_create_room, payload})
+      {:ok, %{"room_id" => payload["room_id"], "status" => "idle"}}
+    end
+
+    def add_saved_room(room_id, api_base_url) do
       send(test_pid(), {:add_room, room_id, api_base_url})
       :ok
     end
 
-    def list_rooms(_api_base_url), do: []
+    def run_room(_base, room_id) do
+      send(test_pid(), {:operator_run_room, room_id})
+      {:ok, %{"status" => "publication_ready"}}
+    end
+
+    def list_targets(_base), do: {:ok, []}
+    def list_policies(_base), do: {:ok, []}
+    def list_saved_rooms(_api_base_url), do: []
 
     defp test_pid do
       Application.fetch_env!(:jido_hive_termui_console, :app_test_pid)
     end
   end
 
-  defmodule WizardHTTPStub do
-    def get(_base, "/rooms/" <> room_id) do
+  defmodule PublishOperatorStub do
+    def fetch_room(_base, "room-1") do
       {:ok,
        %{
-         "data" => %{
-           "room_id" => room_id,
-           "status" => "running",
-           "dispatch_state" => %{"completed_slots" => 0, "total_slots" => 3},
-           "participants" => []
-         }
+         "room_id" => "room-1",
+         "status" => "publication_ready",
+         "dispatch_state" => %{"completed_slots" => 6, "total_slots" => 6},
+         "participants" => []
        }}
     end
 
-    def post(_base, "/rooms", payload) do
-      send(test_pid(), {:http_post, "/rooms", payload})
-      {:ok, %{"data" => %{"room_id" => payload["room_id"], "status" => "idle"}}}
-    end
-
-    def post(_base, path, payload) do
-      send(test_pid(), {:http_post, path, payload})
-      {:ok, %{"data" => %{"status" => "publication_ready"}}}
-    end
-
-    defp test_pid do
-      Application.fetch_env!(:jido_hive_termui_console, :app_test_pid)
-    end
-  end
-
-  defmodule PublishHTTPStub do
-    def get(_base, "/rooms/room-1") do
+    def fetch_publication_plan(_base, "room-1") do
       {:ok,
        %{
-         "data" => %{
-           "room_id" => "room-1",
-           "status" => "publication_ready",
-           "dispatch_state" => %{"completed_slots" => 6, "total_slots" => 6},
-           "participants" => []
-         }
-       }}
-    end
-
-    def get(_base, "/rooms/room-1/publication_plan") do
-      {:ok,
-       %{
-         "data" => %{
-           "publications" => [
-             %{
-               "channel" => "github",
-               "required_bindings" => [
-                 %{"field" => "repo", "description" => "Repository to publish into."}
-               ]
-             }
-           ]
-         }
-       }}
-    end
-
-    def get(_base, "/connectors/github/connections?subject=alice") do
-      {:ok,
-       %{
-         "data" => [
+         "publications" => [
            %{
-             "connection_id" => "connection-12",
-             "state" => "connected",
-             "updated_at" => "2026-04-08T21:44:31Z"
+             "channel" => "github",
+             "required_bindings" => [
+               %{"field" => "repo", "description" => "Repository to publish into."}
+             ]
            }
          ]
        }}
     end
 
-    def get(_base, "/connectors/notion/connections?subject=alice"), do: {:ok, %{"data" => []}}
+    def load_auth_state(_base, "alice") do
+      %{
+        "github" => %{
+          connection_id: "connection-12",
+          source: :server,
+          state: "connected",
+          status: :cached
+        },
+        "notion" => %{
+          connection_id: nil,
+          source: :server,
+          state: nil,
+          status: :missing
+        }
+      }
+    end
 
-    def post(_base, "/rooms/room-1/publications", payload) do
+    def publish_room(_base, "room-1", payload) do
       send(test_pid(), {:publish_payload, payload})
-      {:ok, %{"data" => %{"status" => "submitted"}}}
+      {:ok, %{"status" => "submitted"}}
     end
 
-    def post(_base, path, payload) do
-      send(test_pid(), {:http_post, path, payload})
-      {:ok, %{"data" => %{"status" => "ok"}}}
+    def connection_id(auth_state, channel) do
+      get_in(auth_state, [channel, :connection_id])
     end
+
+    def auth_status(auth_state, channel) do
+      get_in(auth_state, [channel, :status]) || :missing
+    end
+
+    def list_saved_rooms(_api_base_url), do: []
 
     defp test_pid do
       Application.fetch_env!(:jido_hive_termui_console, :app_test_pid)
     end
   end
 
-  defmodule PendingSubmitRefreshHTTPStub do
-    def get(_base, "/rooms/room-1") do
+  defmodule PendingSubmitRefreshOperatorStub do
+    def fetch_room(_base, "room-1") do
       {:ok,
        %{
-         "data" => %{
-           "room_id" => "room-1",
-           "status" => "running",
-           "dispatch_state" => %{"completed_slots" => 1, "total_slots" => 2},
-           "participants" => [],
-           "contributions" => [
-             %{
-               "participant_id" => "alice",
-               "participant_role" => "coordinator",
-               "contribution_type" => "chat",
-               "summary" => "stale but accepted"
-             }
-           ],
-           "context_objects" => [
-             %{
-               "context_id" => "ctx-message-1",
-               "object_type" => "message",
-               "title" => "alice said",
-               "body" => "stale but accepted",
-               "authored_by" => %{"participant_id" => "alice"}
-             }
-           ],
-           "timeline" => []
-         }
+         "room_id" => "room-1",
+         "status" => "running",
+         "dispatch_state" => %{"completed_slots" => 1, "total_slots" => 2},
+         "participants" => [],
+         "contributions" => [
+           %{
+             "participant_id" => "alice",
+             "participant_role" => "coordinator",
+             "contribution_type" => "chat",
+             "summary" => "stale but accepted"
+           }
+         ],
+         "context_objects" => [
+           %{
+             "context_id" => "ctx-message-1",
+             "object_type" => "message",
+             "title" => "alice said",
+             "body" => "stale but accepted",
+             "authored_by" => %{"participant_id" => "alice"}
+           }
+         ],
+         "timeline" => []
        }}
     end
   end
 
-  defmodule EmptyRoomHTTPStub do
-    def get(_base, "/rooms/room-1") do
+  defmodule EmptyRoomOperatorStub do
+    def fetch_room(_base, "room-1") do
       {:ok,
        %{
-         "data" => %{
-           "room_id" => "room-1",
-           "status" => "running",
-           "dispatch_state" => %{"completed_slots" => 0, "total_slots" => 2},
-           "participants" => [],
-           "contributions" => [],
-           "context_objects" => [],
-           "timeline" => []
-         }
+         "room_id" => "room-1",
+         "status" => "running",
+         "dispatch_state" => %{"completed_slots" => 0, "total_slots" => 2},
+         "participants" => [],
+         "contributions" => [],
+         "context_objects" => [],
+         "timeline" => []
        }}
     end
   end
@@ -228,7 +221,7 @@ defmodule JidoHiveTermuiConsole.AppTest do
       Model.new(
         embedded: embedded,
         embedded_module: EmbeddedStub,
-        http_module: HTTPStub,
+        operator_module: OperatorStub,
         room_id: "room-1",
         participant_id: "alice",
         authority_level: "binding",
@@ -451,7 +444,7 @@ defmodule JidoHiveTermuiConsole.AppTest do
     state =
       %{
         model
-        | http_module: PendingSubmitRefreshHTTPStub,
+        | operator_module: PendingSubmitRefreshOperatorStub,
           pending_room_submit: %{room_id: "room-1", text: "stale but accepted"},
           status_line: "Submitting chat message..."
       }
@@ -475,7 +468,7 @@ defmodule JidoHiveTermuiConsole.AppTest do
     state =
       %{
         model
-        | http_module: EmptyRoomHTTPStub,
+        | operator_module: EmptyRoomOperatorStub,
           embedded: self(),
           embedded_module: ExitEmbeddedStub,
           input_buffer: "retry me"
@@ -589,8 +582,7 @@ defmodule JidoHiveTermuiConsole.AppTest do
   test "wizard create room runs asynchronously and keeps the app responsive" do
     model =
       Model.new(
-        http_module: WizardHTTPStub,
-        config_module: ConfigStub,
+        operator_module: WizardOperatorStub,
         embedded_module: EmbeddedStub,
         event_log_poller_module: PollerStub
       )
@@ -618,7 +610,7 @@ defmodule JidoHiveTermuiConsole.AppTest do
     assert pending_state.pending_room_create
     assert pending_state.status_line =~ "Creating room"
 
-    assert_receive {:http_post, "/rooms", payload}
+    assert_receive {:operator_create_room, payload}
     assert payload["dispatch_policy_id"] == "round_robin/v2"
 
     assert_receive {:add_room, room_id, "http://127.0.0.1:4000/api"}
@@ -628,7 +620,7 @@ defmodule JidoHiveTermuiConsole.AppTest do
 
     {:noreply, next_state} =
       App.handle_info(
-        {:wizard_create_result, room_id, {:ok, %{"data" => %{"room_id" => room_id}}}},
+        {:wizard_create_result, room_id, {:ok, %{"room_id" => room_id}}},
         pending_state
       )
 
@@ -637,8 +629,7 @@ defmodule JidoHiveTermuiConsole.AppTest do
     assert next_state.status_line =~ "run started in background"
     assert room_id == next_state.room_id
 
-    assert_receive {:http_post, path, %{}}
-    assert path == "/rooms/#{URI.encode_www_form(room_id)}/run"
+    assert_receive {:operator_run_room, ^room_id}
   end
 
   test "wizard escape warns instead of trapping the terminal while creation is pending" do
@@ -656,23 +647,9 @@ defmodule JidoHiveTermuiConsole.AppTest do
   end
 
   test "refresh_auth_state loads server-backed publish auth for the current participant" do
-    config_dir = TestSupport.tmp_dir()
-    previous_config_dir = Application.get_env(:jido_hive_termui_console, :config_dir)
-    Application.put_env(:jido_hive_termui_console, :config_dir, config_dir)
-
-    on_exit(fn ->
-      if previous_config_dir do
-        Application.put_env(:jido_hive_termui_console, :config_dir, previous_config_dir)
-      else
-        Application.delete_env(:jido_hive_termui_console, :config_dir)
-      end
-
-      File.rm_rf!(config_dir)
-    end)
-
     state =
       Model.new(
-        http_module: PublishHTTPStub,
+        operator_module: PublishOperatorStub,
         room_id: "room-1",
         participant_id: "alice"
       )
@@ -699,7 +676,7 @@ defmodule JidoHiveTermuiConsole.AppTest do
   test "publish_submit sends server-backed connection ids" do
     state =
       Model.new(
-        http_module: PublishHTTPStub,
+        operator_module: PublishOperatorStub,
         room_id: "room-1",
         participant_id: "alice"
       )

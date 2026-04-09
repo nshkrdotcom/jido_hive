@@ -6,14 +6,16 @@ If one rule should survive every refactor, it is this:
 
 - the server owns room truth
 
-Workers may execute elsewhere. Consoles may render the room in different ways.
-Connectors may publish out to GitHub and Notion. None of those surfaces define
-canonical room state. The server does.
+Workers may execute elsewhere.
+The headless client may reproduce operator flows without the TUI.
+The ExRatatui console may render those flows interactively.
+None of those surfaces define canonical room state.
+The server does.
 
 ## Table of contents
 
 - [Quick start](#quick-start)
-- [Server architecture](#server-architecture)
+- [Architecture](#architecture)
 - [Core responsibilities](#core-responsibilities)
 - [Transport surfaces](#transport-surfaces)
 - [Connector install and publication flow](#connector-install-and-publication-flow)
@@ -45,12 +47,13 @@ setup/hive --prod server-info
 setup/hive --prod targets
 ```
 
-## Server architecture
+## Architecture
 
 ```mermaid
 flowchart TB
-    subgraph Clients[Clients and operators]
+    subgraph Surfaces[Clients and operator surfaces]
       Control[setup/hive and control scripts]
+      Headless[jido_hive_client headless CLI]
       Console[ExRatatui console]
       Workers[worker runtimes]
     end
@@ -63,10 +66,10 @@ flowchart TB
     subgraph Core[Authoritative server core]
       Rooms[room reducer and snapshots]
       Policy[dispatch policy]
-      Context[context graph and context manager]
-      Timeline[timeline and inspection projections]
+      Context[context graph and projections]
+      Timeline[timeline and inspection surfaces]
       Publish[publication planner and executor]
-      Connectors[connector install and credential state]
+      Connectors[connector install and connection state]
     end
 
     subgraph External[External systems]
@@ -75,6 +78,7 @@ flowchart TB
     end
 
     Control --> API
+    Headless --> API
     Console --> API
     Workers --> Relay
     API --> Rooms
@@ -88,6 +92,12 @@ flowchart TB
     Connectors --> Notion
 ```
 
+### Practical model
+
+- `POST /rooms/:id/contributions` and `POST /rooms/:id/publications` are server-owned truth mutations.
+- the client may shape or submit intent, but the server decides what lands.
+- if a TUI bug and a headless client bug disagree, the server response is still the ground truth.
+
 ## Core responsibilities
 
 The server is responsible for:
@@ -97,11 +107,11 @@ The server is responsible for:
 - assignment dispatch
 - contribution validation and reduction
 - context graph projection
-- context-manager decisions such as contradiction and stale derivation signals
+- contradiction/staleness/relationship signals
 - publication planning and execution
 - connector install and connection state
 
-It is not responsible for being a generic shell runner or a graph database.
+It is not responsible for being a terminal UI toolkit, a shell runner, or a second client runtime.
 
 ## Transport surfaces
 
@@ -109,48 +119,48 @@ It is not responsible for being a generic shell runner or a graph database.
 
 Mounted under `/api`.
 
-Important routes include:
+High-value routes include:
 
 - `GET /rooms/:id`
-- `GET /rooms/:id/events`
-- `GET /rooms/:id/context_objects`
-- `POST /rooms/:id/contributions`
+- `GET /rooms/:id/timeline`
+- `POST /rooms`
 - `POST /rooms/:id/run`
+- `POST /rooms/:id/contributions`
 - `GET /rooms/:id/publication_plan`
 - `POST /rooms/:id/publications`
+- `GET /targets`
+- `GET /policies`
 - `POST /connectors/:connector_id/installs`
 - `POST /connectors/installs/:install_id/complete`
 - `GET /connectors/:connector_id/connections`
 
 ### Websocket relay
 
-Worker runtimes connect through Phoenix Channels to receive assignments and
-submit structured work.
+Worker runtimes connect through Phoenix Channels to receive assignments and submit structured work.
 
 ## Connector install and publication flow
 
-This area matters for real operator success.
+This area is the most common source of production operator confusion.
 
 ### Scope inference behavior
 
-Manual installs no longer require explicit `--scope` flags to stay usable.
+Manual installs no longer require explicit `--scope` flags to remain usable.
 
-The current server behavior is:
+Current server behavior:
 
-- `start_install` infers connector-authored requested scopes when omitted
+- `start_install` infers connector-defined requested scopes when omitted
 - `complete_install` infers granted scopes from the install when omitted
 
-That change fixed the production failure mode where a connection looked
-connected but policy correctly denied execution because the scope set was empty.
+That prevents the old failure mode where a connection appeared connected but execution was denied because the scope set was empty.
 
-### Recommended manual-install credentials
+### Validated manual-install token types
 
-For current production operator flows:
+Use these exact token types for current production manual installs:
 
-- GitHub: use a PAT-backed `GITHUB_TOKEN`
-- Notion: use an internal integration `NOTION_TOKEN`
+- GitHub: `GITHUB_TOKEN`
+- Notion: `NOTION_TOKEN`
 
-Do not assume these are the right default manual tokens without revalidation:
+Do not treat these as the default manual-install path unless revalidated:
 
 - `GITHUB_OAUTH_ACCESS_TOKEN`
 - `NOTION_OAUTH_ACCESS_TOKEN`
@@ -158,47 +168,41 @@ Do not assume these are the right default manual tokens without revalidation:
 Observed live behavior on 2026-04-08:
 
 - PAT-backed GitHub token worked for issue creation in `nshkrdotcom/test`
-- GitHub OAuth access token connected but failed issue creation
+- GitHub OAuth access token connected previously but failed issue creation
 - Notion internal integration token worked for page creation
 - Notion OAuth access token was rejected by the provider
 
-### Operator verification commands
-
-```bash
-setup/hive --prod connections github --subject alice
-setup/hive --prod connections notion --subject alice
-```
-
-### Step-by-step production connector recipe
-
-This is the shortest reliable operator path on the current production stack.
-
-1. GitHub:
-   - create a classic PAT with `repo` scope
-   - store it as `GITHUB_TOKEN`
-   - do not use `GITHUB_OAUTH_ACCESS_TOKEN` as the default manual-install token
-2. Notion:
-   - create an internal integration
-   - share the target data source with that integration
-   - store the token as `NOTION_TOKEN`
-   - do not use `NOTION_OAUTH_ACCESS_TOKEN` as the default manual-install token
-3. Export the working values in `~/.bash/bash_secrets`.
-4. Reload your shell with `source ~/.bash/bash_secrets`.
-5. Complete the server-backed installs:
-   - `setup/hive --prod start-install github --subject alice`
-   - `setup/hive --prod complete-install <install-id> --subject alice --access-token "$GITHUB_TOKEN"`
-   - `setup/hive --prod start-install notion --subject alice`
-   - `setup/hive --prod complete-install <install-id> --subject alice --access-token "$NOTION_TOKEN"`
-6. Verify both connections:
-   - `setup/hive --prod connections github --subject alice`
-   - `setup/hive --prod connections notion --subject alice`
-
-Current validated publish targets:
+### Current validated targets
 
 - GitHub repo: `nshkrdotcom/test`
 - Notion data source: `49970410-3e2c-49c9-bd4d-220ebb5d72f7`
 
-If you need the full site-by-site credential walkthrough, use the console guide:
+### Step-by-step production connector recipe
+
+1. GitHub:
+   - create a classic PAT with `repo` scope
+   - export it as `GITHUB_TOKEN`
+   - do not use `GITHUB_OAUTH_ACCESS_TOKEN` as the default manual-install token
+2. Notion:
+   - create an internal integration
+   - share the target data source with that integration
+   - export the token as `NOTION_TOKEN`
+   - do not use `NOTION_OAUTH_ACCESS_TOKEN` as the default manual-install token
+3. Reload your shell:
+   - `source ~/.bash/bash_secrets`
+4. Start and complete the server-backed installs:
+   - `setup/hive --prod start-install github --subject alice`
+   - `setup/hive --prod complete-install <install-id> --subject alice --access-token "$GITHUB_TOKEN"`
+   - `setup/hive --prod start-install notion --subject alice`
+   - `setup/hive --prod complete-install <install-id> --subject alice --access-token "$NOTION_TOKEN"`
+5. Verify both connections:
+   - `setup/hive --prod connections github --subject alice`
+   - `setup/hive --prod connections notion --subject alice`
+6. Verify publish through either:
+   - the headless client CLI, or
+   - the ExRatatui console publish screen
+
+For the full site-by-site operator walkthrough, use:
 
 - [examples/jido_hive_termui_console/README.md](/home/home/p/g/n/jido_hive/examples/jido_hive_termui_console/README.md)
 
@@ -208,7 +212,7 @@ If you need the full site-by-site credential walkthrough, use the console guide:
 
 High-value server areas:
 
-- `lib/jido_hive_server/collaboration/`: rooms, reducers, projections, policies
+- `lib/jido_hive_server/collaboration/`: rooms, reducers, dispatch, projections
 - `lib/jido_hive_server/publications/`: publication planning and execution
 - `lib/jido_hive_server_web/controllers/`: REST boundary
 - `lib/jido_hive_server/integrations_bootstrap.ex`: connector registration
@@ -223,14 +227,16 @@ When changing the server:
 - keep publication auth and execution explicit
 - do not move connector policy decisions into the client or console
 
-### Architecture discussion
+### Debugging order
 
-Two server design choices matter more than the rest:
+1. Confirm the server route returns the expected truth.
+2. Reproduce through `jido_hive_client` headless CLI.
+3. Only after that, inspect the ExRatatui console.
 
-- room snapshots are the product surface; every other projection is downstream of them
-- connector installs are not just credentials, they are policy-bearing server records that must survive across operator sessions
+If a bug appears only in the TUI, it is not a server bug.
+If the server route is wrong, the client and TUI should not compensate for it.
 
-### Local quality loop
+### Quality loop
 
 From `jido_hive_server/`:
 

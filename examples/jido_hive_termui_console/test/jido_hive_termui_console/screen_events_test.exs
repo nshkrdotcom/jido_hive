@@ -2,12 +2,13 @@ defmodule JidoHiveTermuiConsole.ScreenEventsTest do
   use ExUnit.Case, async: true
 
   alias ExRatatui.Event.Key
+  alias JidoHiveClient.Operator
   alias JidoHiveTermuiConsole.Model
   alias JidoHiveTermuiConsole.Screens.{Conflict, Publish, Wizard}
 
   test "auth device flow uses atom keys expected by the CLI" do
     assert {:ok, %{channel: "github", user_code: code, verification_uri: uri}} =
-             JidoHiveTermuiConsole.Auth.start_device_flow("github")
+             Operator.start_device_flow("github")
 
     assert is_binary(code)
     assert uri == "https://auth.github.example/device"

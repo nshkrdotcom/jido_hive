@@ -3,7 +3,24 @@ defmodule JidoHiveClient.CLI do
 
   require Logger
 
+  alias JidoHiveClient.HeadlessCLI
   alias JidoHiveClient.{RelayWorker, Status}
+
+  def main([command | _rest] = args)
+      when command in [
+             "operator",
+             "session",
+             "config",
+             "rooms",
+             "room",
+             "targets",
+             "policies",
+             "auth"
+           ] do
+    args
+    |> run_headless()
+    |> System.halt()
+  end
 
   def main(args) do
     opts =
@@ -19,6 +36,21 @@ defmodule JidoHiveClient.CLI do
 
     {:ok, _pid} = RelayWorker.start_link(opts)
     Process.sleep(:infinity)
+  end
+
+  defp run_headless(args) do
+    configure_logger()
+    {:ok, _apps} = Application.ensure_all_started(:jido_hive_client)
+
+    case HeadlessCLI.dispatch(args) do
+      {:ok, output} ->
+        IO.puts(Jason.encode!(output, pretty: true))
+        0
+
+      {:error, reason} ->
+        IO.puts("Command failed: #{inspect(reason)}")
+        1
+    end
   end
 
   defp parse_args(args) do

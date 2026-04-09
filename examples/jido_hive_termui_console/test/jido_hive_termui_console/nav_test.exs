@@ -3,46 +3,40 @@ defmodule JidoHiveTermuiConsole.NavTest do
 
   alias JidoHiveTermuiConsole.{Model, Nav}
 
-  defmodule ConfigStub do
-    def list_rooms(_api_base_url), do: ["room-a", "room-b"]
-  end
+  defmodule OperatorStub do
+    def list_saved_rooms(_api_base_url), do: ["room-a", "room-b"]
 
-  defmodule HTTPStub do
-    def get(_base, "/rooms/room-1") do
+    def fetch_room(_base, "room-1") do
       {:ok,
        %{
-         "data" => %{
-           "room_id" => "room-1",
-           "brief" => "Test room",
-           "status" => "running",
-           "dispatch_policy_id" => "round_robin/v2",
-           "dispatch_state" => %{"completed_slots" => 1, "total_slots" => 3},
-           "participants" => [%{"participant_id" => "worker-1"}]
-         }
+         "room_id" => "room-1",
+         "brief" => "Test room",
+         "status" => "running",
+         "dispatch_policy_id" => "round_robin/v2",
+         "dispatch_state" => %{"completed_slots" => 1, "total_slots" => 3},
+         "participants" => [%{"participant_id" => "worker-1"}]
        }}
     end
 
-    def get(_base, "/rooms/room-with-context") do
+    def fetch_room(_base, "room-with-context") do
       {:ok,
        %{
-         "data" => %{
-           "room_id" => "room-with-context",
-           "status" => "running",
-           "timeline" => [%{"body" => "server timeline"}],
-           "context_objects" => [
-             %{
-               "context_id" => "ctx-1",
-               "object_type" => "note",
-               "title" => "server context"
-             }
-           ],
-           "dispatch_state" => %{"completed_slots" => 1, "total_slots" => 3},
-           "participants" => []
-         }
+         "room_id" => "room-with-context",
+         "status" => "running",
+         "timeline" => [%{"body" => "server timeline"}],
+         "context_objects" => [
+           %{
+             "context_id" => "ctx-1",
+             "object_type" => "note",
+             "title" => "server context"
+           }
+         ],
+         "dispatch_state" => %{"completed_slots" => 1, "total_slots" => 3},
+         "participants" => []
        }}
     end
 
-    def get(_base, _path), do: {:error, :not_found}
+    def fetch_room(_base, _room_id), do: {:error, :not_found}
   end
 
   defmodule EmbeddedStub do
@@ -104,7 +98,7 @@ defmodule JidoHiveTermuiConsole.NavTest do
   end
 
   test "transition to lobby emits fetch messages per local room" do
-    state = Model.new(config_module: ConfigStub)
+    state = Model.new(operator_module: OperatorStub)
     next_state = Nav.transition(state, :lobby, app_pid: self())
 
     assert next_state.active_screen == :lobby
@@ -119,7 +113,7 @@ defmodule JidoHiveTermuiConsole.NavTest do
         api_base_url: "http://localhost:4000/api",
         embedded_module: EmbeddedStub,
         event_log_poller_module: PollerStub,
-        http_module: HTTPStub
+        operator_module: OperatorStub
       )
 
     next_state = Nav.transition(state, :room, room_id: "room-1", app_pid: self())
@@ -138,7 +132,7 @@ defmodule JidoHiveTermuiConsole.NavTest do
         api_base_url: "http://localhost:4000/api",
         embedded_module: EmbeddedBlockingSnapshotStub,
         event_log_poller_module: PollerStub,
-        http_module: HTTPStub
+        operator_module: OperatorStub
       )
 
     next_state = Nav.transition(state, :room, room_id: "room-1", app_pid: self())
@@ -154,7 +148,7 @@ defmodule JidoHiveTermuiConsole.NavTest do
         api_base_url: "http://localhost:4000/api",
         embedded_module: EmbeddedStub,
         event_log_poller_module: PollerStub,
-        http_module: HTTPStub
+        operator_module: OperatorStub
       )
 
     next_state = Nav.transition(state, :room, room_id: "room-with-context", app_pid: self())
@@ -176,7 +170,7 @@ defmodule JidoHiveTermuiConsole.NavTest do
         api_base_url: "http://localhost:4000/api",
         embedded_module: EmbeddedStub,
         event_log_poller_module: PollerStub,
-        http_module: HTTPStub
+        operator_module: OperatorStub
       )
 
     next_state = Nav.transition(state, :room, room_id: "missing-room", app_pid: self())
@@ -197,7 +191,7 @@ defmodule JidoHiveTermuiConsole.NavTest do
         api_base_url: "http://localhost:4000/api",
         embedded_module: EmbeddedStub,
         event_log_poller_module: PollerStub,
-        http_module: HTTPStub
+        operator_module: OperatorStub
       )
       |> Nav.transition(:room, room_id: "room-1", app_pid: self())
 

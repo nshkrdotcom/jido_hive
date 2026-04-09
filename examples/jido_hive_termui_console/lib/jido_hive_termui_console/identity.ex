@@ -1,7 +1,7 @@
 defmodule JidoHiveTermuiConsole.Identity do
   @moduledoc false
 
-  alias JidoHiveTermuiConsole.Config
+  alias JidoHiveClient.Operator
 
   defstruct participant_id: nil,
             participant_role: "coordinator",
@@ -12,8 +12,8 @@ defmodule JidoHiveTermuiConsole.Identity do
 
   @spec load(keyword()) :: t()
   def load(opts \\ []) do
-    config_module = Keyword.get(opts, :config_module, Config)
-    config = config_module.load()
+    operator_module = Keyword.get(opts, :operator_module, Operator)
+    config = operator_module.load_config()
     participant_id = keyword_or_config(opts, :participant_id, config) || default_participant_id()
     participant_role = keyword_or_config(opts, :participant_role, config) || "coordinator"
     authority_level = keyword_or_config(opts, :authority_level, config) || "binding"

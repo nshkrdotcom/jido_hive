@@ -1,30 +1,31 @@
 defmodule JidoHiveTermuiConsole.IdentityTest do
   use ExUnit.Case, async: false
 
-  alias JidoHiveTermuiConsole.{Config, Identity, TestSupport}
+  alias JidoHiveClient.Operator
+  alias JidoHiveTermuiConsole.{Identity, TestSupport}
 
   setup do
     config_dir = TestSupport.tmp_dir()
-    previous = Application.get_env(:jido_hive_termui_console, :config_dir)
-    Application.put_env(:jido_hive_termui_console, :config_dir, config_dir)
+    previous = Application.get_env(:jido_hive_client, :config_dir)
+    Application.put_env(:jido_hive_client, :config_dir, config_dir)
 
     on_exit(fn ->
       if previous do
-        Application.put_env(:jido_hive_termui_console, :config_dir, previous)
+        Application.put_env(:jido_hive_client, :config_dir, previous)
       else
-        Application.delete_env(:jido_hive_termui_console, :config_dir)
+        Application.delete_env(:jido_hive_client, :config_dir)
       end
 
       File.rm_rf!(config_dir)
     end)
 
-    :ok = Config.ensure_initialized()
+    :ok = Operator.ensure_initialized()
     %{config_dir: config_dir}
   end
 
   test "load prefers CLI opts over config file" do
     File.write!(
-      Config.config_path(),
+      Path.join(Operator.config_dir(), "config.json"),
       Jason.encode!(%{
         "participant_id" => "config-user",
         "participant_role" => "reviewer",

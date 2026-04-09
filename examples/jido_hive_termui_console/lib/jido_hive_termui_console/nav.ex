@@ -21,11 +21,8 @@ defmodule JidoHiveTermuiConsole.Nav do
 
   def refresh_room_snapshot(%Model{} = state) do
     room_snapshot =
-      case state.http_module.get(
-             state.api_base_url,
-             "/rooms/#{URI.encode_www_form(state.room_id)}"
-           ) do
-        {:ok, %{"data" => snapshot}} ->
+      case state.operator_module.fetch_room(state.api_base_url, state.room_id) do
+        {:ok, snapshot} ->
           merge_room_snapshot(snapshot, embedded_metadata_snapshot(state.snapshot))
 
         {:error, _reason} ->
@@ -39,7 +36,7 @@ defmodule JidoHiveTermuiConsole.Nav do
 
   defp transition_to_lobby(%Model{} = state, opts) do
     stop_room_processes(state)
-    room_ids = config_list_rooms(state.config_module, state.api_base_url)
+    room_ids = state.operator_module.list_saved_rooms(state.api_base_url)
     app_pid = Keyword.get(opts, :app_pid)
 
     next_state =
@@ -163,9 +160,7 @@ defmodule JidoHiveTermuiConsole.Nav do
         screen_width: state.screen_width,
         screen_height: state.screen_height,
         embedded_module: state.embedded_module,
-        http_module: state.http_module,
-        config_module: state.config_module,
-        auth_module: state.auth_module,
+        operator_module: state.operator_module,
         event_log_poller_module: state.event_log_poller_module,
         help_seen: state.help_seen,
         room_input_ref: state.room_input_ref,
@@ -244,7 +239,7 @@ defmodule JidoHiveTermuiConsole.Nav do
         app_pid: app_pid,
         api_base_url: state.api_base_url,
         cursor: state.event_log_cursor,
-        http_module: state.http_module
+        operator_module: state.operator_module
       )
 
     pid
@@ -419,8 +414,8 @@ defmodule JidoHiveTermuiConsole.Nav do
   end
 
   defp fetch_room_snapshot(state, room_id, embedded_snapshot) do
-    case state.http_module.get(state.api_base_url, "/rooms/#{URI.encode_www_form(room_id)}") do
-      {:ok, %{"data" => snapshot}} ->
+    case state.operator_module.fetch_room(state.api_base_url, room_id) do
+      {:ok, snapshot} ->
         merge_room_snapshot(snapshot, embedded_snapshot)
 
       {:error, reason} ->
@@ -499,17 +494,4 @@ defmodule JidoHiveTermuiConsole.Nav do
   end
 
   defp embedded_metadata_snapshot(_snapshot), do: %{}
-
-  defp config_list_rooms(config_module, api_base_url) do
-    cond do
-      function_exported?(config_module, :list_rooms, 1) ->
-        config_module.list_rooms(api_base_url)
-
-      function_exported?(config_module, :list_rooms, 0) ->
-        config_module.list_rooms()
-
-      true ->
-        []
-    end
-  end
 end

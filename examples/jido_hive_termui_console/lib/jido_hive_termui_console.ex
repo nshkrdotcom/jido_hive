@@ -1,16 +1,18 @@
 defmodule JidoHiveTermuiConsole do
   @moduledoc false
 
-  alias JidoHiveTermuiConsole.{App, Config, Identity}
+  alias JidoHiveClient.Operator
+  alias JidoHiveTermuiConsole.{App, Identity}
 
   @default_api_base_url "http://127.0.0.1:4000/api"
   @default_poll_interval_ms 500
 
   @spec run(keyword()) :: :ok | {:error, term()}
   def run(opts \\ []) do
-    :ok = Config.ensure_initialized()
-    config = Config.load()
-    identity = Identity.load(opts)
+    operator_module = Keyword.get(opts, :operator_module, Operator)
+    :ok = operator_module.ensure_initialized()
+    config = operator_module.load_config()
+    identity = Identity.load(Keyword.put(opts, :operator_module, operator_module))
     route = Keyword.get(opts, :route, default_route(opts))
 
     app_opts =
@@ -25,12 +27,10 @@ defmodule JidoHiveTermuiConsole do
         poll_interval_ms:
           option_or_config(opts, :poll_interval_ms, config, @default_poll_interval_ms),
         embedded: Keyword.get(opts, :embedded),
-        embedded_module: Keyword.get(opts, :embedded_module, JidoHiveClient.Embedded),
+        embedded_module: Keyword.get(opts, :embedded_module, JidoHiveClient.RoomSession),
         event_log_poller_module:
           Keyword.get(opts, :event_log_poller_module, JidoHiveTermuiConsole.EventLogPoller),
-        http_module: Keyword.get(opts, :http_module, JidoHiveTermuiConsole.HTTP),
-        config_module: Keyword.get(opts, :config_module, JidoHiveTermuiConsole.Config),
-        auth_module: Keyword.get(opts, :auth_module, JidoHiveTermuiConsole.Auth),
+        operator_module: operator_module,
         name: Keyword.get(opts, :name, nil),
         test_mode: Keyword.get(opts, :test_mode)
       ]
