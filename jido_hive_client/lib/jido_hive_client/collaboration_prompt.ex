@@ -59,6 +59,9 @@ defmodule JidoHiveClient.CollaborationPrompt do
     allowed_relation_types =
       contract_types(assignment, "allowed_relation_types", ["derives_from", "references"])
 
+    relation_target_ids = available_relation_target_ids(assignment)
+    relation_target_guidance = relation_target_guidance(relation_target_ids)
+
     """
     You are #{Map.get(assignment, "participant_role", "worker")} in room #{Map.get(assignment, "room_id", "unknown")}.
 
@@ -68,6 +71,7 @@ defmodule JidoHiveClient.CollaborationPrompt do
     Allowed contribution types: #{Enum.join(allowed_contribution_types, ", ")}
     Allowed object types: #{Enum.join(allowed_object_types, ", ")}
     Allowed relation types: #{Enum.join(allowed_relation_types, ", ")}
+    #{relation_target_guidance}
 
     Return exactly one JSON object that starts with { and ends with }.
     Return the JSON object only.
@@ -193,5 +197,32 @@ defmodule JidoHiveClient.CollaborationPrompt do
       values when is_list(values) and values != [] -> values
       _other -> default
     end
+  end
+
+  defp available_relation_target_ids(assignment) do
+    assignment
+    |> get_in(["context_view", "context_objects"])
+    |> case do
+      objects when is_list(objects) ->
+        objects
+        |> Enum.map(&(Map.get(&1, "context_id") || Map.get(&1, :context_id)))
+        |> Enum.filter(&(is_binary(&1) and String.trim(&1) != ""))
+        |> Enum.uniq()
+
+      _other ->
+        []
+    end
+  end
+
+  defp relation_target_guidance([]) do
+    "There are no valid existing relation targets in this assignment. Use relations: [] for every context object."
+  end
+
+  defp relation_target_guidance(target_ids) do
+    """
+    Valid relation target ids from visible room context: #{Enum.join(target_ids, ", ")}.
+    Only use target_id values from that list. Never invent ids. If none apply, use relations: [].
+    """
+    |> String.trim()
   end
 end

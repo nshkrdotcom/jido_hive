@@ -34,6 +34,7 @@ defmodule JidoHiveClient.Embedded do
     :participant,
     :last_sync_at,
     :last_error,
+    room_snapshot: %{},
     subscribers: MapSet.new(),
     timeline: [],
     context_objects: [],
@@ -324,16 +325,28 @@ defmodule JidoHiveClient.Embedded do
   defp terminal_poll_halted?(%__MODULE__{}), do: false
 
   defp current_snapshot(%__MODULE__{} = state) do
-    %{
-      room_id: state.room_id,
-      participant: state.participant,
-      runtime: Runtime.snapshot(state.runtime),
-      timeline: state.timeline,
-      context_objects: state.context_objects,
-      next_cursor: state.next_cursor,
-      last_sync_at: state.last_sync_at,
-      last_error: state.last_error
-    }
+    state.room_snapshot
+    |> Map.put(:room_id, state.room_id)
+    |> Map.put(:participant, state.participant)
+    |> Map.put(:runtime, Runtime.snapshot(state.runtime))
+    |> Map.put(:timeline, state.timeline)
+    |> Map.put(:context_objects, state.context_objects)
+    |> Map.put(:next_cursor, state.next_cursor)
+    |> Map.put(:last_sync_at, state.last_sync_at)
+    |> Map.put(:last_error, state.last_error)
+  end
+
+  defp request_sync(%__MODULE__{} = state, record_event?, waiters \\ []) do
+    if sync_inflight?(state) do
+      %{
+        state
+        | sync_queued: true,
+          sync_queued_record_event: state.sync_queued_record_event || record_event?,
+          queued_sync_waiters: state.queued_sync_waiters ++ waiters
+      }
+    else
+      start_sync_task(state, record_event?, waiters)
+    end
   end
 
   defp chat_input(attrs, %__MODULE__{} = state) do
@@ -358,19 +371,6 @@ defmodule JidoHiveClient.Embedded do
             "contextual"
       }
     })
-  end
-
-  defp request_sync(%__MODULE__{} = state, record_event?, waiters \\ []) do
-    if sync_inflight?(state) do
-      %{
-        state
-        | sync_queued: true,
-          sync_queued_record_event: state.sync_queued_record_event || record_event?,
-          queued_sync_waiters: state.queued_sync_waiters ++ waiters
-      }
-    else
-      start_sync_task(state, record_event?, waiters)
-    end
   end
 
   defp start_sync_task(%__MODULE__{} = state, record_event?, waiters) do
@@ -454,6 +454,7 @@ defmodule JidoHiveClient.Embedded do
            state.room_api.fetch_context_objects(state.room_api_opts, state.room_id) do
       {:ok,
        %{
+         room_snapshot: fetch_room_snapshot(state),
          entries: entries,
          next_cursor: next_cursor,
          context_objects: context_objects
@@ -473,7 +474,8 @@ defmodule JidoHiveClient.Embedded do
 
     next_state = %{
       state
-      | timeline: timeline,
+      | room_snapshot: sync_result.room_snapshot || state.room_snapshot,
+        timeline: timeline,
         context_objects: sync_result.context_objects,
         next_cursor: sync_result.next_cursor || state.next_cursor,
         last_sync_at: DateTime.utc_now(),
@@ -496,6 +498,13 @@ defmodule JidoHiveClient.Embedded do
     end
 
     {next_state, changed?}
+  end
+
+  defp fetch_room_snapshot(%__MODULE__{} = state) do
+    case state.room_api.fetch_room(state.room_api_opts, state.room_id) do
+      {:ok, room_snapshot} when is_map(room_snapshot) -> room_snapshot
+      _other -> nil
+    end
   end
 
   defp append_timeline_entries(existing, []), do: existing

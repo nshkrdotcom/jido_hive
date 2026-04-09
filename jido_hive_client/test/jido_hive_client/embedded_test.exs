@@ -8,8 +8,33 @@ defmodule JidoHiveClient.EmbeddedTest do
 
     def start_link do
       Agent.start_link(fn ->
-        %{timeline: [], context_objects: [], next_event: 1, next_context: 1}
+        %{
+          room_snapshot: %{
+            "room_id" => "room-1",
+            "status" => "running",
+            "dispatch_state" => %{"completed_slots" => 0, "total_slots" => 2},
+            "participants" => []
+          },
+          timeline: [],
+          context_objects: [],
+          next_event: 1,
+          next_context: 1
+        }
       end)
+    end
+
+    @impl true
+    def fetch_room(opts, room_id) do
+      test_pid = Keyword.get(opts, :test_pid)
+      send(test_pid, {:fetch_room, room_id})
+
+      {:ok,
+       Agent.get(Keyword.fetch!(opts, :server), fn state ->
+         Map.merge(state.room_snapshot, %{
+           "timeline" => state.timeline,
+           "context_objects" => state.context_objects
+         })
+       end)}
     end
 
     @impl true
@@ -97,6 +122,19 @@ defmodule JidoHiveClient.EmbeddedTest do
     @behaviour JidoHiveClient.Boundary.RoomApi
 
     @impl true
+    def fetch_room(opts, room_id) do
+      send(Keyword.fetch!(opts, :test_pid), {:sync_fail_fetch_room, room_id})
+
+      {:ok,
+       %{
+         "room_id" => room_id,
+         "status" => "running",
+         "dispatch_state" => %{},
+         "participants" => []
+       }}
+    end
+
+    @impl true
     def fetch_timeline(opts, room_id, query_opts) do
       send(Keyword.fetch!(opts, :test_pid), {:sync_fail_fetch_timeline, room_id, query_opts})
       {:error, :sync_failed}
@@ -117,6 +155,17 @@ defmodule JidoHiveClient.EmbeddedTest do
 
   defmodule BlockingSyncRoomApiStub do
     @behaviour JidoHiveClient.Boundary.RoomApi
+
+    @impl true
+    def fetch_room(_opts, room_id) do
+      {:ok,
+       %{
+         "room_id" => room_id,
+         "status" => "running",
+         "dispatch_state" => %{},
+         "participants" => []
+       }}
+    end
 
     @impl true
     def fetch_timeline(opts, room_id, query_opts) do
@@ -151,6 +200,9 @@ defmodule JidoHiveClient.EmbeddedTest do
     def start_link do
       Agent.start_link(fn -> %{timeline_fetches: 0} end)
     end
+
+    @impl true
+    def fetch_room(_opts, _room_id), do: {:error, :room_not_found}
 
     @impl true
     def fetch_timeline(opts, room_id, query_opts) do
@@ -202,6 +254,12 @@ defmodule JidoHiveClient.EmbeddedTest do
       )
 
     %{embedded: embedded, server: server}
+  end
+
+  test "refresh snapshot includes room metadata from the room api", %{embedded: embedded} do
+    assert {:ok, snapshot} = Embedded.refresh(embedded)
+    assert snapshot["status"] == "running"
+    assert snapshot["room_id"] == "room-1"
   end
 
   test "starts with a room snapshot and allows subscription", %{embedded: embedded} do

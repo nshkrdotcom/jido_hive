@@ -69,6 +69,32 @@ defmodule JidoHiveTermuiConsole.NavTest do
     end
   end
 
+  defmodule EmbeddedSnapshotStub do
+    def start_link(_opts) do
+      Agent.start_link(fn ->
+        %{
+          "room_id" => "room-1",
+          "status" => "publication_ready",
+          "dispatch_state" => %{"completed_slots" => 2, "total_slots" => 2},
+          "participants" => [%{"participant_id" => "worker-1"}],
+          "timeline" => [%{"body" => "embedded timeline"}],
+          "context_objects" => [
+            %{"context_id" => "ctx-1", "object_type" => "note", "title" => "embedded context"}
+          ],
+          "last_error" => nil
+        }
+      end)
+    end
+
+    def snapshot(server), do: Agent.get(server, & &1)
+    def refresh(server), do: {:ok, snapshot(server)}
+
+    def shutdown(server) do
+      GenServer.stop(server)
+      :ok
+    end
+  end
+
   defmodule EmbeddedBlockingSnapshotStub do
     def start_link(opts) do
       send(self(), {:embedded_start, opts})
@@ -199,6 +225,34 @@ defmodule JidoHiveTermuiConsole.NavTest do
 
     assert next_state.active_screen == :lobby
     assert_receive {:embedded_shutdown, _pid}
+  end
+
+  test "refresh_room_snapshot uses the embedded room session snapshot instead of operator fetches" do
+    {:ok, embedded} = EmbeddedSnapshotStub.start_link([])
+
+    state =
+      Model.new(
+        api_base_url: "http://localhost:4000/api",
+        embedded: embedded,
+        embedded_module: EmbeddedSnapshotStub,
+        operator_module: OperatorStub,
+        room_id: "room-1",
+        snapshot: %{
+          "room_id" => "room-1",
+          "status" => "idle",
+          "timeline" => [],
+          "context_objects" => []
+        }
+      )
+
+    next_state = Nav.refresh_room_snapshot(state)
+
+    assert next_state.snapshot["status"] == "publication_ready"
+    assert next_state.snapshot["timeline"] == [%{"body" => "embedded timeline"}]
+
+    assert next_state.snapshot["context_objects"] == [
+             %{"context_id" => "ctx-1", "object_type" => "note", "title" => "embedded context"}
+           ]
   end
 
   test "transition to conflict populates left and right objects" do

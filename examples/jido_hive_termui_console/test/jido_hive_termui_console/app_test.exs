@@ -23,6 +23,10 @@ defmodule JidoHiveTermuiConsole.AppTest do
       Agent.start_link(fn ->
         %{
           snapshot: %{
+            "room_id" => "room-1",
+            "status" => "running",
+            "dispatch_state" => %{"completed_slots" => 0, "total_slots" => 2},
+            "participants" => [],
             "timeline" => [],
             "context_objects" => [],
             "last_error" => nil
@@ -161,36 +165,6 @@ defmodule JidoHiveTermuiConsole.AppTest do
 
     defp test_pid do
       Application.fetch_env!(:jido_hive_termui_console, :app_test_pid)
-    end
-  end
-
-  defmodule PendingSubmitRefreshOperatorStub do
-    def fetch_room(_base, "room-1") do
-      {:ok,
-       %{
-         "room_id" => "room-1",
-         "status" => "running",
-         "dispatch_state" => %{"completed_slots" => 1, "total_slots" => 2},
-         "participants" => [],
-         "contributions" => [
-           %{
-             "participant_id" => "alice",
-             "participant_role" => "coordinator",
-             "contribution_type" => "chat",
-             "summary" => "stale but accepted"
-           }
-         ],
-         "context_objects" => [
-           %{
-             "context_id" => "ctx-message-1",
-             "object_type" => "message",
-             "title" => "alice said",
-             "body" => "stale but accepted",
-             "authored_by" => %{"participant_id" => "alice"}
-           }
-         ],
-         "timeline" => []
-       }}
     end
   end
 
@@ -462,10 +436,33 @@ defmodule JidoHiveTermuiConsole.AppTest do
 
   test "poll clears stale pending chat submission when the refreshed room snapshot already contains it",
        %{model: model} do
+    {:ok, embedded} =
+      Agent.start_link(fn ->
+        %{
+          snapshot: %{
+            "room_id" => "room-1",
+            "status" => "running",
+            "dispatch_state" => %{"completed_slots" => 1, "total_slots" => 2},
+            "participants" => [],
+            "context_objects" => [
+              %{
+                "context_id" => "ctx-message-1",
+                "object_type" => "message",
+                "title" => "alice said",
+                "body" => "stale but accepted",
+                "authored_by" => %{"participant_id" => "alice"}
+              }
+            ],
+            "timeline" => []
+          },
+          submitted: nil
+        }
+      end)
+
     state =
       %{
         model
-        | operator_module: PendingSubmitRefreshOperatorStub,
+        | embedded: embedded,
           pending_room_submit: %{room_id: "room-1", text: "stale but accepted"},
           status_line: "Submitting chat message..."
       }

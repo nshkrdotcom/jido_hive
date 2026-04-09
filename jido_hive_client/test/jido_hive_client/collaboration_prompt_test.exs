@@ -21,6 +21,11 @@ defmodule JidoHiveClient.CollaborationPromptTest do
     assert request.prompt =~ "Assignment packet JSON:"
     assert request.prompt =~ "\"allowed_contribution_types\""
     assert request.prompt =~ "\"reasoning\""
+
+    assert request.system_prompt =~
+             "Valid relation target ids from visible room context: ctx-root-1"
+
+    assert request.system_prompt =~ "Never invent ids"
   end
 
   test "explicit allowed tools still pass through when requested" do
@@ -48,7 +53,13 @@ defmodule JidoHiveClient.CollaborationPromptTest do
       "context_view" => %{
         "brief" => "Design a shared participation substrate.",
         "rules" => ["Return structured contributions only."],
-        "context_objects" => []
+        "context_objects" => [
+          %{
+            "context_id" => "ctx-root-1",
+            "object_type" => "belief",
+            "title" => "Existing context"
+          }
+        ]
       },
       "phase" => "analysis",
       "objective" => "Produce the first reasoning contribution."

@@ -19,17 +19,10 @@ defmodule JidoHiveTermuiConsole.Nav do
   @spec refresh_room_snapshot(Model.t()) :: Model.t()
   def refresh_room_snapshot(%Model{room_id: nil} = state), do: state
 
+  def refresh_room_snapshot(%Model{embedded: nil} = state), do: state
+
   def refresh_room_snapshot(%Model{} = state) do
-    room_snapshot =
-      case state.operator_module.fetch_room(state.api_base_url, state.room_id) do
-        {:ok, snapshot} ->
-          merge_room_snapshot(snapshot, embedded_metadata_snapshot(state.snapshot))
-
-        {:error, _reason} ->
-          merge_room_snapshot(state.snapshot || %{}, embedded_metadata_snapshot(state.snapshot))
-      end
-
-    Model.apply_snapshot(state, room_snapshot)
+    Model.apply_snapshot(state, state.embedded_module.snapshot(state.embedded))
   rescue
     _error -> state
   end

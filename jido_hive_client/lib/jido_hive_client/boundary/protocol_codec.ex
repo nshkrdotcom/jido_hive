@@ -30,10 +30,11 @@ defmodule JidoHiveClient.Boundary.ProtocolCodec do
   @spec normalize_contribution(map(), map()) :: map()
   def normalize_contribution(result, defaults \\ %{}) when is_map(result) and is_map(defaults) do
     defaults = normalize_value(defaults)
+    relation_target_filter = relation_target_filter(defaults)
 
     result
     |> normalize_value()
-    |> sanitize_contribution()
+    |> sanitize_contribution(relation_target_filter)
     |> Map.put_new("schema_version", @contribution_submit_v1)
     |> Map.put_new("room_id", defaults["room_id"])
     |> Map.put_new("assignment_id", defaults["assignment_id"])
@@ -51,7 +52,7 @@ defmodule JidoHiveClient.Boundary.ProtocolCodec do
     |> Map.put_new("approvals", [])
     |> Map.put_new("execution", %{})
     |> Map.put_new("status", "completed")
-    |> sanitize_contribution()
+    |> sanitize_contribution(relation_target_filter)
     |> Map.update("execution", %{}, fn
       execution when is_map(execution) -> execution
       _other -> %{}
@@ -180,29 +181,41 @@ defmodule JidoHiveClient.Boundary.ProtocolCodec do
     |> Map.new()
   end
 
-  defp sanitize_contribution(contribution) when is_map(contribution) do
-    Map.update(contribution, "context_objects", [], &sanitize_context_objects/1)
+  defp sanitize_contribution(contribution, relation_target_filter) when is_map(contribution) do
+    Map.update(
+      contribution,
+      "context_objects",
+      [],
+      &sanitize_context_objects(&1, relation_target_filter)
+    )
   end
 
-  defp sanitize_context_objects(context_objects) when is_list(context_objects) do
+  defp sanitize_context_objects(context_objects, relation_target_filter)
+       when is_list(context_objects) do
     Enum.map(context_objects, fn
       %{} = context_object ->
-        Map.update(context_object, "relations", [], &sanitize_relations/1)
+        Map.update(
+          context_object,
+          "relations",
+          [],
+          &sanitize_relations(&1, relation_target_filter)
+        )
 
       other ->
         other
     end)
   end
 
-  defp sanitize_context_objects(_other), do: []
+  defp sanitize_context_objects(_other, _relation_target_filter), do: []
 
-  defp sanitize_relations(relations) when is_list(relations) do
+  defp sanitize_relations(relations, relation_target_filter) when is_list(relations) do
     relations
     |> Enum.map(&normalize_relation/1)
+    |> Enum.filter(&allowed_relation_target?(&1, relation_target_filter))
     |> Enum.reject(&is_nil/1)
   end
 
-  defp sanitize_relations(_other), do: []
+  defp sanitize_relations(_other, _relation_target_filter), do: []
 
   defp normalize_relation(relation) when is_map(relation) do
     normalized_relation = %{
@@ -234,6 +247,29 @@ defmodule JidoHiveClient.Boundary.ProtocolCodec do
   end
 
   defp valid_relation_component?(_value), do: false
+
+  defp relation_target_filter(defaults) do
+    case get_in(defaults, ["context_view", "context_objects"]) do
+      context_objects when is_list(context_objects) ->
+        allowlist =
+          context_objects
+          |> Enum.map(&(value(&1, "context_id") || value(&1, "id")))
+          |> Enum.filter(&(is_binary(&1) and String.trim(&1) != ""))
+          |> MapSet.new()
+
+        {:allowlist, allowlist}
+
+      _other ->
+        :pass_through
+    end
+  end
+
+  defp allowed_relation_target?(nil, _relation_target_filter), do: false
+  defp allowed_relation_target?(_relation, :pass_through), do: true
+
+  defp allowed_relation_target?(%{"target_id" => target_id}, {:allowlist, allowlist}) do
+    MapSet.member?(allowlist, target_id)
+  end
 
   defp existing_atom_key(key) when is_binary(key) do
     String.to_existing_atom(key)

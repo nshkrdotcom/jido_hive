@@ -6,6 +6,11 @@ defmodule JidoHiveClient.Boundary.RoomApi.Http do
   @connect_timeout_ms 3_000
 
   @impl true
+  def fetch_room(opts, room_id) do
+    request(:get, opts, "/rooms/#{URI.encode_www_form(room_id)}", nil)
+  end
+
+  @impl true
   def fetch_timeline(opts, room_id, query_opts \\ []) do
     query =
       %{}

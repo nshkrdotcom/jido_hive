@@ -14,6 +14,28 @@ The governing rule is:
 
 If a behavior reproduces from the headless client, it is not a TUI-only bug.
 
+## Current transport split
+
+Today the system uses two different transport styles:
+
+- workers use the websocket relay for assignment delivery and execution
+- operator surfaces use the HTTP API
+
+That means:
+
+- `bin/client-worker` and `bin/client` are websocket clients
+- `jido_hive_client room ...` headless commands are HTTP clients
+- the ExRatatui console is also HTTP-backed for room inspection and human actions
+
+For the console room screen specifically, the expected live pattern is:
+
+- one initial `GET /rooms/:id` when the room is opened
+- repeated `GET /rooms/:id/timeline?after=...` polling while the room is open
+
+If you see repeated `GET /rooms/:id` requests during steady-state room viewing,
+that is a regression in the room-refresh seam between the console and the room
+session, not expected behavior.
+
 ## What each layer owns
 
 - `jido_hive_server`
@@ -26,6 +48,7 @@ If a behavior reproduces from the headless client, it is not a TUI-only bug.
   - reusable operator workflows
   - room-scoped session behavior
   - headless CLI for shell scripts and reproduction
+  - worker contribution prompt shaping and contribution normalization
 - `examples/jido_hive_termui_console`
   - terminal rendering
   - key handling
@@ -60,6 +83,8 @@ Questions this answers:
 - Does the server think the room is `idle`, `running`, or `publication_ready`?
 - Does the room already contain context or contributions?
 - Is the timeline moving even if the TUI looks frozen?
+- Is the server already recording the message or worker contribution even if the
+  console has not caught up yet?
 
 If server truth is wrong, stop blaming the client or TUI.
 
@@ -85,6 +110,7 @@ Questions this answers:
 - Can the client see the same room truth as raw HTTP?
 - Is the room stale only in the console?
 - Is the bug already present before the TUI is involved?
+- Is the client-side room snapshot already correct before any rendering code runs?
 
 ### 4. Reproduce the human action headlessly with trace
 
@@ -157,6 +183,21 @@ At this point you are testing:
 - stale screen transitions
 - popup/help flows
 - presentation of already-understood server/client behavior
+
+Expected debug-log shape after the room opens:
+
+- one `operator http request ... path=/rooms/<room-id>`
+- many `operator http request ... path=/rooms/<room-id>/timeline?after=...`
+
+That is the current design. It is noisy, but it is bounded and predictable.
+
+If you also see worker contribution failures that mention invented relation
+targets, such as `target_id: "brief-topic"`, treat that as a client-side
+contribution-shaping bug. The current client contract is:
+
+- when no room context ids are visible, workers must emit `relations: []`
+- when room context ids are visible, relation targets must be chosen only from
+  that visible set
 
 ### 7. Compare outcomes
 

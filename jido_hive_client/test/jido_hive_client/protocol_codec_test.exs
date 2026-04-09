@@ -132,4 +132,41 @@ defmodule JidoHiveClient.ProtocolCodecTest do
              }
            ] = contribution["context_objects"]
   end
+
+  test "drops relation targets that are not visible in the assignment context" do
+    contribution =
+      ProtocolCodec.normalize_contribution(
+        %{
+          "summary" => "completed",
+          "contribution_type" => "reasoning",
+          "context_objects" => [
+            %{
+              "object_type" => "belief",
+              "title" => "Grounded note",
+              "relations" => [
+                %{"relation" => "references", "target_id" => "ctx-1"},
+                %{"relation" => "derives_from", "target_id" => "brief-topic"}
+              ]
+            }
+          ]
+        },
+        %{
+          "assignment_id" => "asn-1",
+          "room_id" => "room-1",
+          "context_view" => %{
+            "context_objects" => [
+              %{"context_id" => "ctx-1"},
+              %{"context_id" => "ctx-2"}
+            ]
+          }
+        }
+      )
+
+    assert [
+             %{
+               "object_type" => "belief",
+               "relations" => [%{"relation" => "references", "target_id" => "ctx-1"}]
+             }
+           ] = contribution["context_objects"]
+  end
 end
