@@ -13,7 +13,11 @@ defmodule JidoHiveClient.MixProject do
       elixirc_paths: elixirc_paths(Mix.env()),
       elixirc_options: [warnings_as_errors: true],
       start_permanent: Mix.env() == :prod,
-      escript: [main_module: JidoHiveClient.CLI],
+      escript: [
+        app: nil,
+        include_priv_for: [:tzdata],
+        main_module: JidoHiveClient.CLI
+      ],
       aliases: aliases(),
       deps: deps(),
       dialyzer: [plt_add_apps: [:ex_unit]]

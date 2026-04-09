@@ -47,6 +47,13 @@ setup/hive --prod server-info
 setup/hive --prod targets
 ```
 
+Local `iex` server debug:
+
+```bash
+cd jido_hive_server
+iex -S mix phx.server
+```
+
 ## Architecture
 
 ```mermaid
@@ -204,7 +211,7 @@ Observed live behavior on 2026-04-08:
 
 For the full site-by-site operator walkthrough, use:
 
-- [examples/jido_hive_termui_console/README.md](/home/home/p/g/n/jido_hive/examples/jido_hive_termui_console/README.md)
+- [examples/jido_hive_termui_console/README.md](../examples/jido_hive_termui_console/README.md)
 
 ## Developer guide
 
@@ -232,9 +239,15 @@ When changing the server:
 1. Confirm the server route returns the expected truth.
 2. Reproduce through `jido_hive_client` headless CLI.
 3. Only after that, inspect the ExRatatui console.
+4. Use local `iex` when reducer/controller internals matter.
+5. Production remote `iex` is not yet a supported repo workflow; use Coolify logs, direct HTTP, and the headless client first.
 
 If a bug appears only in the TUI, it is not a server bug.
 If the server route is wrong, the client and TUI should not compensate for it.
+
+Detailed runbook:
+
+- `~/jb/docs/20260408/jido_hive_debugging_introspection/jido_hive_debugging_introspection_and_runbook.md`
 
 ### Quality loop
 
@@ -266,6 +279,6 @@ MIX_ENV=coolify mix coolify.status --project server --latest
 
 ## Related docs
 
-- Root guide: [README.md](/home/home/p/g/n/jido_hive/README.md)
-- Client guide: [jido_hive_client/README.md](/home/home/p/g/n/jido_hive/jido_hive_client/README.md)
-- Console guide: [examples/jido_hive_termui_console/README.md](/home/home/p/g/n/jido_hive/examples/jido_hive_termui_console/README.md)
+- Root guide: [README.md](../README.md)
+- Client guide: [jido_hive_client/README.md](../jido_hive_client/README.md)
+- Console guide: [examples/jido_hive_termui_console/README.md](../examples/jido_hive_termui_console/README.md)

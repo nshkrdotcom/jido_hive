@@ -5,7 +5,7 @@ defmodule JidoHiveClient.Embedded do
 
   alias JidoHiveClient.AgentBackends.Mock
   alias JidoHiveClient.Boundary.RoomApi.Http, as: HttpRoomApi
-  alias JidoHiveClient.{ChatInput, Interceptor, Runtime}
+  alias JidoHiveClient.{ChatInput, DebugTrace, Interceptor, Runtime}
 
   @default_poll_interval_ms 1_000
   @timeline_limit 200
@@ -137,6 +137,12 @@ defmodule JidoHiveClient.Embedded do
   end
 
   def handle_call({:submit_chat, attrs}, _from, %__MODULE__{} = state) do
+    DebugTrace.emit(:info, "room_session.submit_chat.started", %{
+      room_id: state.room_id,
+      participant_id: state.participant.participant_id,
+      chars: attrs |> Map.get(:text, Map.get(attrs, "text", "")) |> to_string() |> String.length()
+    })
+
     with {:ok, chat_input} <- chat_input(attrs, state),
          {:ok, intercepted} <-
            Interceptor.extract(chat_input,
@@ -160,10 +166,23 @@ defmodule JidoHiveClient.Embedded do
                "context_count" => length(contribution["context_objects"] || [])
              }
            }) do
+      DebugTrace.emit(:info, "room_session.submit_chat.completed", %{
+        room_id: state.room_id,
+        participant_id: state.participant.participant_id,
+        contribution_type: contribution["contribution_type"],
+        context_count: length(contribution["context_objects"] || [])
+      })
+
       send(self(), {:sync_room_async, true})
       {:reply, {:ok, contribution}, %{state | last_error: nil}}
     else
       {:error, reason} ->
+        DebugTrace.emit(:error, "room_session.submit_chat.failed", %{
+          room_id: state.room_id,
+          participant_id: state.participant.participant_id,
+          reason: inspect(reason)
+        })
+
         :ok =
           Runtime.record_event(state.runtime, %{
             type: "embedded.chat.failed",
@@ -181,6 +200,12 @@ defmodule JidoHiveClient.Embedded do
         {:reply, {:error, :context_object_not_found}, state}
 
       context_object ->
+        DebugTrace.emit(:info, "room_session.accept_context.started", %{
+          room_id: state.room_id,
+          participant_id: state.participant.participant_id,
+          context_id: context_id
+        })
+
         contribution = acceptance_contribution(context_object, attrs, state)
 
         with {:ok, _response} <-
@@ -195,10 +220,24 @@ defmodule JidoHiveClient.Embedded do
                  room_id: state.room_id,
                  payload: %{"context_id" => context_id}
                }) do
+          DebugTrace.emit(:info, "room_session.accept_context.completed", %{
+            room_id: state.room_id,
+            participant_id: state.participant.participant_id,
+            context_id: context_id
+          })
+
           send(self(), {:sync_room_async, true})
           {:reply, {:ok, contribution}, %{state | last_error: nil}}
         else
-          {:error, reason} -> {:reply, {:error, reason}, %{state | last_error: reason}}
+          {:error, reason} ->
+            DebugTrace.emit(:error, "room_session.accept_context.failed", %{
+              room_id: state.room_id,
+              participant_id: state.participant.participant_id,
+              context_id: context_id,
+              reason: inspect(reason)
+            })
+
+            {:reply, {:error, reason}, %{state | last_error: reason}}
         end
     end
   end

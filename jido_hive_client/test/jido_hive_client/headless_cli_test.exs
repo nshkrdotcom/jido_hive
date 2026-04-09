@@ -28,6 +28,11 @@ defmodule JidoHiveClient.HeadlessCLITest do
       {:ok, %{"room_id" => payload["room_id"], "status" => "idle"}}
     end
 
+    def run_room("https://example.com/api", "room-1", opts) do
+      send(test_pid(), {:run_room, opts})
+      {:ok, %{"status" => "running"}}
+    end
+
     def add_saved_room(room_id, api_base_url) do
       send(test_pid(), {:add_saved_room, room_id, api_base_url})
       :ok
@@ -178,6 +183,34 @@ defmodule JidoHiveClient.HeadlessCLITest do
                ],
                operator_module: OperatorStub
              )
+  end
+
+  test "operator room run passes timeout and assignment options through the shared API" do
+    assert {:ok, %{"operation_id" => operation_id, "result" => %{"status" => "running"}}} =
+             HeadlessCLI.dispatch(
+               [
+                 "room",
+                 "run",
+                 "--api-base-url",
+                 "https://example.com/api",
+                 "--room-id",
+                 "room-1",
+                 "--max-assignments",
+                 "1",
+                 "--assignment-timeout-ms",
+                 "45000",
+                 "--request-timeout-ms",
+                 "60000"
+               ],
+               operator_module: OperatorStub
+             )
+
+    assert String.starts_with?(operation_id, "room_run-")
+
+    assert_receive {:run_room, opts}
+    assert Keyword.get(opts, :max_assignments) == 1
+    assert Keyword.get(opts, :assignment_timeout_ms) == 45_000
+    assert Keyword.get(opts, :request_timeout_ms) == 60_000
   end
 
   test "session room submit-chat starts an embedded session and submits the message" do

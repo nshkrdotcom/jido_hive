@@ -11,7 +11,7 @@ It has three distinct roles:
 It does not own room truth.
 The server still does.
 
-Start with the root [README](/home/home/p/g/n/jido_hive/README.md) if you want repo-wide context first.
+Start with the root [README](../README.md) if you want repo-wide context first.
 
 ## Table of contents
 
@@ -41,6 +41,15 @@ mix escript.build
 ./jido_hive_client room list --api-base-url http://127.0.0.1:4000/api
 ./jido_hive_client room show --api-base-url http://127.0.0.1:4000/api --room-id <room-id>
 ./jido_hive_client room tail --api-base-url http://127.0.0.1:4000/api --room-id <room-id>
+```
+
+### Capture a structured debug trace
+
+```bash
+JIDO_HIVE_CLIENT_LOG_LEVEL=debug \
+./jido_hive_client room show --api-base-url http://127.0.0.1:4000/api --room-id <room-id> \
+  > room.json \
+  2> trace.ndjson
 ```
 
 ### Submit human actions headlessly
@@ -138,7 +147,7 @@ Representative functions:
 - `fetch_room/2`
 - `fetch_room_timeline/3`
 - `create_room/2`
-- `run_room/2`
+- `run_room/3`
 - `fetch_publication_plan/2`
 - `publish_room/3`
 - `load_auth_state/2`
@@ -181,7 +190,7 @@ This is the escript entrypoint. It supports both:
 
 ```bash
 ./jido_hive_client room create --api-base-url https://jido-hive-server-test.app.nsai.online/api --payload-file room.json
-./jido_hive_client room run --api-base-url https://jido-hive-server-test.app.nsai.online/api --room-id <room-id>
+./jido_hive_client room run --api-base-url https://jido-hive-server-test.app.nsai.online/api --room-id <room-id> --max-assignments 1 --assignment-timeout-ms 60000 --request-timeout-ms 90000
 ./jido_hive_client room publish --api-base-url https://jido-hive-server-test.app.nsai.online/api --room-id <room-id> --payload-file publish.json
 ./jido_hive_client room submit --api-base-url https://jido-hive-server-test.app.nsai.online/api --room-id <room-id> --participant-id alice --text "hello"
 ./jido_hive_client room accept --api-base-url https://jido-hive-server-test.app.nsai.online/api --room-id <room-id> --participant-id alice --context-id <context-id>
@@ -220,8 +229,50 @@ Typical production-safe flow:
 - read commands return JSON-ready room/auth/config data
 - mutating commands return JSON with an explicit `operation_id`
 - session snapshot/refresh commands return both `snapshot` and `sync_health`
+- `JIDO_HIVE_CLIENT_LOG_LEVEL=debug` emits structured trace lines to stderr while JSON stays on stdout
 
 This is the preferred way to reproduce or debug client behavior without involving the TUI.
+
+## Live debugging and `iex`
+
+### Fastest real-world order
+
+1. inspect the server route directly
+2. reproduce with `jido_hive_client` headlessly
+3. only then open the TUI
+4. only after the headless path is understood should you drop into `iex`
+
+### Local client `iex`
+
+```bash
+cd jido_hive_client
+iex -S mix
+```
+
+Useful examples:
+
+```elixir
+JidoHiveClient.Operator.fetch_room("https://jido-hive-server-test.app.nsai.online/api", "<room-id>")
+JidoHiveClient.Operator.fetch_room_timeline("https://jido-hive-server-test.app.nsai.online/api", "<room-id>")
+
+{:ok, session} =
+  JidoHiveClient.RoomSession.start_link(
+    room_id: "<room-id>",
+    participant_id: "alice",
+    participant_role: "coordinator",
+    participant_kind: "human",
+    api_base_url: "https://jido-hive-server-test.app.nsai.online/api"
+  )
+
+JidoHiveClient.RoomSession.snapshot(session)
+JidoHiveClient.RoomSession.submit_chat(session, %{text: "debug probe", authority_level: "binding"})
+```
+
+### Production reality
+
+- quick bash commands are the first-class production debugging path
+- the repo does not yet have a supported production remote `iex --remsh` workflow
+- use direct API calls, the headless client CLI, and Coolify/server logs instead
 
 ## RoomSession library API
 
@@ -327,9 +378,11 @@ When a bug is reported in the console:
 2. if it reproduces there, debug `Operator`, `RoomSession`, or server behavior
 3. if it does not, debug the ExRatatui console
 4. if the client surface is missing the needed headless action, add it before changing more UI code
+5. if you need deeper local introspection, use local `iex`; do not jump straight to production remote-shell assumptions
 
 ## Related docs
 
-- Root guide: [README.md](/home/home/p/g/n/jido_hive/README.md)
-- Server guide: [jido_hive_server/README.md](/home/home/p/g/n/jido_hive/jido_hive_server/README.md)
-- Console guide: [examples/jido_hive_termui_console/README.md](/home/home/p/g/n/jido_hive/examples/jido_hive_termui_console/README.md)
+- Root guide: [README.md](../README.md)
+- Server guide: [jido_hive_server/README.md](../jido_hive_server/README.md)
+- Console guide: [examples/jido_hive_termui_console/README.md](../examples/jido_hive_termui_console/README.md)
+- Debugging runbook: `~/jb/docs/20260408/jido_hive_debugging_introspection/jido_hive_debugging_introspection_and_runbook.md`

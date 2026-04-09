@@ -20,7 +20,11 @@ defmodule JidoHiveClient.HeadlessCLI do
     left: :string,
     right: :string,
     text: :string,
-    scope: :string
+    scope: :string,
+    max_assignments: :integer,
+    assignment_timeout_ms: :integer,
+    request_timeout_ms: :integer,
+    connect_timeout_ms: :integer
   ]
 
   @session_switches [
@@ -142,7 +146,7 @@ defmodule JidoHiveClient.HeadlessCLI do
     with {:ok, parsed} <- parse_command_opts(rest, @operator_switches),
          api_base_url <- api_base_url(parsed, config),
          {:ok, room_id} <- required_option(parsed, :room_id),
-         {:ok, room} <- operator_module.run_room(api_base_url, room_id) do
+         {:ok, room} <- operator_module.run_room(api_base_url, room_id, room_run_opts(parsed)) do
       {:ok, wrap_operation_result("room_run", room)}
     end
   end
@@ -397,8 +401,20 @@ defmodule JidoHiveClient.HeadlessCLI do
     |> maybe_put(:selected_relation, parsed[:selected_relation])
   end
 
+  defp room_run_opts(parsed) do
+    []
+    |> maybe_put_integer_option(:max_assignments, parsed[:max_assignments])
+    |> maybe_put_integer_option(:assignment_timeout_ms, parsed[:assignment_timeout_ms])
+    |> maybe_put_integer_option(:request_timeout_ms, parsed[:request_timeout_ms])
+    |> maybe_put_integer_option(:connect_timeout_ms, parsed[:connect_timeout_ms])
+  end
+
   defp maybe_put(map, _key, nil), do: map
   defp maybe_put(map, key, value), do: Map.put(map, key, value)
+
+  defp maybe_put_integer_option(opts, _key, nil), do: opts
+  defp maybe_put_integer_option(opts, _key, value) when not is_integer(value), do: opts
+  defp maybe_put_integer_option(opts, key, value), do: Keyword.put(opts, key, value)
 
   defp truncate(value, max_length) when is_binary(value) and byte_size(value) <= max_length,
     do: value

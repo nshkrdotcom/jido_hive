@@ -8,3 +8,6 @@ cli_subprocess_core/
 !bin/
 !bin/*
 .codex
+repomix*.xml
+/jido_hive_client/jido_hive_client
+/examples/jido_hive_termui_console/hive

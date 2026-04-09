@@ -184,6 +184,7 @@ defmodule JidoHiveClient.OperatorTest do
             {201, %{}, Jason.encode!(%{"data" => %{"room_id" => "room-1", "status" => "idle"}})}
 
           {"POST", "/rooms/room-1/run"} ->
+            send(parent, {:run_room_request, Jason.decode!(request.body)})
             {200, %{}, Jason.encode!(%{"data" => %{"status" => "running"}})}
 
           {"GET", "/targets"} ->
@@ -204,13 +205,47 @@ defmodule JidoHiveClient.OperatorTest do
     assert_receive {:create_room_request, ^room_payload}
 
     assert {:ok, %{"status" => "running"}} =
-             Operator.run_room(TestHTTPServer.base_url(server), "room-1")
+             Operator.run_room(TestHTTPServer.base_url(server), "room-1",
+               max_assignments: 1,
+               assignment_timeout_ms: 45_000,
+               request_timeout_ms: 55_000
+             )
+
+    assert_receive {:run_room_request,
+                    %{"max_assignments" => 1, "assignment_timeout_ms" => 45_000}}
 
     assert {:ok, [%{"target_id" => "worker-01"}]} =
              Operator.list_targets(TestHTTPServer.base_url(server))
 
     assert {:ok, [%{"policy_id" => "round_robin/v2"}]} =
              Operator.list_policies(TestHTTPServer.base_url(server))
+  end
+
+  test "run_room returns structured timeout metadata when the request times out" do
+    {:ok, server} =
+      TestHTTPServer.start_link(fn request ->
+        assert request.path == "/rooms/room-timeout/run"
+        Process.sleep(75)
+        {200, %{}, Jason.encode!(%{"data" => %{"status" => "running"}})}
+      end)
+
+    on_exit(fn -> TestHTTPServer.stop(server) end)
+
+    assert {:error,
+            {:timeout,
+             %{
+               method: "POST",
+               path: "/rooms/room-timeout/run",
+               request_timeout_ms: 10,
+               operation_id: "room_run-test"
+             } = metadata}} =
+             Operator.run_room(TestHTTPServer.base_url(server), "room-timeout",
+               request_timeout_ms: 10,
+               assignment_timeout_ms: 5,
+               operation_id: "room_run-test"
+             )
+
+    assert metadata.elapsed_ms >= 0
   end
 
   test "start_install and complete_install go through the shared operator API" do

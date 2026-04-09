@@ -149,10 +149,10 @@ flowchart LR
 
 ## Monorepo layout
 
-- [README.md](/home/home/p/g/n/jido_hive/README.md): root onboarding and repo-wide workflow
-- [jido_hive_server/README.md](/home/home/p/g/n/jido_hive/jido_hive_server/README.md): authoritative server design, routes, publications, deployment
-- [jido_hive_client/README.md](/home/home/p/g/n/jido_hive/jido_hive_client/README.md): operator API, room session boundary, worker runtime, headless CLI
-- [examples/jido_hive_termui_console/README.md](/home/home/p/g/n/jido_hive/examples/jido_hive_termui_console/README.md): operator guide, keybindings, troubleshooting, connector walkthrough
+- [README.md](README.md): root onboarding and repo-wide workflow
+- [jido_hive_server/README.md](jido_hive_server/README.md): authoritative server design, routes, publications, deployment
+- [jido_hive_client/README.md](jido_hive_client/README.md): operator API, room session boundary, worker runtime, headless CLI
+- [examples/jido_hive_termui_console/README.md](examples/jido_hive_termui_console/README.md): operator guide, keybindings, troubleshooting, connector walkthrough
 
 ## Operator surfaces
 
@@ -190,6 +190,15 @@ Representative commands:
 ./jido_hive_client room accept --api-base-url https://jido-hive-server-test.app.nsai.online/api --room-id <room-id> --participant-id alice --context-id <context-id>
 ./jido_hive_client room resolve --api-base-url https://jido-hive-server-test.app.nsai.online/api --room-id <room-id> --participant-id alice --left <ctx-a> --right <ctx-b> --text "resolution"
 ./jido_hive_client auth state --api-base-url https://jido-hive-server-test.app.nsai.online/api --subject alice
+```
+
+Structured trace stays on stderr:
+
+```bash
+JIDO_HIVE_CLIENT_LOG_LEVEL=debug \
+./jido_hive_client room show --api-base-url https://jido-hive-server-test.app.nsai.online/api --room-id <room-id> \
+  > room.json \
+  2> trace.ndjson
 ```
 
 All mutating commands return an explicit `operation_id` in their JSON output.
@@ -260,7 +269,7 @@ Observed working behavior on 2026-04-08:
 
 For the full site-by-site walkthrough, use the console guide:
 
-- [examples/jido_hive_termui_console/README.md](/home/home/p/g/n/jido_hive/examples/jido_hive_termui_console/README.md)
+- [examples/jido_hive_termui_console/README.md](examples/jido_hive_termui_console/README.md)
 
 ## Developer workflow
 
@@ -310,9 +319,14 @@ Use this order whenever the system feels confusing.
 2. Reproduce with `jido_hive_client` headless CLI.
 3. Only after that, inspect the ExRatatui console.
 4. If a room action is only testable through the TUI, add a headless path before doing more UI work.
+5. Use local `iex` for server/client internals when needed; production remote attach is not yet a supported repo workflow.
+
+Detailed runbook:
+
+- `~/jb/docs/20260408/jido_hive_debugging_introspection/jido_hive_debugging_introspection_and_runbook.md`
 
 ## Package guides
 
-- Server: [jido_hive_server/README.md](/home/home/p/g/n/jido_hive/jido_hive_server/README.md)
-- Client: [jido_hive_client/README.md](/home/home/p/g/n/jido_hive/jido_hive_client/README.md)
-- Console: [examples/jido_hive_termui_console/README.md](/home/home/p/g/n/jido_hive/examples/jido_hive_termui_console/README.md)
+- Server: [jido_hive_server/README.md](jido_hive_server/README.md)
+- Client: [jido_hive_client/README.md](jido_hive_client/README.md)
+- Console: [examples/jido_hive_termui_console/README.md](examples/jido_hive_termui_console/README.md)

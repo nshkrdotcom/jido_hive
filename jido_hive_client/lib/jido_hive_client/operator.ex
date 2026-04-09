@@ -6,6 +6,8 @@ defmodule JidoHiveClient.Operator do
   alias JidoHiveClient.Operator.{Config, HTTP}
 
   @channels ~w[github notion]
+  @default_run_assignment_timeout_ms 180_000
+  @default_run_request_buffer_ms 30_000
 
   @spec ensure_initialized() :: :ok
   def ensure_initialized, do: Config.ensure_initialized()
@@ -116,9 +118,31 @@ defmodule JidoHiveClient.Operator do
     unwrap_data(HTTP.post(api_base_url, "/rooms", payload))
   end
 
-  @spec run_room(String.t(), String.t()) :: {:ok, map()} | {:error, term()}
-  def run_room(api_base_url, room_id) when is_binary(api_base_url) and is_binary(room_id) do
-    unwrap_data(HTTP.post(api_base_url, "/rooms/#{room_id}/run", %{}))
+  @spec run_room(String.t(), String.t(), keyword()) :: {:ok, map()} | {:error, term()}
+  def run_room(api_base_url, room_id, opts \\ [])
+      when is_binary(api_base_url) and is_binary(room_id) and is_list(opts) do
+    assignment_timeout_ms =
+      Keyword.get(opts, :assignment_timeout_ms, @default_run_assignment_timeout_ms)
+
+    request_timeout_ms =
+      Keyword.get(
+        opts,
+        :request_timeout_ms,
+        max(assignment_timeout_ms + @default_run_request_buffer_ms, 60_000)
+      )
+
+    payload =
+      %{}
+      |> maybe_put_integer("max_assignments", Keyword.get(opts, :max_assignments))
+      |> maybe_put_integer("assignment_timeout_ms", assignment_timeout_ms)
+
+    http_opts =
+      []
+      |> Keyword.put(:request_timeout_ms, request_timeout_ms)
+      |> Keyword.put(:operation_id, Keyword.get(opts, :operation_id))
+      |> maybe_put_option(:connect_timeout_ms, Keyword.get(opts, :connect_timeout_ms))
+
+    unwrap_data(HTTP.post(api_base_url, "/rooms/#{room_id}/run", payload, http_opts))
   end
 
   @spec list_targets(String.t()) :: {:ok, list(map())} | {:error, term()}
@@ -303,4 +327,11 @@ defmodule JidoHiveClient.Operator do
   defp unwrap_data_list({:ok, %{"data" => data}}) when is_list(data), do: {:ok, data}
   defp unwrap_data_list({:ok, payload}), do: {:error, {:unexpected_payload, payload}}
   defp unwrap_data_list({:error, reason}), do: {:error, reason}
+
+  defp maybe_put_integer(map, _key, nil), do: map
+  defp maybe_put_integer(map, _key, value) when not is_integer(value), do: map
+  defp maybe_put_integer(map, key, value), do: Map.put(map, key, value)
+
+  defp maybe_put_option(opts, _key, nil), do: opts
+  defp maybe_put_option(opts, key, value), do: Keyword.put(opts, key, value)
 end

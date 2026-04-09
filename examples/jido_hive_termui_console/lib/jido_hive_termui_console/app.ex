@@ -744,7 +744,7 @@ defmodule JidoHiveTermuiConsole.App do
     {next_state, []}
   end
 
-  def handle_message({:run_room_result, room_id, {:ok, _snapshot}}, state) do
+  def handle_message({:run_room_result, room_id, _operation_id, {:ok, _snapshot}}, state) do
     next_state =
       if state.room_id == room_id do
         state |> Nav.refresh_room_snapshot() |> Model.set_status("Room run completed", :info)
@@ -755,7 +755,23 @@ defmodule JidoHiveTermuiConsole.App do
     {next_state, []}
   end
 
-  def handle_message({:run_room_result, room_id, {:error, reason}}, state) do
+  def handle_message(
+        {:run_room_result, room_id, operation_id, {:error, {:timeout, metadata}}},
+        state
+      ) do
+    next_state =
+      if state.room_id == room_id do
+        state
+        |> Nav.refresh_room_snapshot()
+        |> set_run_timeout_status(operation_id, metadata)
+      else
+        state
+      end
+
+    {next_state, []}
+  end
+
+  def handle_message({:run_room_result, room_id, _operation_id, {:error, reason}}, state) do
     next_state =
       if state.room_id == room_id do
         Model.set_status(state, "Room run failed: #{inspect(reason)}", :error)
@@ -953,12 +969,16 @@ defmodule JidoHiveTermuiConsole.App do
     spawn(fn ->
       result =
         safe_async_result(fn ->
-          operator_module.run_room(api_base_url, room_id)
+          operator_module.run_room(api_base_url, room_id,
+            assignment_timeout_ms: 180_000,
+            request_timeout_ms: 210_000,
+            operation_id: operation_id
+          )
         end)
 
       log_async_operation(operation_id, "room run", room_id, state.participant_id, result)
 
-      send(caller, {:run_room_result, room_id, result})
+      send(caller, {:run_room_result, room_id, operation_id, result})
     end)
 
     :ok
@@ -1123,6 +1143,35 @@ defmodule JidoHiveTermuiConsole.App do
     Logger.error(
       "#{label} failed operation_id=#{operation_id} room_id=#{room_id} participant_id=#{participant_id} reason=#{inspect(reason)}"
     )
+  end
+
+  defp set_run_timeout_status(state, operation_id, metadata) do
+    timeout_ms = Map.get(metadata, :request_timeout_ms) || Map.get(metadata, "request_timeout_ms")
+
+    if run_activity_visible?(state) do
+      Model.set_status(
+        state,
+        "Room run response timed out locally after #{timeout_ms}ms, but server activity is visible. Continue watching Events. op=#{operation_id}",
+        :warn
+      )
+    else
+      Model.set_status(
+        state,
+        "Room run timed out locally after #{timeout_ms}ms with no visible progress. op=#{operation_id}",
+        :error
+      )
+    end
+  end
+
+  defp run_activity_visible?(state) do
+    snapshot = state.snapshot || %{}
+    dispatch_state = Map.get(snapshot, "dispatch_state") || %{}
+
+    Map.get(snapshot, "status") not in [nil, "idle"] or
+      Map.get(dispatch_state, "completed_slots", 0) > 0 or
+      Map.get(snapshot, "timeline", []) != [] or
+      Map.get(snapshot, "context_objects", []) != [] or
+      Enum.any?(state.event_log_lines)
   end
 
   defp room_submit_attrs(text, state) do

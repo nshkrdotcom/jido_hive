@@ -46,7 +46,7 @@ defmodule JidoHiveClient.TestHTTPServer do
     {:ok, request} = read_request(socket, "")
     {status, headers, body} = handler.(request)
     response = response(status, headers, body)
-    :ok = :gen_tcp.send(socket, response)
+    _ = :gen_tcp.send(socket, response)
     :gen_tcp.close(socket)
   end
 

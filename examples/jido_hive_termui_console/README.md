@@ -137,12 +137,14 @@ Use this order every time. It is how you separate UI bugs from client bugs.
    - `setup/hive --prod connections github --subject alice`
    - `curl -sS https://jido-hive-server-test.app.nsai.online/api/rooms/<room-id>`
 2. Reproduce through the headless client surface.
-   - `cd /home/home/p/g/n/jido_hive/jido_hive_client`
+   - `cd ../../jido_hive_client`
    - `./jido_hive_client room show --api-base-url https://jido-hive-server-test.app.nsai.online/api --room-id <room-id>`
    - `./jido_hive_client room tail --api-base-url https://jido-hive-server-test.app.nsai.online/api --room-id <room-id>`
    - `./jido_hive_client room submit --api-base-url https://jido-hive-server-test.app.nsai.online/api --room-id <room-id> --participant-id alice --text "hello"`
+   - `JIDO_HIVE_CLIENT_LOG_LEVEL=debug ./jido_hive_client room show --api-base-url https://jido-hive-server-test.app.nsai.online/api --room-id <room-id> > room.json 2> trace.ndjson`
 3. Only if it works headlessly and fails here should you debug the ExRatatui app.
 4. If a console action has no headless equivalent, add the headless path before doing more UI work.
+5. Use local `iex` for server/client internals; do not assume a production remote-shell workflow exists yet.
 
 ## Production connector setup
 
@@ -287,7 +289,7 @@ These are the first tools to use when a console behavior feels wrong.
 Build the headless client once:
 
 ```bash
-cd /home/home/p/g/n/jido_hive/jido_hive_client
+cd ../../jido_hive_client
 mix escript.build
 ```
 
@@ -396,12 +398,21 @@ Check server truth and the headless client before changing UI code:
 
 ```bash
 curl -sS https://jido-hive-server-test.app.nsai.online/api/rooms/<room-id>
-cd /home/home/p/g/n/jido_hive/jido_hive_client
+cd ../../jido_hive_client
 ./jido_hive_client room show --api-base-url https://jido-hive-server-test.app.nsai.online/api --room-id <room-id>
 ./jido_hive_client room tail --api-base-url https://jido-hive-server-test.app.nsai.online/api --room-id <room-id>
 ```
 
 If those surfaces have the data and the console does not, the bug is in the console.
+
+For a clean trace while reproducing:
+
+```bash
+JIDO_HIVE_CLIENT_LOG_LEVEL=debug \
+./jido_hive_client room show --api-base-url https://jido-hive-server-test.app.nsai.online/api --room-id <room-id> \
+  > room.json \
+  2> trace.ndjson
+```
 
 ### Chat submission says it is still in progress
 
@@ -500,6 +511,7 @@ High-value files:
 - call `JidoHiveClient.RoomSession` for room-scoped human participation flows
 - if a room action cannot be reproduced headlessly, the seam is still wrong
 - keep render code dumb and state transitions explicit
+- use local `iex` for server/client modules first; the TUI is a worse live-REPL target than the headless client
 
 ### Quality loop
 
@@ -521,8 +533,9 @@ mix ci
 
 ## Related docs
 
-- Root guide: [README.md](/home/home/p/g/n/jido_hive/README.md)
-- Client guide: [jido_hive_client/README.md](/home/home/p/g/n/jido_hive/jido_hive_client/README.md)
-- Server guide: [jido_hive_server/README.md](/home/home/p/g/n/jido_hive/jido_hive_server/README.md)
-- Refactor plan path: `/home/home/jb/docs/20260408/jido_hive_refactor_debuggability/jido_hive_architecture_refactor_debuggability_plan_v3.md`
-- Execution checklist path: `/home/home/jb/docs/20260408/jido_hive_refactor_debuggability/jido_hive_architecture_refactor_execution_checklist.md`
+- Root guide: [README.md](../../README.md)
+- Client guide: [jido_hive_client/README.md](../../jido_hive_client/README.md)
+- Server guide: [jido_hive_server/README.md](../../jido_hive_server/README.md)
+- Debugging runbook: `~/jb/docs/20260408/jido_hive_debugging_introspection/jido_hive_debugging_introspection_and_runbook.md`
+- Refactor plan path: `~/jb/docs/20260408/jido_hive_refactor_debuggability/jido_hive_architecture_refactor_debuggability_plan_v3.md`
+- Execution checklist path: `~/jb/docs/20260408/jido_hive_refactor_debuggability/jido_hive_architecture_refactor_execution_checklist.md`

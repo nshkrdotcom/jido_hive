@@ -76,8 +76,8 @@ defmodule JidoHiveTermuiConsole.AppTest do
       :ok
     end
 
-    def run_room(_base, room_id) do
-      send(test_pid(), {:operator_run_room, room_id})
+    def run_room(_base, room_id, opts) do
+      send(test_pid(), {:operator_run_room, room_id, opts})
       {:ok, %{"status" => "publication_ready"}}
     end
 
@@ -87,6 +87,18 @@ defmodule JidoHiveTermuiConsole.AppTest do
 
     defp test_pid do
       Application.fetch_env!(:jido_hive_termui_console, :app_test_pid)
+    end
+  end
+
+  defmodule RunTimeoutOperatorStub do
+    def fetch_room(_base, "room-1") do
+      {:ok,
+       %{
+         "room_id" => "room-1",
+         "status" => "idle",
+         "dispatch_state" => %{"completed_slots" => 0, "total_slots" => 6},
+         "participants" => []
+       }}
     end
   end
 
@@ -638,7 +650,37 @@ defmodule JidoHiveTermuiConsole.AppTest do
     assert next_state.status_line =~ "run started in background"
     assert room_id == next_state.room_id
 
-    assert_receive {:operator_run_room, ^room_id}
+    assert_receive {:operator_run_room, ^room_id,
+                    [assignment_timeout_ms: 180_000, request_timeout_ms: 210_000, operation_id: _]}
+  end
+
+  test "run room timeout is downgraded when room activity is already visible", %{model: model} do
+    state =
+      %{
+        model
+        | operator_module: RunTimeoutOperatorStub,
+          room_id: "room-1",
+          event_log_lines: ["assignment.started  running  phase=analysis"]
+      }
+
+    assert {:noreply, next_state} =
+             App.handle_info(
+               {:run_room_result, "room-1", "room_run-abc123",
+                {:error,
+                 {:timeout,
+                  %{
+                    method: "POST",
+                    path: "/rooms/room-1/run",
+                    request_timeout_ms: 210_000,
+                    elapsed_ms: 210_005,
+                    operation_id: "room_run-abc123"
+                  }}}},
+               state
+             )
+
+    assert next_state.status_severity == :warn
+    assert next_state.status_line =~ "server activity is visible"
+    assert next_state.status_line =~ "room_run-abc123"
   end
 
   test "wizard escape warns instead of trapping the terminal while creation is pending" do
