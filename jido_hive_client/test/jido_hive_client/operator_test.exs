@@ -188,7 +188,11 @@ defmodule JidoHiveClient.OperatorTest do
 
             {202, %{},
              Jason.encode!(%{
-               "data" => %{"operation_id" => "room_run-op-1", "status" => "accepted"}
+               "data" => %{
+                 "operation_id" => "room_run-op-1",
+                 "client_operation_id" => "room_run-client-op",
+                 "status" => "accepted"
+               }
              })}
 
           {"GET", "/rooms/room-1/run_operations/room_run-op-1"} ->
@@ -214,16 +218,26 @@ defmodule JidoHiveClient.OperatorTest do
 
     assert_receive {:create_room_request, ^room_payload}
 
-    assert {:ok, %{"operation_id" => "room_run-op-1", "status" => "accepted"}} =
+    assert {:ok,
+            %{
+              "operation_id" => "room_run-op-1",
+              "client_operation_id" => "room_run-client-op",
+              "status" => "accepted"
+            }} =
              Operator.start_room_run_operation(TestHTTPServer.base_url(server), "room-1",
                max_assignments: 1,
                assignment_timeout_ms: 45_000,
                request_timeout_ms: 55_000,
+               client_operation_id: "room_run-client-op",
                operation_id: "room_run-client-op"
              )
 
     assert_receive {:run_room_request,
-                    %{"max_assignments" => 1, "assignment_timeout_ms" => 45_000}}
+                    %{
+                      "max_assignments" => 1,
+                      "assignment_timeout_ms" => 45_000,
+                      "client_operation_id" => "room_run-client-op"
+                    }}
 
     assert {:ok, %{"operation_id" => "room_run-op-1", "status" => "completed"}} =
              Operator.fetch_room_run_operation(

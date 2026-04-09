@@ -145,6 +145,7 @@ defmodule JidoHiveClient.Operator do
 
     payload =
       %{}
+      |> maybe_put_string("client_operation_id", Keyword.get(opts, :client_operation_id))
       |> maybe_put_integer("max_assignments", Keyword.get(opts, :max_assignments))
       |> maybe_put_integer("assignment_timeout_ms", assignment_timeout_ms)
 
@@ -361,6 +362,11 @@ defmodule JidoHiveClient.Operator do
   defp maybe_put_integer(map, _key, nil), do: map
   defp maybe_put_integer(map, _key, value) when not is_integer(value), do: map
   defp maybe_put_integer(map, key, value), do: Map.put(map, key, value)
+
+  defp maybe_put_string(map, _key, nil), do: map
+  defp maybe_put_string(map, _key, value) when not is_binary(value), do: map
+  defp maybe_put_string(map, _key, value) when value == "", do: map
+  defp maybe_put_string(map, key, value), do: Map.put(map, key, value)
 
   defp maybe_put_option(opts, _key, nil), do: opts
   defp maybe_put_option(opts, key, value), do: Keyword.put(opts, key, value)

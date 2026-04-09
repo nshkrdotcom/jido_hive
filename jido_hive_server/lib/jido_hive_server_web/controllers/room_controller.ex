@@ -44,12 +44,14 @@ defmodule JidoHiveServerWeb.RoomController do
 
   def start_run_operation(conn, %{"id" => room_id} = params) do
     max_assignments = parse_optional_integer(Map.get(params, "max_assignments"))
+    client_operation_id = parse_optional_string(Map.get(params, "client_operation_id"))
 
     assignment_timeout_ms =
       parse_integer(Map.get(params, "assignment_timeout_ms", 180_000), 180_000)
 
     run_opts =
       [assignment_timeout_ms: assignment_timeout_ms]
+      |> maybe_put_client_operation_id(client_operation_id)
       |> maybe_put_max_assignments(max_assignments)
 
     case RunOperations.start_run(room_id, run_opts) do
@@ -146,10 +148,18 @@ defmodule JidoHiveServerWeb.RoomController do
   defp parse_optional_integer(value) when is_binary(value), do: parse_integer(value, nil)
   defp parse_optional_integer(_value), do: nil
 
+  defp parse_optional_string(value) when is_binary(value) and value != "", do: value
+  defp parse_optional_string(_value), do: nil
+
   defp maybe_put_max_assignments(opts, nil), do: opts
 
   defp maybe_put_max_assignments(opts, max_assignments),
     do: Keyword.put(opts, :max_assignments, max_assignments)
+
+  defp maybe_put_client_operation_id(opts, nil), do: opts
+
+  defp maybe_put_client_operation_id(opts, client_operation_id),
+    do: Keyword.put(opts, :client_operation_id, client_operation_id)
 
   defp normalize(%DateTime{} = value), do: DateTime.to_iso8601(value)
   defp normalize(%_{} = value), do: value |> Map.from_struct() |> normalize()

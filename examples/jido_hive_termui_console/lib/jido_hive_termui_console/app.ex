@@ -772,14 +772,30 @@ defmodule JidoHiveTermuiConsole.App do
   end
 
   def handle_message(
-        {:room_run_operation_started, room_id, operation_id, {:ok, _operation}},
+        {:room_run_operation_started, room_id, client_operation_id, {:ok, operation}},
         state
       ) do
+    server_operation_id =
+      Map.get(operation, "operation_id") || Map.get(operation, :operation_id) ||
+        client_operation_id
+
+    resolved_client_operation_id =
+      Map.get(operation, "client_operation_id") ||
+        Map.get(operation, :client_operation_id) ||
+        client_operation_id
+
     next_state =
       if state.room_id == room_id do
         state
-        |> Map.put(:pending_room_run, %{room_id: room_id, operation_id: operation_id})
-        |> Model.set_status("Room run accepted; tracking op=#{operation_id}", :info)
+        |> Map.put(:pending_room_run, %{
+          room_id: room_id,
+          operation_id: server_operation_id,
+          client_operation_id: resolved_client_operation_id
+        })
+        |> Model.set_status(
+          "Room run accepted; #{run_operation_label(server_operation_id, resolved_client_operation_id)}",
+          :info
+        )
       else
         state
       end
@@ -788,12 +804,16 @@ defmodule JidoHiveTermuiConsole.App do
   end
 
   def handle_message(
-        {:room_run_operation_started, room_id, _operation_id, {:error, reason}},
+        {:room_run_operation_started, room_id, client_operation_id, {:error, reason}},
         state
       ) do
     next_state =
       if state.room_id == room_id do
-        Model.set_status(state, "Room run start failed: #{inspect(reason)}", :error)
+        Model.set_status(
+          state,
+          "Room run start failed: #{inspect(reason)} client_op=#{client_operation_id}",
+          :error
+        )
       else
         state
       end
@@ -1045,20 +1065,21 @@ defmodule JidoHiveTermuiConsole.App do
     caller = self()
     operator_module = state.operator_module
     api_base_url = state.api_base_url
-    operation_id = JidoHiveClient.Operation.new_id("room_run")
+    client_operation_id = JidoHiveClient.Operation.new_id("room_run")
 
     spawn(fn ->
       result =
         safe_async_result(fn ->
           operator_module.start_room_run_operation(api_base_url, room_id,
             assignment_timeout_ms: 180_000,
-            operation_id: operation_id
+            client_operation_id: client_operation_id,
+            operation_id: client_operation_id
           )
         end)
 
-      log_async_operation(operation_id, "room run start", room_id, state.participant_id, result)
+      log_room_run_start(client_operation_id, room_id, state.participant_id, result)
 
-      send(caller, {:room_run_operation_started, room_id, operation_id, result})
+      send(caller, {:room_run_operation_started, room_id, client_operation_id, result})
     end)
 
     :ok
@@ -1199,35 +1220,50 @@ defmodule JidoHiveTermuiConsole.App do
 
   defp poll_pending_room_run(%Model{} = state) do
     case state.pending_room_run do
-      %{room_id: room_id, operation_id: operation_id} ->
+      %{room_id: room_id, operation_id: server_operation_id} = pending_room_run ->
+        client_operation_id = Map.get(pending_room_run, :client_operation_id)
+
         case state.operator_module.fetch_room_run_operation(
                state.api_base_url,
                room_id,
-               operation_id,
-               operation_id: operation_id
+               server_operation_id,
+               operation_id: server_operation_id
              ) do
           {:ok, %{"status" => "completed"}} ->
             state
             |> Map.put(:pending_room_run, nil)
-            |> Model.set_status("Room run completed", :info)
+            |> Model.set_status(
+              "Room run completed; #{run_operation_label(server_operation_id, client_operation_id)}",
+              :info
+            )
 
           {:ok, %{"status" => "failed", "error" => error}} ->
             state
             |> Map.put(:pending_room_run, nil)
-            |> Model.set_status("Room run failed: #{error}", :error)
+            |> Model.set_status(
+              "Room run failed: #{error} #{run_operation_label(server_operation_id, client_operation_id)}",
+              :error
+            )
 
           {:ok, %{"status" => status}} when status in ["accepted", "running"] ->
-            Model.set_status(state, "Room run #{status}; op=#{operation_id}", :info)
+            Model.set_status(
+              state,
+              "Room run #{status}; #{run_operation_label(server_operation_id, client_operation_id)}",
+              :info
+            )
 
           {:error, :operation_not_found} ->
             state
             |> Map.put(:pending_room_run, nil)
-            |> Model.set_status("Room run operation was not found: op=#{operation_id}", :error)
+            |> Model.set_status(
+              "Room run operation was not found: #{run_operation_label(server_operation_id, client_operation_id)}",
+              :error
+            )
 
           {:error, reason} ->
             Model.set_status(
               state,
-              "Room run status check failed: #{inspect(reason)} op=#{operation_id}",
+              "Room run status check failed: #{inspect(reason)} #{run_operation_label(server_operation_id, client_operation_id)}",
               :warn
             )
         end
@@ -1303,6 +1339,33 @@ defmodule JidoHiveTermuiConsole.App do
     Logger.error(
       "#{label} failed operation_id=#{operation_id} room_id=#{room_id} participant_id=#{participant_id} reason=#{inspect(reason)}"
     )
+  end
+
+  defp log_room_run_start(client_operation_id, room_id, participant_id, {:ok, operation}) do
+    server_operation_id =
+      Map.get(operation, "operation_id") || Map.get(operation, :operation_id) ||
+        client_operation_id
+
+    Logger.info(
+      "room run start completed client_operation_id=#{client_operation_id} server_operation_id=#{server_operation_id} room_id=#{room_id} participant_id=#{participant_id}"
+    )
+  end
+
+  defp log_room_run_start(client_operation_id, room_id, participant_id, {:error, reason}) do
+    Logger.error(
+      "room run start failed client_operation_id=#{client_operation_id} room_id=#{room_id} participant_id=#{participant_id} reason=#{inspect(reason)}"
+    )
+  end
+
+  defp run_operation_label(server_operation_id, client_operation_id)
+       when is_binary(server_operation_id) and is_binary(client_operation_id) and
+              server_operation_id != client_operation_id do
+    "server_op=#{server_operation_id} client_op=#{client_operation_id}"
+  end
+
+  defp run_operation_label(server_operation_id, _client_operation_id)
+       when is_binary(server_operation_id) do
+    "op=#{server_operation_id}"
   end
 
   defp set_run_timeout_status(state, operation_id, metadata) do

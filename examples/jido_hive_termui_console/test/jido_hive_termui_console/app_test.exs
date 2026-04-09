@@ -108,7 +108,13 @@ defmodule JidoHiveTermuiConsole.AppTest do
 
     def start_room_run_operation(_base, room_id, opts) do
       send(test_pid(), {:operator_start_room_run_operation, room_id, opts})
-      {:ok, %{"operation_id" => Keyword.fetch!(opts, :operation_id), "status" => "accepted"}}
+
+      {:ok,
+       %{
+         "operation_id" => "server-room-run-op-1",
+         "client_operation_id" => Keyword.fetch!(opts, :client_operation_id),
+         "status" => "accepted"
+       }}
     end
 
     def list_targets(_base), do: {:ok, []}
@@ -704,8 +710,40 @@ defmodule JidoHiveTermuiConsole.AppTest do
     assert next_state.status_line =~ "run started in background"
     assert room_id == next_state.room_id
 
-    assert_receive {:operator_start_room_run_operation, ^room_id,
-                    [assignment_timeout_ms: 180_000, operation_id: _]}
+    assert_receive {:operator_start_room_run_operation, ^room_id, opts}
+
+    assert Keyword.get(opts, :assignment_timeout_ms) == 180_000
+    client_operation_id = Keyword.fetch!(opts, :client_operation_id)
+    assert Keyword.get(opts, :operation_id) == client_operation_id
+
+    assert_receive {:room_run_operation_started, ^room_id, ^client_operation_id,
+                    {:ok,
+                     %{
+                       "operation_id" => "server-room-run-op-1",
+                       "client_operation_id" => ^client_operation_id,
+                       "status" => "accepted"
+                     }}}
+
+    {:noreply, run_started_state} =
+      App.handle_info(
+        {:room_run_operation_started, room_id, client_operation_id,
+         {:ok,
+          %{
+            "operation_id" => "server-room-run-op-1",
+            "client_operation_id" => client_operation_id,
+            "status" => "accepted"
+          }}},
+        next_state
+      )
+
+    assert run_started_state.pending_room_run == %{
+             room_id: room_id,
+             operation_id: "server-room-run-op-1",
+             client_operation_id: client_operation_id
+           }
+
+    assert run_started_state.status_line =~ "server_op=server-room-run-op-1"
+    assert run_started_state.status_line =~ "client_op=#{client_operation_id}"
   end
 
   test "run room timeout is downgraded when room activity is already visible", %{model: model} do

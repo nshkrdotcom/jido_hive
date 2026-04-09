@@ -40,6 +40,7 @@ defmodule JidoHiveServer.RunOperations do
 
         operation = %{
           operation_id: operation_id,
+          client_operation_id: Keyword.get(run_opts, :client_operation_id),
           room_id: room_id,
           status: "accepted",
           phase: "accepted",

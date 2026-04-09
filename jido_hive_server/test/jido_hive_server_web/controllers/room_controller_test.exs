@@ -81,12 +81,14 @@ defmodule JidoHiveServerWeb.RoomControllerTest do
     run_conn =
       post(recycle(create_conn), ~p"/api/rooms/room-http-1/run_operations", %{
         "max_assignments" => 1,
-        "assignment_timeout_ms" => 5_000
+        "assignment_timeout_ms" => 5_000,
+        "client_operation_id" => "room_run-client-http-1"
       })
 
     assert %{
              "data" => %{
                "operation_id" => operation_id,
+               "client_operation_id" => "room_run-client-http-1",
                "room_id" => "room-http-1",
                "status" => "accepted"
              }
@@ -174,12 +176,14 @@ defmodule JidoHiveServerWeb.RoomControllerTest do
     run_conn =
       post(recycle(create_conn), ~p"/api/rooms/room-http-string-phases-1/run_operations", %{
         "max_assignments" => 1,
-        "assignment_timeout_ms" => 5_000
+        "assignment_timeout_ms" => 5_000,
+        "client_operation_id" => "room_run-client-http-string"
       })
 
     assert %{
              "data" => %{
                "operation_id" => operation_id,
+               "client_operation_id" => "room_run-client-http-string",
                "room_id" => "room-http-string-phases-1",
                "status" => "accepted"
              }

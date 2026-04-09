@@ -134,6 +134,8 @@ Room submit and room run are now operation-based:
 - the status line includes an operation id while a submit is pending
 - `F2` shows the latest room operation and transport lane diagnostics
 - room run start is accepted and tracked separately from room sync
+- room run logging includes both `client_operation_id` and `server_operation_id`
+- use the `server_operation_id` for `run-status` and `/run_operations/:operation_id` checks
 
 ### Wizard and publish
 

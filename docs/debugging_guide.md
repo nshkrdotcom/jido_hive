@@ -193,6 +193,12 @@ Questions this answers:
 - Is the timeout happening during operation start or later during operation polling?
 - Is the TUI only surfacing a client/server timing issue that already exists headlessly?
 
+Important run-operation note:
+
+- human-facing tools may log both a `client_operation_id` and a `server_operation_id`
+- use the `server_operation_id` for `run-status` and direct `/run_operations/:operation_id` fetches
+- use the `client_operation_id` only for correlating local transport/start logs
+
 Preferred run-operation checks:
 
 ```bash
@@ -204,8 +210,8 @@ curl -sS https://jido-hive-server-test.app.nsai.online/api/rooms/<room-id>/run_o
   --operation-id <operation-id> | jq
 ```
 
-If you do not have an `operation_id`, capture it from the console debug popup,
-client stderr trace, or transport logs first.
+If you do not have a `server_operation_id`, capture it from the console debug popup,
+console log, client stderr trace, or transport logs first.
 
 ### 6. Only then run the TUI against the same room
 
@@ -331,8 +337,8 @@ JIDO_HIVE_CLIENT_LOG_LEVEL=debug \
 
 Then correlate:
 
-- `operation_id` in stderr trace
-- `operation_id` in console log
+- `client_operation_id` in stderr trace
+- `client_operation_id` and `server_operation_id` in console log
 - `operation_id` in transport log lines
 - server request path and status
 
