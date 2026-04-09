@@ -146,6 +146,10 @@ Use this order every time. It is how you separate UI bugs from client bugs.
 4. If a console action has no headless equivalent, add the headless path before doing more UI work.
 5. Use local `iex` for server/client internals; do not assume a production remote-shell workflow exists yet.
 
+General reproducible workflow:
+
+- `docs/debugging_guide.md`
+
 ## Production connector setup
 
 This is the current validated manual-install path.
@@ -534,6 +538,7 @@ mix ci
 ## Related docs
 
 - Root guide: [README.md](../../README.md)
+- General debugging guide: `docs/debugging_guide.md`
 - Client guide: [jido_hive_client/README.md](../../jido_hive_client/README.md)
 - Server guide: [jido_hive_server/README.md](../../jido_hive_server/README.md)
 - Debugging runbook: `~/jb/docs/20260408/jido_hive_debugging_introspection/jido_hive_debugging_introspection_and_runbook.md`

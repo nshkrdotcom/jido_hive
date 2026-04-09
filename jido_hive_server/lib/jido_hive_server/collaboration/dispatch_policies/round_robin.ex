@@ -3,7 +3,7 @@ defmodule JidoHiveServer.Collaboration.DispatchPolicies.RoundRobin do
 
   @behaviour JidoHiveServer.Collaboration.DispatchPolicy
 
-  alias JidoHiveServer.Collaboration.ContextView
+  alias JidoHiveServer.Collaboration.{ContextView, DispatchPhaseConfig}
 
   @policy_id "round_robin/v2"
 
@@ -153,11 +153,17 @@ defmodule JidoHiveServer.Collaboration.DispatchPolicies.RoundRobin do
 
   defp phases(snapshot) do
     snapshot
+    |> raw_phases()
+    |> DispatchPhaseConfig.normalize(@default_phases)
+  end
+
+  defp raw_phases(snapshot) do
+    snapshot
     |> Map.get(:dispatch_state, %{})
     |> Map.get(:phases) ||
       snapshot
       |> Map.get(:dispatch_policy_config, %{})
-      |> Map.get("phases", @default_phases)
+      |> then(&(Map.get(&1, "phases") || Map.get(&1, :phases)))
   end
 
   defp runtime_participants(snapshot) do

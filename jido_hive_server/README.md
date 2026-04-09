@@ -249,6 +249,10 @@ Detailed runbook:
 
 - `~/jb/docs/20260408/jido_hive_debugging_introspection/jido_hive_debugging_introspection_and_runbook.md`
 
+General reproducible workflow:
+
+- `docs/debugging_guide.md`
+
 ### Quality loop
 
 From `jido_hive_server/`:
@@ -280,5 +284,6 @@ MIX_ENV=coolify mix coolify.status --project server --latest
 ## Related docs
 
 - Root guide: [README.md](../README.md)
+- General debugging guide: `docs/debugging_guide.md`
 - Client guide: [jido_hive_client/README.md](../jido_hive_client/README.md)
 - Console guide: [examples/jido_hive_termui_console/README.md](../examples/jido_hive_termui_console/README.md)

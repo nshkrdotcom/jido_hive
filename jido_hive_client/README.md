@@ -380,9 +380,14 @@ When a bug is reported in the console:
 4. if the client surface is missing the needed headless action, add it before changing more UI code
 5. if you need deeper local introspection, use local `iex`; do not jump straight to production remote-shell assumptions
 
+General reproducible workflow:
+
+- `docs/debugging_guide.md`
+
 ## Related docs
 
 - Root guide: [README.md](../README.md)
+- General debugging guide: `docs/debugging_guide.md`
 - Server guide: [jido_hive_server/README.md](../jido_hive_server/README.md)
 - Console guide: [examples/jido_hive_termui_console/README.md](../examples/jido_hive_termui_console/README.md)
 - Debugging runbook: `~/jb/docs/20260408/jido_hive_debugging_introspection/jido_hive_debugging_introspection_and_runbook.md`

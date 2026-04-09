@@ -30,6 +30,7 @@ If you are new here, read this file first, then the package READMEs.
 - [Production connector setup](#production-connector-setup)
 - [Developer workflow](#developer-workflow)
 - [Debugging order](#debugging-order)
+- [General debugging guide](#general-debugging-guide)
 - [Package guides](#package-guides)
 
 ## Quick start
@@ -325,8 +326,23 @@ Detailed runbook:
 
 - `~/jb/docs/20260408/jido_hive_debugging_introspection/jido_hive_debugging_introspection_and_runbook.md`
 
+## General debugging guide
+
+For the full reproducible workflow, including:
+
+- server truth first
+- headless client reproduction
+- TUI-last verification
+- room ownership matrix
+- trace capture expectations
+
+use:
+
+- `docs/debugging_guide.md`
+
 ## Package guides
 
 - Server: [jido_hive_server/README.md](jido_hive_server/README.md)
 - Client: [jido_hive_client/README.md](jido_hive_client/README.md)
 - Console: [examples/jido_hive_termui_console/README.md](examples/jido_hive_termui_console/README.md)
+- General debugging guide: `docs/debugging_guide.md`
