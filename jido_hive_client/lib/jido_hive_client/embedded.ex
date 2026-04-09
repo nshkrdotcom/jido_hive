@@ -36,7 +36,14 @@ defmodule JidoHiveClient.Embedded do
     timeline: [],
     context_objects: [],
     next_cursor: nil,
-    poll_interval_ms: @default_poll_interval_ms
+    poll_interval_ms: @default_poll_interval_ms,
+    sync_task_pid: nil,
+    sync_task_ref: nil,
+    sync_waiters: [],
+    sync_record_event: false,
+    sync_queued: false,
+    sync_queued_record_event: false,
+    queued_sync_waiters: []
   ]
 
   @spec child_spec(keyword()) :: Supervisor.child_spec()
@@ -125,11 +132,8 @@ defmodule JidoHiveClient.Embedded do
     {:reply, :ok, next_state}
   end
 
-  def handle_call(:refresh, _from, %__MODULE__{} = state) do
-    case sync_room(state, record_event?: true) do
-      {:ok, next_state, _changed?} -> {:reply, {:ok, current_snapshot(next_state)}, next_state}
-      {:error, reason, next_state} -> {:reply, {:error, reason}, next_state}
-    end
+  def handle_call(:refresh, from, %__MODULE__{} = state) do
+    {:noreply, request_sync(state, true, [from])}
   end
 
   def handle_call({:submit_chat, attrs}, _from, %__MODULE__{} = state) do
@@ -201,23 +205,47 @@ defmodule JidoHiveClient.Embedded do
 
   @impl true
   def handle_info({:sync_room_async, record_event?}, %__MODULE__{} = state) do
+    {:noreply, request_sync(state, record_event?)}
+  end
+
+  def handle_info(:poll, %__MODULE__{} = state) do
+    next_state = request_sync(state, false)
+
+    Process.send_after(self(), :poll, next_state.poll_interval_ms)
+    {:noreply, next_state}
+  end
+
+  def handle_info(
+        {:sync_result, pid, result},
+        %__MODULE__{sync_task_pid: pid, sync_task_ref: ref} = state
+      ) do
+    Process.demonitor(ref, [:flush])
+
+    record_event? = state.sync_record_event
+    waiters = state.sync_waiters
+
     next_state =
-      case sync_room(state, record_event?: record_event?) do
-        {:ok, synced, _changed?} -> synced
-        {:error, _reason, failed_state} -> failed_state
-      end
+      state
+      |> clear_sync_task()
+      |> complete_sync(result, record_event?, waiters)
+      |> maybe_start_queued_sync()
 
     {:noreply, next_state}
   end
 
-  def handle_info(:poll, %__MODULE__{} = state) do
-    next_state =
-      case sync_room(state, record_event?: false) do
-        {:ok, synced, _changed?} -> synced
-        {:error, _reason, failed_state} -> failed_state
-      end
+  def handle_info(
+        {:DOWN, ref, :process, pid, reason},
+        %__MODULE__{sync_task_pid: pid, sync_task_ref: ref} = state
+      ) do
+    record_event? = state.sync_record_event
+    waiters = state.sync_waiters
 
-    Process.send_after(self(), :poll, next_state.poll_interval_ms)
+    next_state =
+      state
+      |> clear_sync_task()
+      |> complete_sync({:error, {:sync_task_exit, reason}}, record_event?, waiters)
+      |> maybe_start_queued_sync()
+
     {:noreply, next_state}
   end
 
@@ -227,7 +255,15 @@ defmodule JidoHiveClient.Embedded do
   end
 
   @impl true
-  def terminate(_reason, %__MODULE__{runtime: runtime, owned_runtime?: owned_runtime?}) do
+  def terminate(
+        _reason,
+        %__MODULE__{
+          runtime: runtime,
+          owned_runtime?: owned_runtime?,
+          sync_task_pid: sync_task_pid
+        }
+      ) do
+    if is_pid(sync_task_pid), do: Process.exit(sync_task_pid, :shutdown)
     _ = Runtime.disconnect(runtime)
     if owned_runtime? and is_pid(runtime), do: GenServer.stop(runtime)
     :ok
@@ -270,51 +306,170 @@ defmodule JidoHiveClient.Embedded do
     })
   end
 
-  defp sync_room(%__MODULE__{} = state, opts) do
+  defp request_sync(%__MODULE__{} = state, record_event?, waiters \\ []) do
+    if sync_inflight?(state) do
+      %{
+        state
+        | sync_queued: true,
+          sync_queued_record_event: state.sync_queued_record_event || record_event?,
+          queued_sync_waiters: state.queued_sync_waiters ++ waiters
+      }
+    else
+      start_sync_task(state, record_event?, waiters)
+    end
+  end
+
+  defp start_sync_task(%__MODULE__{} = state, record_event?, waiters) do
+    parent = self()
+    sync_state = state
+
+    {pid, ref} =
+      spawn_monitor(fn ->
+        send(parent, {:sync_result, self(), fetch_sync_result(sync_state)})
+      end)
+
+    %{
+      state
+      | sync_task_pid: pid,
+        sync_task_ref: ref,
+        sync_waiters: waiters,
+        sync_record_event: record_event?
+    }
+  end
+
+  defp maybe_start_queued_sync(%__MODULE__{sync_queued: false} = state), do: state
+
+  defp maybe_start_queued_sync(%__MODULE__{} = state) do
+    waiters = state.queued_sync_waiters
+    record_event? = state.sync_queued_record_event
+
+    state
+    |> Map.put(:sync_queued, false)
+    |> Map.put(:sync_queued_record_event, false)
+    |> Map.put(:queued_sync_waiters, [])
+    |> start_sync_task(record_event?, waiters)
+  end
+
+  defp clear_sync_task(%__MODULE__{} = state) do
+    %{
+      state
+      | sync_task_pid: nil,
+        sync_task_ref: nil,
+        sync_waiters: [],
+        sync_record_event: false
+    }
+  end
+
+  defp complete_sync(%__MODULE__{} = state, {:ok, sync_result}, record_event?, waiters) do
+    {next_state, _changed?} = apply_sync_result(state, sync_result, record_event?)
+    reply_sync_waiters(waiters, {:ok, current_snapshot(next_state)})
+    next_state
+  end
+
+  defp complete_sync(%__MODULE__{} = state, {:error, reason}, record_event?, waiters) do
+    if record_event? do
+      :ok =
+        Runtime.record_event(state.runtime, %{
+          type: "embedded.sync.failed",
+          room_id: state.room_id,
+          payload: %{"reason" => inspect(reason)}
+        })
+    end
+
+    next_state = %{state | last_error: reason}
+    reply_sync_waiters(waiters, {:error, reason})
+    next_state
+  end
+
+  defp fetch_sync_result(%__MODULE__{} = state) do
     with {:ok, %{entries: entries, next_cursor: next_cursor}} <-
            state.room_api.fetch_timeline(state.room_api_opts, state.room_id,
              after: state.next_cursor
            ),
          {:ok, context_objects} <-
            state.room_api.fetch_context_objects(state.room_api_opts, state.room_id) do
-      timeline = (state.timeline ++ entries) |> Enum.take(-@timeline_limit)
-      changed? = entries != [] or context_objects != state.context_objects
-
-      next_state = %{
-        state
-        | timeline: timeline,
-          context_objects: context_objects,
-          next_cursor: next_cursor || state.next_cursor,
-          last_sync_at: DateTime.utc_now(),
-          last_error: nil
-      }
-
-      if changed? and Keyword.get(opts, :record_event?, false) do
-        :ok =
-          Runtime.record_event(state.runtime, %{
-            type: "embedded.sync.updated",
-            room_id: state.room_id,
-            payload: %{
-              "new_entries" => length(entries),
-              "context_count" => length(context_objects)
-            }
-          })
-      end
-
-      {:ok, next_state, changed?}
+      {:ok,
+       %{
+         entries: entries,
+         next_cursor: next_cursor,
+         context_objects: context_objects
+       }}
     else
-      {:error, reason} ->
-        if Keyword.get(opts, :record_event?, false) do
-          :ok =
-            Runtime.record_event(state.runtime, %{
-              type: "embedded.sync.failed",
-              room_id: state.room_id,
-              payload: %{"reason" => inspect(reason)}
-            })
-        end
-
-        {:error, reason, %{state | last_error: reason}}
+      {:error, reason} -> {:error, reason}
     end
+  end
+
+  defp apply_sync_result(%__MODULE__{} = state, sync_result, record_event?) do
+    timeline =
+      state.timeline
+      |> append_timeline_entries(sync_result.entries)
+      |> Enum.take(-@timeline_limit)
+
+    changed? = timeline != state.timeline or sync_result.context_objects != state.context_objects
+
+    next_state = %{
+      state
+      | timeline: timeline,
+        context_objects: sync_result.context_objects,
+        next_cursor: sync_result.next_cursor || state.next_cursor,
+        last_sync_at: DateTime.utc_now(),
+        last_error: nil
+    }
+
+    if changed? and record_event? do
+      :ok =
+        Runtime.record_event(state.runtime, %{
+          type: "embedded.sync.updated",
+          room_id: state.room_id,
+          payload: %{
+            "new_entries" => length(sync_result.entries),
+            "context_count" => length(sync_result.context_objects)
+          }
+        })
+    end
+
+    {next_state, changed?}
+  end
+
+  defp append_timeline_entries(existing, []), do: existing
+
+  defp append_timeline_entries(existing, entries) do
+    seen =
+      existing
+      |> Enum.map(&timeline_entry_key/1)
+      |> MapSet.new()
+
+    {timeline, _seen} =
+      Enum.reduce(entries, {existing, seen}, fn entry, {acc, seen_keys} ->
+        key = timeline_entry_key(entry)
+
+        cond do
+          is_nil(key) ->
+            {acc ++ [entry], seen_keys}
+
+          MapSet.member?(seen_keys, key) ->
+            {acc, seen_keys}
+
+          true ->
+            {acc ++ [entry], MapSet.put(seen_keys, key)}
+        end
+      end)
+
+    timeline
+  end
+
+  defp timeline_entry_key(entry) do
+    Map.get(entry, "cursor") || Map.get(entry, "event_id") || Map.get(entry, "entry_id")
+  end
+
+  defp reply_sync_waiters([], _reply), do: :ok
+
+  defp reply_sync_waiters(waiters, reply) do
+    Enum.each(waiters, &GenServer.reply(&1, reply))
+  end
+
+  defp sync_inflight?(%__MODULE__{sync_task_pid: pid, sync_task_ref: ref}) do
+    is_pid(pid) and is_reference(ref)
   end
 
   defp acceptance_contribution(context_object, attrs, %__MODULE__{} = state) do

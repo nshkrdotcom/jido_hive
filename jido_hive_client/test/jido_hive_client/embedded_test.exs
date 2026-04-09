@@ -115,6 +115,36 @@ defmodule JidoHiveClient.EmbeddedTest do
     end
   end
 
+  defmodule BlockingSyncRoomApiStub do
+    @behaviour JidoHiveClient.Boundary.RoomApi
+
+    @impl true
+    def fetch_timeline(opts, room_id, query_opts) do
+      test_pid = Keyword.fetch!(opts, :test_pid)
+      send(test_pid, {:blocking_fetch_timeline, self(), room_id, query_opts})
+
+      receive do
+        :release_fetch_timeline ->
+          {:ok, %{entries: [], next_cursor: Keyword.get(query_opts, :after)}}
+      after
+        5_000 ->
+          {:ok, %{entries: [], next_cursor: Keyword.get(query_opts, :after)}}
+      end
+    end
+
+    @impl true
+    def fetch_context_objects(opts, room_id) do
+      send(Keyword.fetch!(opts, :test_pid), {:blocking_fetch_context_objects, room_id})
+      {:ok, []}
+    end
+
+    @impl true
+    def submit_contribution(opts, room_id, payload) do
+      send(Keyword.fetch!(opts, :test_pid), {:submit_contribution, room_id, payload})
+      {:ok, %{"data" => %{"room_id" => room_id}}}
+    end
+  end
+
   defp wait_until(fun, attempts \\ 20)
 
   defp wait_until(fun, attempts) when attempts > 0 do
@@ -261,5 +291,30 @@ defmodule JidoHiveClient.EmbeddedTest do
     assert contribution["summary"] == "Acknowledge now, sync later"
     assert_receive {:submit_contribution, "room-1", payload}
     assert payload["summary"] == "Acknowledge now, sync later"
+  end
+
+  test "submit_chat stays responsive while a poll sync is in flight" do
+    {:ok, embedded} =
+      Embedded.start_link(
+        room_id: "room-1",
+        participant_id: "alice",
+        participant_role: "operator",
+        room_api: {BlockingSyncRoomApiStub, [test_pid: self()]},
+        poll_interval_ms: 60_000
+      )
+
+    assert_receive {:blocking_fetch_timeline, blocker, "room-1", _query_opts}
+
+    task =
+      Task.async(fn ->
+        Embedded.submit_chat(embedded, %{text: "Submit while sync is blocked"})
+      end)
+
+    assert {:ok, contribution} = Task.await(task, 500)
+    assert contribution["summary"] == "Submit while sync is blocked"
+    assert_receive {:submit_contribution, "room-1", payload}
+    assert payload["summary"] == "Submit while sync is blocked"
+
+    send(blocker, :release_fetch_timeline)
   end
 end
