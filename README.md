@@ -346,3 +346,7 @@ use:
 - Client: [jido_hive_client/README.md](jido_hive_client/README.md)
 - Console: [examples/jido_hive_termui_console/README.md](examples/jido_hive_termui_console/README.md)
 - General debugging guide: `docs/debugging_guide.md`
+
+## License
+
+This project is licensed under the MIT License. See [LICENSE](LICENSE) for details.

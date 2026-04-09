@@ -2,6 +2,7 @@ defmodule JidoHiveWorkspace.MixProject do
   use Mix.Project
 
   @version "0.1.0"
+  @source_url "https://github.com/nshkrdotcom/jido_hive"
 
   def project do
     [
@@ -10,6 +11,7 @@ defmodule JidoHiveWorkspace.MixProject do
       elixir: "~> 1.19",
       start_permanent: Mix.env() == :prod,
       deps: deps(),
+      package: package(),
       aliases: aliases(),
       blitz_workspace: blitz_workspace(),
       description: "Workspace tooling root for the Jido Hive repository"
@@ -106,6 +108,13 @@ defmodule JidoHiveWorkspace.MixProject do
         dialyzer: [args: ["dialyzer", "--force-check"]],
         docs: [args: ["docs", "--warnings-as-errors"], mix_env: "dev"]
       ]
+    ]
+  end
+
+  defp package do
+    [
+      licenses: ["MIT"],
+      links: %{"GitHub" => @source_url}
     ]
   end
 end
