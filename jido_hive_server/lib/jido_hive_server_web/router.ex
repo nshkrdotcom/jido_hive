@@ -27,7 +27,8 @@ defmodule JidoHiveServerWeb.Router do
     get "/rooms/:id/context_objects", RoomContextController, :index
     get "/rooms/:id/context_objects/:context_id", RoomContextController, :show
     post "/rooms/:id/contributions", RoomContributionController, :create
-    post "/rooms/:id/run", RoomController, :run
+    post "/rooms/:id/run_operations", RoomController, :start_run_operation
+    get "/rooms/:id/run_operations/:operation_id", RoomController, :show_run_operation
     get "/rooms/:id/publication_plan", RoomController, :publication_plan
     get "/rooms/:id/publications", RoomController, :publication_runs
     post "/rooms/:id/publications", RoomController, :execute_publications

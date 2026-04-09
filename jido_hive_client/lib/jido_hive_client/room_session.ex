@@ -27,6 +27,9 @@ defmodule JidoHiveClient.RoomSession do
   @spec submit_chat(pid(), map()) :: {:ok, map()} | {:error, term()}
   def submit_chat(session, attrs), do: Embedded.submit_chat(session, attrs)
 
+  @spec submit_chat_async(pid(), map()) :: {:ok, map()} | {:error, term()}
+  def submit_chat_async(session, attrs), do: Embedded.submit_chat_async(session, attrs)
+
   @spec accept_context(pid(), String.t(), map()) :: {:ok, map()} | {:error, term()}
   def accept_context(session, context_id, attrs),
     do: Embedded.accept_context(session, context_id, attrs)

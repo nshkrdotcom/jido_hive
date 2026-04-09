@@ -2,6 +2,8 @@ defmodule JidoHiveClient.Boundary.RoomApi.Http do
   @moduledoc false
 
   @behaviour JidoHiveClient.Boundary.RoomApi
+  alias JidoHiveClient.Transport.HTTP, as: TransportHTTP
+
   @request_timeout_ms 10_000
   @connect_timeout_ms 3_000
 
@@ -43,56 +45,40 @@ defmodule JidoHiveClient.Boundary.RoomApi.Http do
   end
 
   defp request(method, opts, path, payload) do
-    :ok = ensure_http_started()
-
     base_url =
       opts
       |> Keyword.get(:base_url, "http://127.0.0.1:4000/api")
       |> String.trim_trailing("/")
 
-    url = String.to_charlist(base_url <> path)
+    transport_opts =
+      opts
+      |> Keyword.take([:operation_id, :lane, :request_timeout_ms, :connect_timeout_ms])
+      |> Keyword.put_new(:surface, :room_api)
+      |> Keyword.put_new(:lane, default_lane(method, path))
+      |> Keyword.put_new(:request_timeout_ms, @request_timeout_ms)
+      |> Keyword.put_new(:connect_timeout_ms, @connect_timeout_ms)
 
-    headers = [{~c"content-type", ~c"application/json"}, {~c"accept", ~c"application/json"}]
+    case method do
+      :get ->
+        TransportHTTP.get(base_url, path, transport_opts)
 
-    request =
-      case method do
-        :get -> {url, headers}
-        :post -> {url, headers, ~c"application/json", Jason.encode!(payload)}
-      end
-
-    http_opts = [timeout: @request_timeout_ms, connect_timeout: @connect_timeout_ms]
-
-    case :httpc.request(method, request, http_opts, body_format: :binary) do
-      {:ok, {{_version, status, _reason_phrase}, _response_headers, body}}
-      when status in 200..299 ->
-        {:ok, decode_body(body)}
-
-      {:ok, {{_version, 404, _reason_phrase}, _response_headers, _body}} ->
-        {:error, :room_not_found}
-
-      {:ok, {{_version, status, _reason_phrase}, _response_headers, body}} ->
-        {:error, {:http_error, status, decode_body(body)}}
-
-      {:error, reason} ->
-        {:error, reason}
+      :post ->
+        TransportHTTP.post(base_url, path, payload, transport_opts)
     end
+  end
+
+  defp default_lane(:get, path) do
+    if String.contains?(path, "/timeline") or String.contains?(path, "/context_objects") do
+      :room_sync
+    else
+      :room_hydrate
+    end
+  end
+
+  defp default_lane(:post, path) do
+    if String.contains?(path, "/contributions"), do: :room_submit, else: :room_control
   end
 
   defp maybe_put_query(query, _key, nil), do: query
   defp maybe_put_query(query, key, value), do: Map.put(query, key, value)
-
-  defp decode_body(body) when body in ["", nil], do: %{}
-
-  defp decode_body(body) do
-    case Jason.decode(body) do
-      {:ok, payload} -> payload
-      {:error, _reason} -> %{"raw_body" => body}
-    end
-  end
-
-  defp ensure_http_started do
-    _ = Application.ensure_all_started(:inets)
-    _ = Application.ensure_all_started(:ssl)
-    :ok
-  end
 end

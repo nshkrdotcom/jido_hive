@@ -116,16 +116,16 @@ setup/hive create-room room-manual-1 \
   --target target-worker-02
 ```
 
-Run a room with its locked default budget:
+Start a room run operation with its locked default assignment budget:
 
 ```bash
-setup/hive run-room room-manual-1 --turn-timeout-ms 180000
+setup/hive run-room room-manual-1 --assignment-timeout-ms 180000
 ```
 
-Override the number of completed turns to request:
+Override the number of assignments to request:
 
 ```bash
-setup/hive run-room room-manual-1 --max-turns 4 --turn-timeout-ms 180000
+setup/hive run-room room-manual-1 --max-assignments 4 --assignment-timeout-ms 180000
 ```
 
 Run the full live demo:
@@ -153,7 +153,9 @@ compatible workers.
 - the default turn budget is `participant_count * 3`
 - if a worker drops mid-room, the logical budget is preserved and the room keeps
   round-robining across the remaining workers
-- `run-room` uses the locked room plan by default when `--max-turns` is omitted
+- `run-room` starts an explicit run operation and returns the accepted operation record
+- `live-demo` waits for that run operation to complete before printing the final room snapshot
+- `run-room` uses the locked room plan by default when `--max-assignments` is omitted
 
 For the current human-facing graph-authoring path, see:
 

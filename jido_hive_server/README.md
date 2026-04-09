@@ -131,7 +131,8 @@ High-value routes include:
 - `GET /rooms/:id`
 - `GET /rooms/:id/timeline`
 - `POST /rooms`
-- `POST /rooms/:id/run`
+- `POST /rooms/:id/run_operations`
+- `GET /rooms/:id/run_operations/:operation_id`
 - `POST /rooms/:id/contributions`
 - `GET /rooms/:id/publication_plan`
 - `POST /rooms/:id/publications`

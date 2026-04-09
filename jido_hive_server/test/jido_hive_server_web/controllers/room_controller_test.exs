@@ -79,10 +79,23 @@ defmodule JidoHiveServerWeb.RoomControllerTest do
            } = json_response(create_conn, 201)
 
     run_conn =
-      post(recycle(create_conn), ~p"/api/rooms/room-http-1/run", %{
+      post(recycle(create_conn), ~p"/api/rooms/room-http-1/run_operations", %{
         "max_assignments" => 1,
         "assignment_timeout_ms" => 5_000
       })
+
+    assert %{
+             "data" => %{
+               "operation_id" => operation_id,
+               "room_id" => "room-http-1",
+               "status" => "accepted"
+             }
+           } = json_response(run_conn, 202)
+
+    assert {:ok, %{"status" => "completed"}} =
+             wait_for_run_operation(create_conn, "room-http-1", operation_id)
+
+    room_conn = get(recycle(create_conn), ~p"/api/rooms/room-http-1")
 
     assert %{
              "data" => %{
@@ -92,7 +105,7 @@ defmodule JidoHiveServerWeb.RoomControllerTest do
                "contributions" => [%{"summary" => _summary}],
                "assignments" => [%{"status" => "completed"}]
              }
-           } = json_response(run_conn, 200)
+           } = json_response(room_conn, 200)
   end
 
   test "runs a room created from string phase ids like the console wizard payload", %{conn: conn} do
@@ -159,10 +172,23 @@ defmodule JidoHiveServerWeb.RoomControllerTest do
            } = json_response(create_conn, 201)
 
     run_conn =
-      post(recycle(create_conn), ~p"/api/rooms/room-http-string-phases-1/run", %{
+      post(recycle(create_conn), ~p"/api/rooms/room-http-string-phases-1/run_operations", %{
         "max_assignments" => 1,
         "assignment_timeout_ms" => 5_000
       })
+
+    assert %{
+             "data" => %{
+               "operation_id" => operation_id,
+               "room_id" => "room-http-string-phases-1",
+               "status" => "accepted"
+             }
+           } = json_response(run_conn, 202)
+
+    assert {:ok, %{"status" => "completed"}} =
+             wait_for_run_operation(create_conn, "room-http-string-phases-1", operation_id)
+
+    room_conn = get(recycle(create_conn), ~p"/api/rooms/room-http-string-phases-1")
 
     assert %{
              "data" => %{
@@ -172,7 +198,7 @@ defmodule JidoHiveServerWeb.RoomControllerTest do
                "contributions" => [%{"summary" => _summary}],
                "assignments" => [%{"status" => "completed"}]
              }
-           } = json_response(run_conn, 200)
+           } = json_response(room_conn, 200)
   end
 
   defp wait_until(fun, attempts \\ 100)
@@ -185,6 +211,27 @@ defmodule JidoHiveServerWeb.RoomControllerTest do
     else
       Process.sleep(50)
       wait_until(fun, attempts - 1)
+    end
+  end
+
+  defp wait_for_run_operation(conn, room_id, operation_id, attempts \\ 100)
+
+  defp wait_for_run_operation(_conn, _room_id, _operation_id, 0), do: {:error, :timeout}
+
+  defp wait_for_run_operation(conn, room_id, operation_id, attempts) do
+    operation_conn = get(recycle(conn), ~p"/api/rooms/#{room_id}/run_operations/#{operation_id}")
+    %{"data" => operation} = json_response(operation_conn, 200)
+
+    case operation["status"] do
+      "completed" ->
+        {:ok, operation}
+
+      "failed" ->
+        {:error, operation}
+
+      _other ->
+        Process.sleep(50)
+        wait_for_run_operation(conn, room_id, operation_id, attempts - 1)
     end
   end
 end

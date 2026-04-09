@@ -34,7 +34,7 @@ The console lets an operator:
 - browse saved rooms from the lobby
 - create new rooms from the wizard
 - inspect room context, events, and publication readiness
-- submit human chat into a room
+- submit human chat into a room as tracked operations
 - inspect provenance and accept selected context
 - publish room output to GitHub and Notion through server-backed connections
 
@@ -77,6 +77,13 @@ Recommended debug tail:
 ```bash
 tail -f ~/.config/hive/termui_console.log
 ```
+
+The preferred room workflow is now:
+
+1. create/open room
+2. start room run
+3. keep using the room while run state is tracked separately
+4. submit human chat and watch the operation id in the status/debug surface
 
 ### First production validation
 
@@ -122,6 +129,12 @@ Use this order if you are onboarding from zero:
 - `Ctrl+P`: open publish
 - `Ctrl+B`: back to lobby
 
+Room submit and room run are now operation-based:
+
+- the status line includes an operation id while a submit is pending
+- `F2` shows the latest room operation and transport lane diagnostics
+- room run start is accepted and tracked separately from room sync
+
 ### Wizard and publish
 
 - `Enter`: confirm the active step or submit the current screen when enabled
@@ -145,6 +158,20 @@ Use this order every time. It is how you separate UI bugs from client bugs.
 3. Only if it works headlessly and fails here should you debug the ExRatatui app.
 4. If a console action has no headless equivalent, add the headless path before doing more UI work.
 5. Use local `iex` for server/client internals; do not assume a production remote-shell workflow exists yet.
+
+When debugging a console submit/run problem, collect these together:
+
+- `~/.config/hive/termui_console.log`
+- the `F2` debug popup contents
+- headless stderr trace with `JIDO_HIVE_CLIENT_LOG_LEVEL=debug`
+- server logs
+
+The logs should now expose:
+
+- `lane`
+- `operation_id`
+- exact request path
+- timeout/completion boundary
 
 General reproducible workflow:
 

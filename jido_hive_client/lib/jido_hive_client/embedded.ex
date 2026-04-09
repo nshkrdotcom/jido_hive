@@ -5,12 +5,18 @@ defmodule JidoHiveClient.Embedded do
 
   alias JidoHiveClient.AgentBackends.Mock
   alias JidoHiveClient.Boundary.RoomApi.Http, as: HttpRoomApi
-  alias JidoHiveClient.{ChatInput, DebugTrace, Interceptor, Runtime}
+  alias JidoHiveClient.ChatInput
+  alias JidoHiveClient.DebugTrace
+  alias JidoHiveClient.Interceptor
+  alias JidoHiveClient.Operation
+  alias JidoHiveClient.Runtime
+  alias JidoHiveClient.Transport.HTTP, as: TransportHTTP
 
   @default_poll_interval_ms 1_000
   @max_poll_backoff_ms 10_000
   @room_not_found_retry_limit 3
   @timeline_limit 200
+  @operation_history_limit 25
 
   @type snapshot :: %{
           room_id: String.t(),
@@ -20,7 +26,9 @@ defmodule JidoHiveClient.Embedded do
           context_objects: [map()],
           next_cursor: String.t() | nil,
           last_sync_at: DateTime.t() | nil,
-          last_error: term()
+          last_error: term(),
+          operations: [map()],
+          transport: map()
         }
 
   defstruct [
@@ -51,7 +59,10 @@ defmodule JidoHiveClient.Embedded do
     sync_queued: false,
     sync_queued_record_event: false,
     sync_queued_force_full: false,
-    queued_sync_waiters: []
+    queued_sync_waiters: [],
+    submit_operations: %{},
+    submit_order: [],
+    submit_tasks: %{}
   ]
 
   @spec child_spec(keyword()) :: Supervisor.child_spec()
@@ -79,6 +90,10 @@ defmodule JidoHiveClient.Embedded do
   @spec submit_chat(pid() | atom(), map()) :: {:ok, map()} | {:error, term()}
   def submit_chat(server, attrs) when is_map(attrs),
     do: GenServer.call(server, {:submit_chat, attrs}, 15_000)
+
+  @spec submit_chat_async(pid() | atom(), map()) :: {:ok, map()} | {:error, term()}
+  def submit_chat_async(server, attrs) when is_map(attrs),
+    do: GenServer.call(server, {:submit_chat_async, attrs}, 5_000)
 
   @spec accept_context(pid() | atom(), String.t(), map()) :: {:ok, map()} | {:error, term()}
   def accept_context(server, context_id, attrs \\ %{})
@@ -152,25 +167,23 @@ defmodule JidoHiveClient.Embedded do
       chars: attrs |> Map.get(:text, Map.get(attrs, "text", "")) |> to_string() |> String.length()
     })
 
-    with {:ok, chat_input} <- chat_input(attrs, state),
-         {:ok, intercepted} <-
-           Interceptor.extract(chat_input,
-             backend: {state.agent_backend, state.agent_backend_opts}
-           ),
-         contribution <-
-           Interceptor.to_contribution(intercepted, %{
-             room_id: state.room_id,
-             participant_id: state.participant.participant_id,
-             participant_role: state.participant.participant_role,
-             participant_kind: state.participant.participant_kind
-           }),
+    operation_id =
+      Map.get(attrs, :operation_id) || Map.get(attrs, "operation_id") ||
+        Operation.new_id("room_submit")
+
+    with {:ok, contribution} <- prepare_chat_contribution(attrs, state),
          {:ok, _response} <-
-           state.room_api.submit_contribution(state.room_api_opts, state.room_id, contribution),
+           state.room_api.submit_contribution(
+             room_api_submit_opts(state, operation_id),
+             state.room_id,
+             contribution
+           ),
          :ok <-
            Runtime.record_event(state.runtime, %{
              type: "embedded.chat.submitted",
              room_id: state.room_id,
              payload: %{
+               "operation_id" => operation_id,
                "summary" => contribution["summary"],
                "context_count" => length(contribution["context_objects"] || [])
              }
@@ -203,6 +216,43 @@ defmodule JidoHiveClient.Embedded do
     end
   end
 
+  def handle_call({:submit_chat_async, attrs}, _from, %__MODULE__{} = state) do
+    operation_id =
+      Map.get(attrs, :operation_id) || Map.get(attrs, "operation_id") ||
+        Operation.new_id("room_submit")
+
+    text =
+      attrs
+      |> Map.get(:text, Map.get(attrs, "text", ""))
+      |> to_string()
+
+    operation =
+      new_submit_operation(operation_id, text)
+      |> Map.put("participant_id", state.participant.participant_id)
+
+    DebugTrace.emit(:info, "room_session.submit_chat.accepted", %{
+      room_id: state.room_id,
+      participant_id: state.participant.participant_id,
+      operation_id: operation_id,
+      chars: String.length(text)
+    })
+
+    :ok =
+      Runtime.record_event(state.runtime, %{
+        type: "embedded.chat.accepted",
+        room_id: state.room_id,
+        payload: %{
+          "operation_id" => operation_id,
+          "chars" => String.length(text)
+        }
+      })
+
+    {:reply, {:ok, operation},
+     state
+     |> put_submit_operation(operation)
+     |> start_submit_task(operation_id, attrs)}
+  end
+
   def handle_call({:accept_context, context_id, attrs}, _from, %__MODULE__{} = state) do
     case Enum.find(state.context_objects, &context_id_matches?(&1, context_id)) do
       nil ->
@@ -219,7 +269,7 @@ defmodule JidoHiveClient.Embedded do
 
         with {:ok, _response} <-
                state.room_api.submit_contribution(
-                 state.room_api_opts,
+                 room_api_submit_opts(state, Operation.new_id("room_accept")),
                  state.room_id,
                  contribution
                ),
@@ -301,6 +351,98 @@ defmodule JidoHiveClient.Embedded do
     {:noreply, next_state}
   end
 
+  def handle_info({:submit_operation_stage, operation_id, stage, metadata}, %__MODULE__{} = state) do
+    {:noreply,
+     update_submit_operation(state, operation_id, fn operation ->
+       operation
+       |> Map.put("status", stage)
+       |> Map.put("updated_at", now_iso8601())
+       |> maybe_merge_operation_metadata(metadata)
+     end)}
+  end
+
+  def handle_info(
+        {:submit_operation_result, operation_id, {:ok, contribution}},
+        %__MODULE__{} = state
+      ) do
+    next_state =
+      state
+      |> clear_submit_task(operation_id)
+      |> update_submit_operation(operation_id, fn operation ->
+        operation
+        |> Map.put("status", "completed")
+        |> Map.put("updated_at", now_iso8601())
+        |> Map.put("completed_at", now_iso8601())
+        |> Map.put("contribution_type", contribution["contribution_type"])
+        |> Map.put("summary", contribution["summary"])
+        |> Map.put("context_count", length(contribution["context_objects"] || []))
+        |> Map.put("error", nil)
+      end)
+
+    :ok =
+      Runtime.record_event(state.runtime, %{
+        type: "embedded.chat.completed",
+        room_id: state.room_id,
+        payload: %{
+          "operation_id" => operation_id,
+          "summary" => contribution["summary"],
+          "contribution_type" => contribution["contribution_type"]
+        }
+      })
+
+    send(self(), {:sync_room_async, true})
+    {:noreply, next_state}
+  end
+
+  def handle_info(
+        {:submit_operation_result, operation_id, {:error, reason}},
+        %__MODULE__{} = state
+      ) do
+    next_state =
+      state
+      |> clear_submit_task(operation_id)
+      |> update_submit_operation(operation_id, fn operation ->
+        operation
+        |> Map.put("status", "failed")
+        |> Map.put("updated_at", now_iso8601())
+        |> Map.put("completed_at", now_iso8601())
+        |> Map.put("error", inspect(reason))
+      end)
+
+    :ok =
+      Runtime.record_event(state.runtime, %{
+        type: "embedded.chat.failed",
+        room_id: state.room_id,
+        payload: %{
+          "operation_id" => operation_id,
+          "reason" => inspect(reason)
+        }
+      })
+
+    {:noreply, next_state}
+  end
+
+  def handle_info({:DOWN, ref, :process, _pid, reason}, %__MODULE__{} = state) do
+    case submit_operation_id_for_ref(state, ref) do
+      nil ->
+        {:noreply, state}
+
+      operation_id ->
+        next_state =
+          state
+          |> clear_submit_task(operation_id)
+          |> update_submit_operation(operation_id, fn operation ->
+            operation
+            |> Map.put("status", "failed")
+            |> Map.put("updated_at", now_iso8601())
+            |> Map.put("completed_at", now_iso8601())
+            |> Map.put("error", inspect({:submit_task_exit, reason}))
+          end)
+
+        {:noreply, next_state}
+    end
+  end
+
   def handle_info({:client_runtime_event, event}, %__MODULE__{} = state) do
     Enum.each(state.subscribers, &send(&1, {:client_runtime_event, event}))
     {:noreply, state}
@@ -336,6 +478,8 @@ defmodule JidoHiveClient.Embedded do
     |> Map.put(:next_cursor, state.next_cursor)
     |> Map.put(:last_sync_at, state.last_sync_at)
     |> Map.put(:last_error, state.last_error)
+    |> Map.put(:operations, current_operations(state))
+    |> Map.put(:transport, TransportHTTP.diagnostics())
   end
 
   defp request_sync(%__MODULE__{} = state, record_event?, waiters, force_full?) do
@@ -453,7 +597,7 @@ defmodule JidoHiveClient.Embedded do
   end
 
   defp fetch_sync_result(%__MODULE__{} = state, force_full?) do
-    case state.room_api.fetch_timeline(state.room_api_opts, state.room_id,
+    case state.room_api.fetch_timeline(room_api_sync_opts(state), state.room_id,
            after: state.next_cursor
          ) do
       {:ok, %{entries: entries, next_cursor: next_cursor}} ->
@@ -484,7 +628,7 @@ defmodule JidoHiveClient.Embedded do
   end
 
   defp fetch_sync_context_objects(%__MODULE__{} = state, true) do
-    state.room_api.fetch_context_objects(state.room_api_opts, state.room_id)
+    state.room_api.fetch_context_objects(room_api_sync_opts(state), state.room_id)
   end
 
   defp fetch_sync_context_objects(%__MODULE__{} = state, false) do
@@ -531,7 +675,7 @@ defmodule JidoHiveClient.Embedded do
   end
 
   defp fetch_room_snapshot(%__MODULE__{} = state) do
-    case state.room_api.fetch_room(state.room_api_opts, state.room_id) do
+    case state.room_api.fetch_room(room_api_sync_opts(state), state.room_id) do
       {:ok, room_snapshot} when is_map(room_snapshot) -> room_snapshot
       _other -> nil
     end
@@ -681,6 +825,159 @@ defmodule JidoHiveClient.Embedded do
 
   defp normalize_agent_backend(module) when is_atom(module), do: {module, []}
   defp normalize_agent_backend(_other), do: {Mock, []}
+
+  defp prepare_chat_contribution(attrs, %__MODULE__{} = state) do
+    with {:ok, chat_input} <- chat_input(attrs, state),
+         {:ok, intercepted} <-
+           Interceptor.extract(chat_input,
+             backend: {state.agent_backend, state.agent_backend_opts}
+           ) do
+      {:ok,
+       Interceptor.to_contribution(intercepted, %{
+         room_id: state.room_id,
+         participant_id: state.participant.participant_id,
+         participant_role: state.participant.participant_role,
+         participant_kind: state.participant.participant_kind
+       })}
+    end
+  end
+
+  defp start_submit_task(%__MODULE__{} = state, operation_id, attrs) do
+    parent = self()
+    submit_state = state
+
+    {pid, ref} =
+      spawn_monitor(fn -> run_submit_task(parent, operation_id, attrs, submit_state) end)
+
+    %{state | submit_tasks: Map.put(state.submit_tasks, operation_id, %{pid: pid, ref: ref})}
+  end
+
+  defp run_submit_task(parent, operation_id, attrs, submit_state) do
+    send(parent, {:submit_operation_stage, operation_id, "preparing", %{}})
+    result = submit_task_result(parent, operation_id, attrs, submit_state)
+    send(parent, {:submit_operation_result, operation_id, result})
+  end
+
+  defp submit_task_result(parent, operation_id, attrs, submit_state) do
+    with {:ok, contribution} <- prepare_chat_contribution(attrs, submit_state) do
+      send_submit_stage(parent, operation_id, contribution)
+      submit_prepared_contribution(parent, operation_id, submit_state, contribution)
+    end
+  end
+
+  defp send_submit_stage(parent, operation_id, contribution) do
+    send(
+      parent,
+      {:submit_operation_stage, operation_id, "sending",
+       %{
+         "contribution_type" => contribution["contribution_type"],
+         "context_count" => length(contribution["context_objects"] || [])
+       }}
+    )
+  end
+
+  defp submit_prepared_contribution(parent, operation_id, submit_state, contribution) do
+    case submit_state.room_api.submit_contribution(
+           room_api_submit_opts(submit_state, operation_id),
+           submit_state.room_id,
+           contribution
+         ) do
+      {:ok, _response} ->
+        send(parent, {:submit_operation_stage, operation_id, "server_acknowledged", %{}})
+        {:ok, contribution}
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  defp submit_operation_id_for_ref(%__MODULE__{} = state, ref) do
+    Enum.find_value(state.submit_tasks, fn {operation_id, task} ->
+      if task.ref == ref, do: operation_id, else: nil
+    end)
+  end
+
+  defp clear_submit_task(%__MODULE__{} = state, operation_id) do
+    case Map.pop(state.submit_tasks, operation_id) do
+      {%{ref: ref}, tasks} ->
+        Process.demonitor(ref, [:flush])
+        %{state | submit_tasks: tasks}
+
+      {nil, _tasks} ->
+        state
+    end
+  end
+
+  defp put_submit_operation(%__MODULE__{} = state, operation) do
+    operation_id = operation["operation_id"]
+
+    submit_order =
+      [operation_id | Enum.reject(state.submit_order, &(&1 == operation_id))]
+      |> Enum.take(@operation_history_limit)
+
+    operations =
+      state.submit_operations
+      |> Map.put(operation_id, operation)
+      |> Map.take(submit_order)
+
+    %{state | submit_operations: operations, submit_order: submit_order}
+  end
+
+  defp update_submit_operation(%__MODULE__{} = state, operation_id, fun) do
+    case Map.fetch(state.submit_operations, operation_id) do
+      {:ok, operation} ->
+        put_submit_operation(state, fun.(operation))
+
+      :error ->
+        state
+    end
+  end
+
+  defp current_operations(%__MODULE__{} = state) do
+    Enum.map(state.submit_order, &Map.get(state.submit_operations, &1))
+    |> Enum.reject(&is_nil/1)
+  end
+
+  defp new_submit_operation(operation_id, text) do
+    %{
+      "operation_id" => operation_id,
+      "kind" => "submit_chat",
+      "lane" => "room_submit",
+      "status" => "accepted",
+      "text" => text,
+      "chars" => String.length(text),
+      "accepted_at" => now_iso8601(),
+      "updated_at" => now_iso8601(),
+      "completed_at" => nil,
+      "error" => nil
+    }
+  end
+
+  defp maybe_merge_operation_metadata(operation, metadata) when map_size(metadata) == 0,
+    do: operation
+
+  defp maybe_merge_operation_metadata(operation, metadata), do: Map.merge(operation, metadata)
+
+  defp room_api_submit_opts(%__MODULE__{} = state, operation_id) do
+    state.room_api_opts
+    |> Keyword.put(:lane, :room_submit)
+    |> Keyword.put(:operation_id, operation_id)
+    |> Keyword.put(:request_timeout_ms, 15_000)
+    |> Keyword.put(:connect_timeout_ms, 5_000)
+  end
+
+  defp room_api_sync_opts(%__MODULE__{} = state) do
+    state.room_api_opts
+    |> Keyword.put(:lane, :room_sync)
+    |> Keyword.put_new(:request_timeout_ms, 10_000)
+    |> Keyword.put_new(:connect_timeout_ms, 3_000)
+  end
+
+  defp now_iso8601 do
+    DateTime.utc_now()
+    |> DateTime.truncate(:millisecond)
+    |> DateTime.to_iso8601()
+  end
 
   defp context_id_matches?(context_object, context_id) do
     value(context_object, "context_id") == context_id

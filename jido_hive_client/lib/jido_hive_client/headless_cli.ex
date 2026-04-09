@@ -16,6 +16,7 @@ defmodule JidoHiveClient.HeadlessCLI do
     after: :string,
     channel: :string,
     install_id: :string,
+    operation_id: :string,
     access_token: :string,
     left: :string,
     right: :string,
@@ -74,6 +75,10 @@ defmodule JidoHiveClient.HeadlessCLI do
   defp normalize_argv(["room", "timeline" | rest]), do: ["operator", "room", "timeline" | rest]
   defp normalize_argv(["room", "create" | rest]), do: ["operator", "room", "create" | rest]
   defp normalize_argv(["room", "run" | rest]), do: ["operator", "room", "run" | rest]
+
+  defp normalize_argv(["room", "run-status" | rest]),
+    do: ["operator", "room", "run-status" | rest]
+
   defp normalize_argv(["room", "publish" | rest]), do: ["operator", "room", "publish" | rest]
   defp normalize_argv(["room", "resolve" | rest]), do: ["operator", "room", "resolve" | rest]
   defp normalize_argv(["room", "submit" | rest]), do: ["session", "room", "submit-chat" | rest]
@@ -146,8 +151,20 @@ defmodule JidoHiveClient.HeadlessCLI do
     with {:ok, parsed} <- parse_command_opts(rest, @operator_switches),
          api_base_url <- api_base_url(parsed, config),
          {:ok, room_id} <- required_option(parsed, :room_id),
-         {:ok, room} <- operator_module.run_room(api_base_url, room_id, room_run_opts(parsed)) do
-      {:ok, wrap_operation_result("room_run", room)}
+         {:ok, operation} <-
+           operator_module.start_room_run_operation(api_base_url, room_id, room_run_opts(parsed)) do
+      {:ok, normalize_output(operation)}
+    end
+  end
+
+  defp dispatch_operator(["room", "run-status" | rest], config, operator_module) do
+    with {:ok, parsed} <- parse_command_opts(rest, @operator_switches),
+         api_base_url <- api_base_url(parsed, config),
+         {:ok, room_id} <- required_option(parsed, :room_id),
+         {:ok, operation_id} <- required_option(parsed, :operation_id),
+         {:ok, operation} <-
+           operator_module.fetch_room_run_operation(api_base_url, room_id, operation_id) do
+      {:ok, normalize_output(operation)}
     end
   end
 

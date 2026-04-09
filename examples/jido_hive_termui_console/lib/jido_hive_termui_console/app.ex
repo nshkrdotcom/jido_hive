@@ -131,6 +131,7 @@ defmodule JidoHiveTermuiConsole.App do
       if state.active_screen in [:room, :conflict, :publish] do
         state
         |> Nav.refresh_room_snapshot()
+        |> poll_pending_room_run()
         |> reconcile_pending_room_submit()
       else
         state
@@ -607,9 +608,14 @@ defmodule JidoHiveTermuiConsole.App do
   def update(_message, state), do: {state, []}
 
   @spec handle_message(term(), Model.t()) :: {Model.t(), [term()]}
+  def handle_message({:fetch_room, _room_id}, %{active_screen: screen} = state)
+      when screen != :lobby do
+    {state, []}
+  end
+
   def handle_message({:fetch_room, room_id}, state) do
     next_state =
-      case state.operator_module.fetch_room(state.api_base_url, room_id) do
+      case state.operator_module.fetch_room(state.api_base_url, room_id, lane: :lobby_hydrate) do
         {:ok, snapshot} ->
           Lobby.upsert_row(state, Lobby.row_from_snapshot(room_id, snapshot))
 
@@ -618,6 +624,42 @@ defmodule JidoHiveTermuiConsole.App do
 
         {:error, _reason} ->
           Lobby.upsert_row(state, Lobby.fetch_error_row(room_id))
+      end
+
+    {next_state, []}
+  end
+
+  def handle_message(
+        {:room_submit_accepted, room_id, text, operation_id, {:ok, _operation}},
+        state
+      ) do
+    next_state =
+      case state.pending_room_submit do
+        %{room_id: ^room_id, text: ^text, operation_id: ^operation_id} ->
+          Model.set_status(
+            state,
+            "Chat submit accepted; waiting for server confirmation. op=#{operation_id}",
+            :info
+          )
+
+        _other ->
+          state
+      end
+
+    {next_state, []}
+  end
+
+  def handle_message(
+        {:room_submit_accepted, room_id, text, operation_id, {:error, reason}},
+        state
+      ) do
+    next_state =
+      case state.pending_room_submit do
+        %{room_id: ^room_id, text: ^text, operation_id: ^operation_id} ->
+          reconcile_room_submit_failure(state, room_id, text, reason)
+
+        _other ->
+          state
       end
 
     {next_state, []}
@@ -725,6 +767,36 @@ defmodule JidoHiveTermuiConsole.App do
     if next_state.room_id == room_id do
       start_room_run_async(next_state, room_id)
     end
+
+    {next_state, []}
+  end
+
+  def handle_message(
+        {:room_run_operation_started, room_id, operation_id, {:ok, _operation}},
+        state
+      ) do
+    next_state =
+      if state.room_id == room_id do
+        state
+        |> Map.put(:pending_room_run, %{room_id: room_id, operation_id: operation_id})
+        |> Model.set_status("Room run accepted; tracking op=#{operation_id}", :info)
+      else
+        state
+      end
+
+    {next_state, []}
+  end
+
+  def handle_message(
+        {:room_run_operation_started, room_id, _operation_id, {:error, reason}},
+        state
+      ) do
+    next_state =
+      if state.room_id == room_id do
+        Model.set_status(state, "Room run start failed: #{inspect(reason)}", :error)
+      else
+        state
+      end
 
     {next_state, []}
   end
@@ -978,16 +1050,15 @@ defmodule JidoHiveTermuiConsole.App do
     spawn(fn ->
       result =
         safe_async_result(fn ->
-          operator_module.run_room(api_base_url, room_id,
+          operator_module.start_room_run_operation(api_base_url, room_id,
             assignment_timeout_ms: 180_000,
-            request_timeout_ms: 210_000,
             operation_id: operation_id
           )
         end)
 
-      log_async_operation(operation_id, "room run", room_id, state.participant_id, result)
+      log_async_operation(operation_id, "room run start", room_id, state.participant_id, result)
 
-      send(caller, {:run_room_result, room_id, operation_id, result})
+      send(caller, {:room_run_operation_started, room_id, operation_id, result})
     end)
 
     :ok
@@ -1013,21 +1084,29 @@ defmodule JidoHiveTermuiConsole.App do
     :ok
   end
 
-  defp start_room_submit_async(state, room_id, text, submit_attrs) do
+  defp start_room_submit_async(state, room_id, text, operation_id, submit_attrs) do
     caller = self()
     embedded_module = state.embedded_module
     embedded = state.embedded
-    operation_id = JidoHiveClient.Operation.new_id("room_submit")
 
     spawn(fn ->
       result =
         safe_async_result(fn ->
-          embedded_module.submit_chat(embedded, submit_attrs)
+          embedded_module.submit_chat_async(
+            embedded,
+            Map.put(submit_attrs, :operation_id, operation_id)
+          )
         end)
 
-      log_async_operation(operation_id, "room chat submit", room_id, state.participant_id, result)
+      log_async_operation(
+        operation_id,
+        "room chat submit accepted",
+        room_id,
+        state.participant_id,
+        result
+      )
 
-      send(caller, {:room_submit_result, room_id, text, result})
+      send(caller, {:room_submit_accepted, room_id, text, operation_id, result})
     end)
 
     :ok
@@ -1043,6 +1122,7 @@ defmodule JidoHiveTermuiConsole.App do
   defp queue_room_chat_submit(state, text) do
     submit_attrs = Identity.to_submit_attrs(identity(state), room_submit_attrs(text, state))
     room_id = state.room_id
+    operation_id = JidoHiveClient.Operation.new_id("room_submit")
 
     Logger.info(
       "room chat submit started room_id=#{room_id} participant_id=#{state.participant_id} chars=#{String.length(text)}"
@@ -1050,24 +1130,48 @@ defmodule JidoHiveTermuiConsole.App do
 
     next_state =
       state
-      |> Map.put(:pending_room_submit, %{room_id: room_id, text: text})
+      |> Map.put(:pending_room_submit, %{room_id: room_id, text: text, operation_id: operation_id})
       |> Model.clear_input()
-      |> Model.set_status("Submitting chat message...", :info)
+      |> Model.set_status("Submitting chat message... op=#{operation_id}", :info)
 
-    {next_state, [{:submit_room_chat, room_id, text, submit_attrs}]}
+    {next_state, [{:submit_room_chat, room_id, text, operation_id, submit_attrs}]}
   end
 
   defp reconcile_pending_room_submit(%Model{pending_room_submit: nil} = state), do: state
 
   defp reconcile_pending_room_submit(%Model{} = state) do
-    case state.pending_room_submit do
-      %{text: text} ->
-        if submit_visible_in_snapshot?(state.snapshot, state.participant_id, text) do
-          state
-          |> Map.put(:pending_room_submit, nil)
-          |> Model.set_status("Submitted chat message", :info)
+    %{operation_id: operation_id, text: text} = state.pending_room_submit
+
+    case submit_reconciliation_outcome(state.snapshot, state.participant_id, operation_id, text) do
+      :completed ->
+        state
+        |> Map.put(:pending_room_submit, nil)
+        |> Model.set_status("Submitted chat message", :info)
+
+      {:failed, error} ->
+        state
+        |> Map.put(:pending_room_submit, nil)
+        |> set_room_input(text)
+        |> Model.set_status("Submit failed: #{error}", :error)
+
+      :pending ->
+        state
+    end
+  end
+
+  defp submit_reconciliation_outcome(snapshot, participant_id, operation_id, text) do
+    case submit_operation_from_snapshot(snapshot, operation_id) do
+      %{"status" => "completed"} ->
+        :completed
+
+      %{"status" => "failed", "error" => error} ->
+        {:failed, error}
+
+      _other ->
+        if submit_visible_in_snapshot?(snapshot, participant_id, text) do
+          :completed
         else
-          state
+          :pending
         end
     end
   end
@@ -1089,6 +1193,53 @@ defmodule JidoHiveTermuiConsole.App do
       |> set_room_input(text)
       |> Model.set_status("Submit failed: #{inspect(reason)}", :error)
     end
+  end
+
+  defp poll_pending_room_run(%Model{pending_room_run: nil} = state), do: state
+
+  defp poll_pending_room_run(%Model{} = state) do
+    case state.pending_room_run do
+      %{room_id: room_id, operation_id: operation_id} ->
+        case state.operator_module.fetch_room_run_operation(
+               state.api_base_url,
+               room_id,
+               operation_id,
+               operation_id: operation_id
+             ) do
+          {:ok, %{"status" => "completed"}} ->
+            state
+            |> Map.put(:pending_room_run, nil)
+            |> Model.set_status("Room run completed", :info)
+
+          {:ok, %{"status" => "failed", "error" => error}} ->
+            state
+            |> Map.put(:pending_room_run, nil)
+            |> Model.set_status("Room run failed: #{error}", :error)
+
+          {:ok, %{"status" => status}} when status in ["accepted", "running"] ->
+            Model.set_status(state, "Room run #{status}; op=#{operation_id}", :info)
+
+          {:error, :operation_not_found} ->
+            state
+            |> Map.put(:pending_room_run, nil)
+            |> Model.set_status("Room run operation was not found: op=#{operation_id}", :error)
+
+          {:error, reason} ->
+            Model.set_status(
+              state,
+              "Room run status check failed: #{inspect(reason)} op=#{operation_id}",
+              :warn
+            )
+        end
+    end
+  end
+
+  defp submit_operation_from_snapshot(snapshot, operation_id) when is_binary(operation_id) do
+    snapshot
+    |> Map.get("operations", [])
+    |> Enum.find(fn operation ->
+      Map.get(operation, "operation_id") == operation_id
+    end)
   end
 
   defp submit_visible_in_snapshot?(snapshot, participant_id, text) when is_binary(text) do
@@ -1241,8 +1392,8 @@ defmodule JidoHiveTermuiConsole.App do
           start_room_create_async(current_state, room_id, payload)
           {:cont, {:continue, current_state}}
 
-        {:submit_room_chat, room_id, text, submit_attrs} ->
-          start_room_submit_async(current_state, room_id, text, submit_attrs)
+        {:submit_room_chat, room_id, text, operation_id, submit_attrs} ->
+          start_room_submit_async(current_state, room_id, text, operation_id, submit_attrs)
           {:cont, {:continue, current_state}}
 
         :quit ->

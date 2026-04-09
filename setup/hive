@@ -41,12 +41,13 @@ Usage:
   setup/hive [--local|--prod] room ROOM_ID
   setup/hive [--local|--prod] create-room [ROOM_ID] [--brief TEXT] [--rule TEXT]
       [--participant-count N] [--target TARGET_ID ...] [--if-missing]
-  setup/hive [--local|--prod] run-room ROOM_ID [--max-turns N] [--turn-timeout-ms N]
+  setup/hive [--local|--prod] run-room ROOM_ID [--max-assignments N] [--assignment-timeout-ms N]
+  setup/hive [--local|--prod] show-run-operation ROOM_ID OPERATION_ID
   setup/hive [--local|--prod] publication-plan ROOM_ID
   setup/hive [--local|--prod] publication-runs ROOM_ID
   setup/hive [--local|--prod] live-demo [--room-id ROOM_ID] [--brief TEXT] [--rule TEXT]
-      [--participant-count N] [--target TARGET_ID ...] [--max-turns N]
-      [--turn-timeout-ms N] [--wait-timeout-ms N] [--publish-from-env]
+      [--participant-count N] [--target TARGET_ID ...] [--max-assignments N]
+      [--assignment-timeout-ms N] [--wait-timeout-ms N] [--publish-from-env]
   setup/hive [--local|--prod] start-install github|notion [--subject VALUE] [--scope VALUE]
   setup/hive [--local|--prod] show-install INSTALL_ID
   setup/hive [--local|--prod] complete-install INSTALL_ID [--subject VALUE]
@@ -71,7 +72,7 @@ Examples:
   setup/hive --prod doctor
   setup/hive wait-targets --count 2
   setup/hive create-room room-manual-1 --participant-count 2
-  setup/hive run-room room-manual-1 --turn-timeout-ms 180000
+  setup/hive run-room room-manual-1 --assignment-timeout-ms 180000
   setup/hive live-demo --room-id room-live-demo --participant-count 2
   setup/hive publication-plan room-manual-1
   setup/hive start-install github --subject octocat --scope repo
@@ -431,21 +432,21 @@ cmd_run_room() {
   require_room_id "$room_id"
   shift || true
 
-  local max_turns=''
-  local turn_timeout_ms='180000'
+  local max_assignments=''
+  local assignment_timeout_ms='180000'
 
   while (($# > 0)); do
     case "$1" in
-      --max-turns)
+      --max-assignments)
         shift
-        [[ $# -gt 0 ]] || die "--max-turns requires a value"
-        max_turns="$1"
+        [[ $# -gt 0 ]] || die "--max-assignments requires a value"
+        max_assignments="$1"
         ;;
 
-      --turn-timeout-ms)
+      --assignment-timeout-ms)
         shift
-        [[ $# -gt 0 ]] || die "--turn-timeout-ms requires a value"
-        turn_timeout_ms="$1"
+        [[ $# -gt 0 ]] || die "--assignment-timeout-ms requires a value"
+        assignment_timeout_ms="$1"
         ;;
 
       *)
@@ -457,27 +458,130 @@ cmd_run_room() {
   done
 
   local payload
-  if [[ -n "$max_turns" ]]; then
+  if [[ -n "$max_assignments" ]]; then
     payload="$(
       jq -n \
-        --argjson max_turns "$max_turns" \
-        --argjson turn_timeout_ms "$turn_timeout_ms" \
+        --argjson max_assignments "$max_assignments" \
+        --argjson assignment_timeout_ms "$assignment_timeout_ms" \
         '{
-          max_turns: $max_turns,
-          turn_timeout_ms: $turn_timeout_ms
+          max_assignments: $max_assignments,
+          assignment_timeout_ms: $assignment_timeout_ms
         }'
     )"
   else
     payload="$(
       jq -n \
-        --argjson turn_timeout_ms "$turn_timeout_ms" \
+        --argjson assignment_timeout_ms "$assignment_timeout_ms" \
         '{
-          turn_timeout_ms: $turn_timeout_ms
+          assignment_timeout_ms: $assignment_timeout_ms
         }'
     )"
   fi
 
-  api_post "/rooms/$room_id/run" "$payload"
+  api_post "/rooms/$room_id/run_operations" "$payload"
+}
+
+cmd_show_run_operation() {
+  require_base_tools
+
+  local room_id="${1:-}"
+  local operation_id="${2:-}"
+
+  require_room_id "$room_id"
+  [[ -n "$operation_id" ]] || die "operation id is required"
+
+  api_get "/rooms/$room_id/run_operations/$operation_id"
+}
+
+cmd_wait_run_operation() {
+  require_base_tools
+
+  local room_id="${1:-}"
+  local operation_id="${2:-}"
+
+  require_room_id "$room_id"
+  [[ -n "$operation_id" ]] || die "operation id is required"
+  shift 2 || true
+
+  local timeout_ms='120000'
+  local interval_ms='250'
+
+  while (($# > 0)); do
+    case "$1" in
+      --timeout-ms)
+        shift
+        [[ $# -gt 0 ]] || die "--timeout-ms requires a value"
+        timeout_ms="$1"
+        ;;
+
+      --interval-ms)
+        shift
+        [[ $# -gt 0 ]] || die "--interval-ms requires a value"
+        interval_ms="$1"
+        ;;
+
+      *)
+        die "unknown option for wait-run-operation: $1"
+        ;;
+    esac
+
+    shift || true
+  done
+
+  local deadline_ms
+  deadline_ms=$(( $(date +%s%3N) + timeout_ms ))
+
+  while true; do
+    perform_request GET "${JIDO_HIVE_API_BASE}/rooms/${room_id}/run_operations/${operation_id}" ""
+
+    case "$JIDO_HIVE_HTTP_STATUS" in
+      200)
+        local status=''
+        status="$(jq -r '.data.status // empty' "$JIDO_HIVE_HTTP_BODY_FILE")"
+
+        case "$status" in
+          accepted|running)
+            cleanup_http_response
+            ;;
+
+          completed)
+            json_print_file "$JIDO_HIVE_HTTP_BODY_FILE"
+            cleanup_http_response
+            return 0
+            ;;
+
+          failed)
+            json_print_file "$JIDO_HIVE_HTTP_BODY_FILE" >&2
+            cleanup_http_response
+            return 1
+            ;;
+
+          *)
+            json_print_file "$JIDO_HIVE_HTTP_BODY_FILE" >&2
+            cleanup_http_response
+            die "unexpected run operation status: ${status:-missing}"
+            ;;
+        esac
+        ;;
+
+      404)
+        cleanup_http_response
+        ;;
+
+      *)
+        log "GET ${JIDO_HIVE_API_BASE}/rooms/${room_id}/run_operations/${operation_id} failed with HTTP $JIDO_HIVE_HTTP_STATUS"
+        json_print_file "$JIDO_HIVE_HTTP_BODY_FILE" >&2 || cat "$JIDO_HIVE_HTTP_BODY_FILE" >&2
+        cleanup_http_response
+        return 1
+        ;;
+    esac
+
+    if (( $(date +%s%3N) >= deadline_ms )); then
+      die "timed out waiting for run operation ${operation_id} in room ${room_id}"
+    fi
+
+    sleep "$(awk "BEGIN { printf \"%.3f\", ${interval_ms}/1000 }")"
+  done
 }
 
 cmd_publication_plan() {
@@ -507,8 +611,8 @@ cmd_live_demo() {
   local participant_count=''
   local -a target_ids=()
   local using_default_rules=1
-  local max_turns=''
-  local turn_timeout_ms="${JIDO_HIVE_TURN_TIMEOUT_MS:-180000}"
+  local max_assignments=''
+  local assignment_timeout_ms="${JIDO_HIVE_ASSIGNMENT_TIMEOUT_MS:-180000}"
   local wait_timeout_ms='120000'
   local publish_from_env=0
 
@@ -548,16 +652,16 @@ cmd_live_demo() {
         target_ids+=("$1")
         ;;
 
-      --max-turns)
+      --max-assignments)
         shift
-        [[ $# -gt 0 ]] || die "--max-turns requires a value"
-        max_turns="$1"
+        [[ $# -gt 0 ]] || die "--max-assignments requires a value"
+        max_assignments="$1"
         ;;
 
-      --turn-timeout-ms)
+      --assignment-timeout-ms)
         shift
-        [[ $# -gt 0 ]] || die "--turn-timeout-ms requires a value"
-        turn_timeout_ms="$1"
+        [[ $# -gt 0 ]] || die "--assignment-timeout-ms requires a value"
+        assignment_timeout_ms="$1"
         ;;
 
       --wait-timeout-ms)
@@ -580,7 +684,7 @@ cmd_live_demo() {
 
   local -a create_room_args=("$room_id" "--if-missing" "--brief" "$brief")
   local -a wait_target_args=(--timeout-ms "$wait_timeout_ms" --interval-ms 250)
-  local -a run_room_args=("$room_id" --turn-timeout-ms "$turn_timeout_ms")
+  local -a run_room_args=("$room_id" --assignment-timeout-ms "$assignment_timeout_ms")
   local rule=''
 
   for rule in "${rules[@]}"; do
@@ -594,8 +698,8 @@ cmd_live_demo() {
     wait_target_args+=(--count 1)
   fi
 
-  if [[ -n "$max_turns" ]]; then
-    run_room_args+=(--max-turns "$max_turns")
+  if [[ -n "$max_assignments" ]]; then
+    run_room_args+=(--max-assignments "$max_assignments")
   fi
 
   for target_id in "${target_ids[@]}"; do
@@ -609,8 +713,20 @@ cmd_live_demo() {
   cmd_wait_targets "${wait_target_args[@]}" >/dev/null
   cmd_create_room "${create_room_args[@]}" >/dev/null
 
-  printf '\n=== Running Room %s ===\n' "$room_id"
-  cmd_run_room "${run_room_args[@]}"
+  printf '\n=== Starting Run %s ===\n' "$room_id"
+  local run_operation_json
+  run_operation_json="$(cmd_run_room "${run_room_args[@]}")"
+  printf '%s\n' "$run_operation_json"
+
+  local run_operation_id
+  run_operation_id="$(jq -r '.data.operation_id // empty' <<<"$run_operation_json")"
+  [[ -n "$run_operation_id" ]] || die "run-room did not return an operation id"
+
+  printf '\n=== Waiting For Run Operation %s (%s) ===\n' "$room_id" "$run_operation_id"
+  cmd_wait_run_operation "$room_id" "$run_operation_id" \
+    --timeout-ms "$wait_timeout_ms" \
+    --interval-ms 250
+
   printf '\n=== Room Snapshot %s ===\n' "$room_id"
   cmd_room "$room_id"
   printf '\n=== Publication Plan %s ===\n' "$room_id"
@@ -994,6 +1110,11 @@ main() {
     run-room)
       shift || true
       cmd_run_room "$@"
+      ;;
+
+    show-run-operation)
+      shift || true
+      cmd_show_run_operation "$@"
       ;;
 
     publication-plan)

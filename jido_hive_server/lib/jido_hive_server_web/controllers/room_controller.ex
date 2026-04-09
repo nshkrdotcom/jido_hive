@@ -2,6 +2,7 @@ defmodule JidoHiveServerWeb.RoomController do
   use JidoHiveServerWeb, :controller
 
   alias JidoHiveServer.Collaboration
+  alias JidoHiveServer.RunOperations
 
   def create(conn, params) do
     case Collaboration.create_room(params) do
@@ -41,7 +42,7 @@ defmodule JidoHiveServerWeb.RoomController do
     end
   end
 
-  def run(conn, %{"id" => room_id} = params) do
+  def start_run_operation(conn, %{"id" => room_id} = params) do
     max_assignments = parse_optional_integer(Map.get(params, "max_assignments"))
 
     assignment_timeout_ms =
@@ -51,12 +52,27 @@ defmodule JidoHiveServerWeb.RoomController do
       [assignment_timeout_ms: assignment_timeout_ms]
       |> maybe_put_max_assignments(max_assignments)
 
-    case Collaboration.run_room(room_id, run_opts) do
-      {:ok, snapshot} ->
-        json(conn, %{data: normalize(snapshot)})
+    case RunOperations.start_run(room_id, run_opts) do
+      {:ok, operation} ->
+        conn
+        |> put_status(:accepted)
+        |> json(%{data: normalize(operation)})
 
       {:error, :room_not_found} ->
         render_error(conn, :not_found, :room_not_found)
+
+      {:error, reason} ->
+        render_error(conn, :unprocessable_entity, reason)
+    end
+  end
+
+  def show_run_operation(conn, %{"id" => room_id, "operation_id" => operation_id}) do
+    case RunOperations.fetch(room_id, operation_id) do
+      {:ok, operation} ->
+        json(conn, %{data: normalize(operation)})
+
+      {:error, :operation_not_found} ->
+        render_error(conn, :not_found, :operation_not_found)
 
       {:error, reason} ->
         render_error(conn, :unprocessable_entity, reason)

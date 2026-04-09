@@ -190,7 +190,8 @@ This is the escript entrypoint. It supports both:
 
 ```bash
 ./jido_hive_client room create --api-base-url https://jido-hive-server-test.app.nsai.online/api --payload-file room.json
-./jido_hive_client room run --api-base-url https://jido-hive-server-test.app.nsai.online/api --room-id <room-id> --max-assignments 1 --assignment-timeout-ms 60000 --request-timeout-ms 90000
+./jido_hive_client room run --api-base-url https://jido-hive-server-test.app.nsai.online/api --room-id <room-id> --max-assignments 1 --assignment-timeout-ms 60000
+./jido_hive_client room run-status --api-base-url https://jido-hive-server-test.app.nsai.online/api --room-id <room-id> --operation-id <operation-id>
 ./jido_hive_client room publish --api-base-url https://jido-hive-server-test.app.nsai.online/api --room-id <room-id> --payload-file publish.json
 ./jido_hive_client room submit --api-base-url https://jido-hive-server-test.app.nsai.online/api --room-id <room-id> --participant-id alice --text "hello"
 ./jido_hive_client room accept --api-base-url https://jido-hive-server-test.app.nsai.online/api --room-id <room-id> --participant-id alice --context-id <context-id>

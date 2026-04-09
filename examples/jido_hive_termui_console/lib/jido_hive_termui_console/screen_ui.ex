@@ -130,18 +130,6 @@ defmodule JidoHiveTermuiConsole.ScreenUI do
   defp to_text(text) when is_binary(text), do: text
 
   defp debug_lines(state) do
-    pending_room =
-      case state.pending_room_create do
-        %{room_id: room_id} -> room_id
-        _other -> "none"
-      end
-
-    pending_submit =
-      case state.pending_room_submit do
-        %{room_id: room_id, text: text} -> "#{room_id} (#{String.length(text)} chars)"
-        _other -> "none"
-      end
-
     [
       "Screen: #{state.active_screen}",
       "Room: #{state.room_id || "none"}",
@@ -149,14 +137,63 @@ defmodule JidoHiveTermuiConsole.ScreenUI do
       "Participant: #{state.participant_id} / #{state.participant_role} / #{state.authority_level}",
       "API: #{state.api_base_url}",
       "Status: [#{state.status_severity}] #{state.status_line}",
-      "Pending room create: #{pending_room}",
-      "Pending room submit: #{pending_submit}",
+      "Pending room create: #{pending_room_create_line(state)}",
+      "Pending room submit: #{pending_room_submit_line(state)}",
+      "Pending room run: #{pending_room_run_line(state)}",
       "Poll interval: #{state.poll_interval_ms}ms",
-      "",
-      "F2, Enter, or Esc closes this view.",
-      "Ctrl+C or Ctrl+Q exits the console.",
-      "For file logging, rerun with --debug and inspect ~/.config/hive/termui_console.log.",
-      "If the terminal is ever left dirty after a crash, run: reset"
-    ]
+      latest_operation_line(state)
+    ] ++
+      transport_debug_lines(state) ++
+      [
+        "",
+        "F2, Enter, or Esc closes this view.",
+        "Ctrl+C or Ctrl+Q exits the console.",
+        "For file logging, rerun with --debug and inspect ~/.config/hive/termui_console.log.",
+        "If the terminal is ever left dirty after a crash, run: reset"
+      ]
+  end
+
+  defp pending_room_create_line(state) do
+    case state.pending_room_create do
+      %{room_id: room_id} -> room_id
+      _other -> "none"
+    end
+  end
+
+  defp pending_room_submit_line(state) do
+    case state.pending_room_submit do
+      %{room_id: room_id, text: text, operation_id: operation_id} ->
+        "#{room_id} op=#{operation_id} (#{String.length(text)} chars)"
+
+      _other ->
+        "none"
+    end
+  end
+
+  defp pending_room_run_line(state) do
+    case state.pending_room_run do
+      %{room_id: room_id, operation_id: operation_id} -> "#{room_id} op=#{operation_id}"
+      _other -> "none"
+    end
+  end
+
+  defp latest_operation_line(state) do
+    case state.snapshot |> Map.get("operations", []) |> List.first() do
+      %{"operation_id" => operation_id, "status" => status} ->
+        "Latest operation: #{operation_id} status=#{status}"
+
+      _other ->
+        "Latest operation: none"
+    end
+  end
+
+  defp transport_debug_lines(state) do
+    state.snapshot
+    |> Map.get("transport", %{})
+    |> Map.get("lanes", [])
+    |> Enum.map(fn lane ->
+      "#{lane["lane"]}: active=#{lane["active_requests"]} completed=#{lane["completed_requests"]} failed=#{lane["failed_requests"]} timeouts=#{lane["timeout_count"]}"
+    end)
+    |> Enum.take(4)
   end
 end

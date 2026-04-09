@@ -85,7 +85,8 @@ mix escript.build
 ./jido_hive_client room show --api-base-url https://jido-hive-server-test.app.nsai.online/api --room-id <room-id>
 ./jido_hive_client room tail --api-base-url https://jido-hive-server-test.app.nsai.online/api --room-id <room-id>
 ./jido_hive_client room submit --api-base-url https://jido-hive-server-test.app.nsai.online/api --room-id <room-id> --participant-id alice --text "debug probe"
-./jido_hive_client room run --api-base-url https://jido-hive-server-test.app.nsai.online/api --room-id <room-id> --max-assignments 1 --assignment-timeout-ms 60000 --request-timeout-ms 90000
+./jido_hive_client room run --api-base-url https://jido-hive-server-test.app.nsai.online/api --room-id <room-id> --max-assignments 1 --assignment-timeout-ms 60000
+./jido_hive_client room run-status --api-base-url https://jido-hive-server-test.app.nsai.online/api --room-id <room-id> --operation-id <operation-id>
 ```
 
 If it reproduces headlessly, it is not a TUI-only bug.

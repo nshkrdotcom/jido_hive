@@ -19,13 +19,36 @@ If a behavior reproduces from the headless client, it is not a TUI-only bug.
 Today the system uses two different transport styles:
 
 - workers use the websocket relay for assignment delivery and execution
-- operator surfaces use the HTTP API
+- operator surfaces use the HTTP API through explicit transport lanes
 
 That means:
 
 - `bin/client-worker` and `bin/client` are websocket clients
 - `jido_hive_client room ...` headless commands are HTTP clients
 - the ExRatatui console is also HTTP-backed for room inspection and human actions
+
+The operator HTTP path is now intentionally lane-based. The important lanes are:
+
+- `operator_control`
+- `operator_room`
+- `operator_timeline`
+- `room_hydrate`
+- `room_sync`
+- `room_submit`
+- `room_run_control`
+- `lobby_hydrate`
+
+Every HTTP request from the shared client transport should now log:
+
+- `surface`
+- `lane`
+- `operation_id`
+- `method`
+- `path`
+- `timeout_ms`
+- `elapsed_ms`
+
+If a timeout occurs and those fields are missing, that is now an observability regression.
 
 For the console room screen specifically, the expected live pattern is:
 
@@ -38,6 +61,13 @@ If you see repeated `GET /rooms/:id` requests during steady-state room viewing,
 or a second independent timeline poller, that is a regression in the
 room-refresh seam between the console and the room session, not expected
 behavior.
+
+The room run path is also no longer modeled as a single blocking request in the
+console. The preferred contract is:
+
+- start run: accepted immediately as a run operation
+- poll run operation state separately
+- keep room sync and human submit independent of run startup
 
 ## What each layer owns
 
@@ -153,16 +183,29 @@ JIDO_HIVE_CLIENT_LOG_LEVEL=debug \
   --room-id <room-id> \
   --max-assignments 1 \
   --assignment-timeout-ms 60000 \
-  --request-timeout-ms 90000 \
-  > run.json \
+  > run_start.json \
   2> run_trace.ndjson
 ```
 
 Questions this answers:
 
-- Is the timeout happening in the operator transport path?
-- Is the server run endpoint actually returning?
+- Did the server accept a run operation and return an `operation_id` immediately?
+- Is the timeout happening during operation start or later during operation polling?
 - Is the TUI only surfacing a client/server timing issue that already exists headlessly?
+
+Preferred run-operation checks:
+
+```bash
+curl -sS https://jido-hive-server-test.app.nsai.online/api/rooms/<room-id>/run_operations/<operation-id> | jq
+
+./jido_hive_client room run-status \
+  --api-base-url https://jido-hive-server-test.app.nsai.online/api \
+  --room-id <room-id> \
+  --operation-id <operation-id> | jq
+```
+
+If you do not have an `operation_id`, capture it from the console debug popup,
+client stderr trace, or transport logs first.
 
 ### 6. Only then run the TUI against the same room
 
@@ -192,7 +235,26 @@ Expected debug-log shape after the room opens:
 - one `operator http request ... path=/rooms/<room-id>`
 - many `operator http request ... path=/rooms/<room-id>/timeline?after=...`
 
+Expected transport-log shape now:
+
+- `transport http request started surface=... lane=... operation_id=...`
+- `transport http request completed surface=... lane=... operation_id=...`
+- or `transport http request failed ...`
+
 That is the current design. It is noisy, but it is bounded and predictable.
+
+For human submit bugs, the expected console lifecycle is:
+
+1. `room chat submit started ... op=<id>` in the console log
+2. `room_submit_accepted` state in the TUI/app path
+3. room snapshot `operations` entry for that `operation_id`
+4. reconciliation to either:
+   - `Submitted chat message`
+   - or `Submit failed: ...`
+
+If the server never sees `POST /api/rooms/<room-id>/contributions`, the bug is
+still client-side, but the lane and operation id should now tell you exactly
+which boundary stalled.
 
 If you also see worker contribution failures that mention invented relation
 targets, such as `target_id: "brief-topic"`, treat that as a client-side
@@ -257,6 +319,22 @@ Rules:
 - stdout stays machine-readable
 - stderr carries debug trace
 - do this before adding more ad hoc logging
+
+When debugging submit/run contention, prefer traces that preserve the operation id:
+
+```bash
+JIDO_HIVE_CLIENT_LOG_LEVEL=debug \
+./jido_hive_client room submit ... \
+  > submit.json \
+  2> submit_trace.ndjson
+```
+
+Then correlate:
+
+- `operation_id` in stderr trace
+- `operation_id` in console log
+- `operation_id` in transport log lines
+- server request path and status
 
 Trace events include:
 

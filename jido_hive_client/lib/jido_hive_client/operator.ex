@@ -7,7 +7,6 @@ defmodule JidoHiveClient.Operator do
 
   @channels ~w[github notion]
   @default_run_assignment_timeout_ms 180_000
-  @default_run_request_buffer_ms 30_000
 
   @spec ensure_initialized() :: :ok
   def ensure_initialized, do: Config.ensure_initialized()
@@ -78,7 +77,12 @@ defmodule JidoHiveClient.Operator do
           ""
       end
 
-    case HTTP.get(api_base_url, "/rooms/#{room_id}/timeline#{after_cursor}") do
+    http_opts =
+      []
+      |> Keyword.put(:lane, Keyword.get(opts, :lane, :operator_timeline))
+      |> maybe_put_option(:operation_id, Keyword.get(opts, :operation_id))
+
+    case HTTP.get(api_base_url, "/rooms/#{room_id}/timeline#{after_cursor}", http_opts) do
       {:ok, %{"data" => entries} = payload} when is_list(entries) ->
         {:ok, %{entries: entries, next_cursor: Map.get(payload, "next_cursor")}}
 
@@ -90,9 +94,15 @@ defmodule JidoHiveClient.Operator do
     end
   end
 
-  @spec fetch_room(String.t(), String.t()) :: {:ok, map()} | {:error, term()}
-  def fetch_room(api_base_url, room_id) when is_binary(api_base_url) and is_binary(room_id) do
-    unwrap_data(HTTP.get(api_base_url, "/rooms/#{room_id}"))
+  @spec fetch_room(String.t(), String.t(), keyword()) :: {:ok, map()} | {:error, term()}
+  def fetch_room(api_base_url, room_id, opts \\ [])
+      when is_binary(api_base_url) and is_binary(room_id) and is_list(opts) do
+    http_opts =
+      []
+      |> Keyword.put(:lane, Keyword.get(opts, :lane, :operator_room))
+      |> maybe_put_option(:operation_id, Keyword.get(opts, :operation_id))
+
+    unwrap_data(HTTP.get(api_base_url, "/rooms/#{room_id}", http_opts))
   end
 
   @spec fetch_publication_plan(String.t(), String.t()) :: {:ok, map()} | {:error, term()}
@@ -101,10 +111,18 @@ defmodule JidoHiveClient.Operator do
     unwrap_data(HTTP.get(api_base_url, "/rooms/#{room_id}/publication_plan"))
   end
 
-  @spec submit_contribution(String.t(), String.t(), map()) :: {:ok, map()} | {:error, term()}
-  def submit_contribution(api_base_url, room_id, payload)
-      when is_binary(api_base_url) and is_binary(room_id) and is_map(payload) do
-    unwrap_data(HTTP.post(api_base_url, "/rooms/#{room_id}/contributions", payload))
+  @spec submit_contribution(String.t(), String.t(), map(), keyword()) ::
+          {:ok, map()} | {:error, term()}
+  def submit_contribution(api_base_url, room_id, payload, opts \\ [])
+      when is_binary(api_base_url) and is_binary(room_id) and is_map(payload) and is_list(opts) do
+    http_opts =
+      []
+      |> Keyword.put(:lane, Keyword.get(opts, :lane, :operator_contribution))
+      |> maybe_put_option(:operation_id, Keyword.get(opts, :operation_id))
+      |> maybe_put_option(:request_timeout_ms, Keyword.get(opts, :request_timeout_ms))
+      |> maybe_put_option(:connect_timeout_ms, Keyword.get(opts, :connect_timeout_ms))
+
+    unwrap_data(HTTP.post(api_base_url, "/rooms/#{room_id}/contributions", payload, http_opts))
   end
 
   @spec publish_room(String.t(), String.t(), map()) :: {:ok, map()} | {:error, term()}
@@ -118,18 +136,12 @@ defmodule JidoHiveClient.Operator do
     unwrap_data(HTTP.post(api_base_url, "/rooms", payload))
   end
 
-  @spec run_room(String.t(), String.t(), keyword()) :: {:ok, map()} | {:error, term()}
-  def run_room(api_base_url, room_id, opts \\ [])
+  @spec start_room_run_operation(String.t(), String.t(), keyword()) ::
+          {:ok, map()} | {:error, term()}
+  def start_room_run_operation(api_base_url, room_id, opts \\ [])
       when is_binary(api_base_url) and is_binary(room_id) and is_list(opts) do
     assignment_timeout_ms =
       Keyword.get(opts, :assignment_timeout_ms, @default_run_assignment_timeout_ms)
-
-    request_timeout_ms =
-      Keyword.get(
-        opts,
-        :request_timeout_ms,
-        max(assignment_timeout_ms + @default_run_request_buffer_ms, 60_000)
-      )
 
     payload =
       %{}
@@ -138,11 +150,29 @@ defmodule JidoHiveClient.Operator do
 
     http_opts =
       []
-      |> Keyword.put(:request_timeout_ms, request_timeout_ms)
+      |> Keyword.put(:lane, Keyword.get(opts, :lane, :room_run_control))
       |> Keyword.put(:operation_id, Keyword.get(opts, :operation_id))
+      |> maybe_put_option(:request_timeout_ms, Keyword.get(opts, :request_timeout_ms))
       |> maybe_put_option(:connect_timeout_ms, Keyword.get(opts, :connect_timeout_ms))
 
-    unwrap_data(HTTP.post(api_base_url, "/rooms/#{room_id}/run", payload, http_opts))
+    unwrap_data(HTTP.post(api_base_url, "/rooms/#{room_id}/run_operations", payload, http_opts))
+  end
+
+  @spec fetch_room_run_operation(String.t(), String.t(), String.t(), keyword()) ::
+          {:ok, map()} | {:error, term()}
+  def fetch_room_run_operation(api_base_url, room_id, operation_id, opts \\ [])
+      when is_binary(api_base_url) and is_binary(room_id) and is_binary(operation_id) and
+             is_list(opts) do
+    http_opts =
+      []
+      |> Keyword.put(:lane, Keyword.get(opts, :lane, :room_run_status))
+      |> maybe_put_option(:operation_id, Keyword.get(opts, :operation_id))
+      |> maybe_put_option(:request_timeout_ms, Keyword.get(opts, :request_timeout_ms))
+      |> maybe_put_option(:connect_timeout_ms, Keyword.get(opts, :connect_timeout_ms))
+
+    unwrap_data(
+      HTTP.get(api_base_url, "/rooms/#{room_id}/run_operations/#{operation_id}", http_opts)
+    )
   end
 
   @spec list_targets(String.t()) :: {:ok, list(map())} | {:error, term()}

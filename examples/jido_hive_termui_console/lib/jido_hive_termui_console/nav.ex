@@ -424,7 +424,7 @@ defmodule JidoHiveTermuiConsole.Nav do
   end
 
   defp fetch_room_snapshot(state, room_id, embedded_snapshot) do
-    case state.operator_module.fetch_room(state.api_base_url, room_id) do
+    case state.operator_module.fetch_room(state.api_base_url, room_id, lane: :room_hydrate) do
       {:ok, snapshot} ->
         merge_room_snapshot(snapshot, embedded_snapshot)
 

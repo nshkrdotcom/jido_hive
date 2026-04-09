@@ -52,6 +52,7 @@ defmodule JidoHiveTermuiConsole.Model do
     wizard_fields: %{},
     wizard_cursor: 0,
     pending_room_submit: nil,
+    pending_room_run: nil,
     wizard_available_targets: [],
     wizard_targets_state: :idle,
     wizard_available_policies: [],

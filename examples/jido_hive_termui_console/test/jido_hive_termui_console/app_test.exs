@@ -5,7 +5,7 @@ defmodule JidoHiveTermuiConsole.AppTest do
   alias JidoHiveTermuiConsole.{App, Model, TestSupport}
 
   defmodule OperatorStub do
-    def fetch_room(_base, _room_id) do
+    def fetch_room(_base, _room_id, _opts \\ []) do
       {:ok,
        %{
          "room_id" => "room-1",
@@ -45,6 +45,32 @@ defmodule JidoHiveTermuiConsole.AppTest do
       {:ok, %{"summary" => Map.get(attrs, :text) || Map.get(attrs, "text")}}
     end
 
+    def submit_chat_async(server, attrs) do
+      operation_id = Map.get(attrs, :operation_id) || Map.get(attrs, "operation_id")
+
+      Agent.update(server, fn state ->
+        snapshot =
+          state.snapshot
+          |> Map.put(
+            "operations",
+            [
+              %{
+                "operation_id" => operation_id,
+                "status" => "completed",
+                "type" => "room_submit"
+              }
+            ]
+          )
+
+        state
+        |> Map.put(:submitted, attrs)
+        |> Map.put(:snapshot, snapshot)
+      end)
+
+      send(test_pid(), {:embedded_submit_chat, attrs})
+      {:ok, %{"operation_id" => operation_id, "status" => "accepted"}}
+    end
+
     def accept_context(_server, context_id, _attrs) do
       send(test_pid(), {:embedded_accept_context, context_id})
       {:ok, %{"authority_level" => "binding"}}
@@ -60,7 +86,7 @@ defmodule JidoHiveTermuiConsole.AppTest do
   end
 
   defmodule WizardOperatorStub do
-    def fetch_room(_base, room_id) do
+    def fetch_room(_base, room_id, _opts \\ []) do
       {:ok,
        %{
          "room_id" => room_id,
@@ -80,9 +106,9 @@ defmodule JidoHiveTermuiConsole.AppTest do
       :ok
     end
 
-    def run_room(_base, room_id, opts) do
-      send(test_pid(), {:operator_run_room, room_id, opts})
-      {:ok, %{"status" => "publication_ready"}}
+    def start_room_run_operation(_base, room_id, opts) do
+      send(test_pid(), {:operator_start_room_run_operation, room_id, opts})
+      {:ok, %{"operation_id" => Keyword.fetch!(opts, :operation_id), "status" => "accepted"}}
     end
 
     def list_targets(_base), do: {:ok, []}
@@ -95,7 +121,7 @@ defmodule JidoHiveTermuiConsole.AppTest do
   end
 
   defmodule RunTimeoutOperatorStub do
-    def fetch_room(_base, "room-1") do
+    def fetch_room(_base, "room-1", _opts \\ []) do
       {:ok,
        %{
          "room_id" => "room-1",
@@ -107,7 +133,7 @@ defmodule JidoHiveTermuiConsole.AppTest do
   end
 
   defmodule PublishOperatorStub do
-    def fetch_room(_base, "room-1") do
+    def fetch_room(_base, "room-1", _opts \\ []) do
       {:ok,
        %{
          "room_id" => "room-1",
@@ -169,7 +195,7 @@ defmodule JidoHiveTermuiConsole.AppTest do
   end
 
   defmodule EmptyRoomOperatorStub do
-    def fetch_room(_base, "room-1") do
+    def fetch_room(_base, "room-1", _opts \\ []) do
       {:ok,
        %{
          "room_id" => "room-1",
@@ -227,26 +253,32 @@ defmodule JidoHiveTermuiConsole.AppTest do
     assert {:noreply, pending_state} = App.handle_event(%Key{code: "enter", kind: "press"}, state)
 
     assert pending_state.input_buffer == ""
-    assert pending_state.pending_room_submit == %{room_id: "room-1", text: "plain update"}
-    assert pending_state.status_line == "Submitting chat message..."
-    assert_receive {:embedded_submit_chat, attrs}
 
-    assert attrs == %{
+    assert %{room_id: "room-1", text: "plain update", operation_id: operation_id} =
+             pending_state.pending_room_submit
+
+    assert pending_state.status_line =~ "Submitting chat message... op="
+    assert_receive {:embedded_submit_chat, attrs}
+    assert_receive {:room_submit_accepted, "room-1", "plain update", ^operation_id, {:ok, _}}
+
+    assert %{
              text: "plain update",
+             operation_id: ^operation_id,
              authority_level: "binding",
              participant_id: "alice",
              participant_role: "coordinator"
-           }
+           } = attrs
 
     assert Agent.get(embedded, & &1.submitted) == attrs
-    assert_receive {:room_submit_result, "room-1", "plain update", {:ok, _contribution}}
 
-    assert {:noreply, next_state} =
+    assert {:noreply, accepted_state} =
              App.handle_info(
-               {:room_submit_result, "room-1", "plain update",
-                {:ok, %{"summary" => "plain update"}}},
+               {:room_submit_accepted, "room-1", "plain update", operation_id,
+                {:ok, %{"operation_id" => operation_id, "status" => "accepted"}}},
                pending_state
              )
+
+    {next_state, [{:timer, _timeout_ms, :poll}]} = App.update(:poll, accepted_state)
 
     assert next_state.pending_room_submit == nil
     assert next_state.status_line == "Submitted chat message"
@@ -262,25 +294,38 @@ defmodule JidoHiveTermuiConsole.AppTest do
 
     assert pending_state.input_buffer == ""
 
-    assert pending_state.pending_room_submit == %{
-             room_id: "room-1",
-             text: "I think auth is broken"
-           }
+    assert %{room_id: "room-1", text: "I think auth is broken", operation_id: operation_id} =
+             pending_state.pending_room_submit
 
     assert_receive {:embedded_submit_chat, attrs}
 
-    assert attrs == %{
+    assert_receive {:room_submit_accepted, "room-1", "I think auth is broken", ^operation_id,
+                    {:ok, _}}
+
+    assert %{
              text: "I think auth is broken",
+             operation_id: ^operation_id,
              selected_context_id: "ctx-1",
              selected_context_object_type: "belief",
              selected_relation: "supports",
              authority_level: "binding",
              participant_id: "alice",
              participant_role: "coordinator"
-           }
+           } = attrs
 
     assert Agent.get(embedded, & &1.submitted) == attrs
-    assert_receive {:room_submit_result, "room-1", "I think auth is broken", {:ok, _contribution}}
+
+    assert {:noreply, accepted_state} =
+             App.handle_info(
+               {:room_submit_accepted, "room-1", "I think auth is broken", operation_id,
+                {:ok, %{"operation_id" => operation_id, "status" => "accepted"}}},
+               pending_state
+             )
+
+    {next_state, [{:timer, _timeout_ms, :poll}]} = App.update(:poll, accepted_state)
+
+    assert next_state.pending_room_submit == nil
+    assert next_state.status_line == "Submitted chat message"
   end
 
   test "room enter restores the draft when async submission fails", %{model: model} do
@@ -299,11 +344,15 @@ defmodule JidoHiveTermuiConsole.AppTest do
 
     assert pending_state.input_buffer == ""
     assert_receive {:embedded_submit_chat, %{text: "retry me"}}
-    assert_receive {:room_submit_result, "room-1", "retry me", {:error, :submit_failed}}
+    assert %{operation_id: operation_id} = pending_state.pending_room_submit
+
+    assert_receive {:room_submit_accepted, "room-1", "retry me", ^operation_id,
+                    {:error, :submit_failed}}
 
     assert {:noreply, next_state} =
              App.handle_info(
-               {:room_submit_result, "room-1", "retry me", {:error, :submit_failed}},
+               {:room_submit_accepted, "room-1", "retry me", operation_id,
+                {:error, :submit_failed}},
                pending_state
              )
 
@@ -313,7 +362,7 @@ defmodule JidoHiveTermuiConsole.AppTest do
   end
 
   defmodule FailingEmbeddedStub do
-    def submit_chat(_server, attrs) do
+    def submit_chat_async(_server, attrs) do
       send(
         Application.fetch_env!(:jido_hive_termui_console, :app_test_pid),
         {:embedded_submit_chat, attrs}
@@ -324,7 +373,7 @@ defmodule JidoHiveTermuiConsole.AppTest do
   end
 
   defmodule ExitEmbeddedStub do
-    def submit_chat(_server, _attrs) do
+    def submit_chat_async(_server, _attrs) do
       exit(:submit_timeout)
     end
   end
@@ -463,8 +512,12 @@ defmodule JidoHiveTermuiConsole.AppTest do
       %{
         model
         | embedded: embedded,
-          pending_room_submit: %{room_id: "room-1", text: "stale but accepted"},
-          status_line: "Submitting chat message..."
+          pending_room_submit: %{
+            room_id: "room-1",
+            text: "stale but accepted",
+            operation_id: "room_submit-stale"
+          },
+          status_line: "Submitting chat message... op=room_submit-stale"
       }
 
     {next_state, [{:timer, _timeout_ms, :poll}]} = App.update(:poll, state)
@@ -494,11 +547,15 @@ defmodule JidoHiveTermuiConsole.AppTest do
 
     assert {:noreply, pending_state} = App.handle_event(%Key{code: "enter", kind: "press"}, state)
 
-    assert_receive {:room_submit_result, "room-1", "retry me", {:error, {:exit, :submit_timeout}}}
+    assert %{operation_id: operation_id} = pending_state.pending_room_submit
+
+    assert_receive {:room_submit_accepted, "room-1", "retry me", ^operation_id,
+                    {:error, {:exit, :submit_timeout}}}
 
     assert {:noreply, next_state} =
              App.handle_info(
-               {:room_submit_result, "room-1", "retry me", {:error, {:exit, :submit_timeout}}},
+               {:room_submit_accepted, "room-1", "retry me", operation_id,
+                {:error, {:exit, :submit_timeout}}},
                pending_state
              )
 
@@ -647,8 +704,8 @@ defmodule JidoHiveTermuiConsole.AppTest do
     assert next_state.status_line =~ "run started in background"
     assert room_id == next_state.room_id
 
-    assert_receive {:operator_run_room, ^room_id,
-                    [assignment_timeout_ms: 180_000, request_timeout_ms: 210_000, operation_id: _]}
+    assert_receive {:operator_start_room_run_operation, ^room_id,
+                    [assignment_timeout_ms: 180_000, operation_id: _]}
   end
 
   test "run room timeout is downgraded when room activity is already visible", %{model: model} do

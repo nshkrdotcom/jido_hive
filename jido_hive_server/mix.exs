@@ -118,6 +118,7 @@ defmodule JidoHiveServer.MixProject do
     [
       extras: [
         "../README.md": [title: "Overview"],
+        "../LICENSE": [title: "License"],
         "../docs/architecture.md": [title: "Architecture"],
         "../setup/README.md": [title: "Setup Toolkit"],
         "../docs/developer/multi_agent_round_robin.md": [
@@ -125,7 +126,7 @@ defmodule JidoHiveServer.MixProject do
         ]
       ],
       groups_for_extras: [
-        "Project Overview": ["../README.md"],
+        "Project Overview": ["../README.md", "../LICENSE"],
         "User Guides": ["../docs/architecture.md", "../setup/README.md"],
         "Developer Guides": ["../docs/developer/multi_agent_round_robin.md"]
       ],

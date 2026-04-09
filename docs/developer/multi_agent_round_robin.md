@@ -52,7 +52,7 @@ These changed how the demo is run:
 - changed `bin/hive-clients` from role launchers to generic worker fan-out
 - changed `setup/hive create-room` and `live-demo` to discover connected relay
   targets
-- changed `run-room` to use the locked plan by default when `max_turns` is not
+- changed `run-room` to use the locked plan by default when `max_assignments` is not
   specified
 
 Keeping those concerns separate made it possible to test the runtime logic

@@ -138,7 +138,7 @@ The operator surface is deliberately small:
 - `run-room`
 - `live-demo`
 
-If `max_turns` is omitted, `run-room` uses the locked execution plan by default
+If `max_assignments` is omitted, `run-room` uses the locked execution plan by default
 instead of a hardcoded demo turn count.
 
 ## Current Limits

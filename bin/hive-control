@@ -86,7 +86,7 @@ prompt_optional_value() {
 }
 
 cmd_live_demo() {
-  local room_id participant_count max_turns turn_timeout_ms wait_timeout_ms
+  local room_id participant_count max_assignments assignment_timeout_ms wait_timeout_ms
   local -a args=()
 
   printf '[jido_hive control] start bin/hive-clients %s and launch at least one worker before running this\n' "$(
@@ -97,14 +97,14 @@ cmd_live_demo() {
 
   room_id="$(prompt_value 'room id' "room-$(date +%s)")"
   participant_count="$(prompt_optional_value 'participant count (blank = all connected workers)')"
-  max_turns="$(prompt_optional_value 'max turns override (blank = locked plan default)')"
-  turn_timeout_ms="$(prompt_value 'turn timeout ms' '180000')"
+  max_assignments="$(prompt_optional_value 'max assignments override (blank = locked plan default)')"
+  assignment_timeout_ms="$(prompt_value 'assignment timeout ms' '180000')"
   wait_timeout_ms="$(prompt_value 'wait timeout ms' '120000')"
 
   args+=(--room-id "$room_id")
   [[ -n "$participant_count" ]] && args+=(--participant-count "$participant_count")
-  [[ -n "$max_turns" ]] && args+=(--max-turns "$max_turns")
-  args+=(--turn-timeout-ms "$turn_timeout_ms")
+  [[ -n "$max_assignments" ]] && args+=(--max-assignments "$max_assignments")
+  args+=(--assignment-timeout-ms "$assignment_timeout_ms")
   args+=(--wait-timeout-ms "$wait_timeout_ms")
 
   run_setup live-demo "${args[@]}"
@@ -124,7 +124,7 @@ cmd_create_room() {
 }
 
 cmd_run_room() {
-  local room_id max_turns turn_timeout_ms
+  local room_id max_assignments assignment_timeout_ms
 
   room_id="$(prompt_value 'room id' '')"
   [[ -n "$room_id" ]] || {
@@ -132,13 +132,13 @@ cmd_run_room() {
     return 1
   }
 
-  max_turns="$(prompt_optional_value 'max turns override (blank = planned count)')"
-  turn_timeout_ms="$(prompt_value 'turn timeout ms' '180000')"
+  max_assignments="$(prompt_optional_value 'max assignments override (blank = policy/default)')"
+  assignment_timeout_ms="$(prompt_value 'assignment timeout ms' '180000')"
 
-  if [[ -n "$max_turns" ]]; then
-    run_setup run-room "$room_id" --max-turns "$max_turns" --turn-timeout-ms "$turn_timeout_ms"
+  if [[ -n "$max_assignments" ]]; then
+    run_setup run-room "$room_id" --max-assignments "$max_assignments" --assignment-timeout-ms "$assignment_timeout_ms"
   else
-    run_setup run-room "$room_id" --turn-timeout-ms "$turn_timeout_ms"
+    run_setup run-room "$room_id" --assignment-timeout-ms "$assignment_timeout_ms"
   fi
 }
 

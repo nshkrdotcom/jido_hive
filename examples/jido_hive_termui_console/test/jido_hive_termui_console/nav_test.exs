@@ -6,7 +6,9 @@ defmodule JidoHiveTermuiConsole.NavTest do
   defmodule OperatorStub do
     def list_saved_rooms(_api_base_url), do: ["room-a", "room-b"]
 
-    def fetch_room(_base, "room-1") do
+    def fetch_room(base, room_id, opts \\ [])
+
+    def fetch_room(_base, "room-1", _opts) do
       {:ok,
        %{
          "room_id" => "room-1",
@@ -18,7 +20,7 @@ defmodule JidoHiveTermuiConsole.NavTest do
        }}
     end
 
-    def fetch_room(_base, "room-with-context") do
+    def fetch_room(_base, "room-with-context", _opts) do
       {:ok,
        %{
          "room_id" => "room-with-context",
@@ -36,7 +38,7 @@ defmodule JidoHiveTermuiConsole.NavTest do
        }}
     end
 
-    def fetch_room(_base, _room_id), do: {:error, :not_found}
+    def fetch_room(_base, _room_id, _opts), do: {:error, :not_found}
   end
 
   defmodule EmbeddedStub do

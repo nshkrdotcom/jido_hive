@@ -173,7 +173,7 @@ defmodule JidoHiveClient.OperatorTest do
     assert_receive {:publish_request, ^payload}
   end
 
-  test "create_room, run_room, and list targets and policies go through the shared operator API" do
+  test "create_room, run operation start/status, and list targets and policies go through the shared operator API" do
     parent = self()
 
     {:ok, server} =
@@ -183,9 +183,19 @@ defmodule JidoHiveClient.OperatorTest do
             send(parent, {:create_room_request, Jason.decode!(request.body)})
             {201, %{}, Jason.encode!(%{"data" => %{"room_id" => "room-1", "status" => "idle"}})}
 
-          {"POST", "/rooms/room-1/run"} ->
+          {"POST", "/rooms/room-1/run_operations"} ->
             send(parent, {:run_room_request, Jason.decode!(request.body)})
-            {200, %{}, Jason.encode!(%{"data" => %{"status" => "running"}})}
+
+            {202, %{},
+             Jason.encode!(%{
+               "data" => %{"operation_id" => "room_run-op-1", "status" => "accepted"}
+             })}
+
+          {"GET", "/rooms/room-1/run_operations/room_run-op-1"} ->
+            {200, %{},
+             Jason.encode!(%{
+               "data" => %{"operation_id" => "room_run-op-1", "status" => "completed"}
+             })}
 
           {"GET", "/targets"} ->
             {200, %{}, Jason.encode!(%{"data" => [%{"target_id" => "worker-01"}]})}
@@ -204,15 +214,23 @@ defmodule JidoHiveClient.OperatorTest do
 
     assert_receive {:create_room_request, ^room_payload}
 
-    assert {:ok, %{"status" => "running"}} =
-             Operator.run_room(TestHTTPServer.base_url(server), "room-1",
+    assert {:ok, %{"operation_id" => "room_run-op-1", "status" => "accepted"}} =
+             Operator.start_room_run_operation(TestHTTPServer.base_url(server), "room-1",
                max_assignments: 1,
                assignment_timeout_ms: 45_000,
-               request_timeout_ms: 55_000
+               request_timeout_ms: 55_000,
+               operation_id: "room_run-client-op"
              )
 
     assert_receive {:run_room_request,
                     %{"max_assignments" => 1, "assignment_timeout_ms" => 45_000}}
+
+    assert {:ok, %{"operation_id" => "room_run-op-1", "status" => "completed"}} =
+             Operator.fetch_room_run_operation(
+               TestHTTPServer.base_url(server),
+               "room-1",
+               "room_run-op-1"
+             )
 
     assert {:ok, [%{"target_id" => "worker-01"}]} =
              Operator.list_targets(TestHTTPServer.base_url(server))
@@ -221,12 +239,12 @@ defmodule JidoHiveClient.OperatorTest do
              Operator.list_policies(TestHTTPServer.base_url(server))
   end
 
-  test "run_room returns structured timeout metadata when the request times out" do
+  test "start_room_run_operation returns structured timeout metadata when the request times out" do
     {:ok, server} =
       TestHTTPServer.start_link(fn request ->
-        assert request.path == "/rooms/room-timeout/run"
+        assert request.path == "/rooms/room-timeout/run_operations"
         Process.sleep(75)
-        {200, %{}, Jason.encode!(%{"data" => %{"status" => "running"}})}
+        {202, %{}, Jason.encode!(%{"data" => %{"operation_id" => "room_run-op-timeout"}})}
       end)
 
     on_exit(fn -> TestHTTPServer.stop(server) end)
@@ -235,11 +253,11 @@ defmodule JidoHiveClient.OperatorTest do
             {:timeout,
              %{
                method: "POST",
-               path: "/rooms/room-timeout/run",
+               path: "/rooms/room-timeout/run_operations",
                request_timeout_ms: 10,
                operation_id: "room_run-test"
              } = metadata}} =
-             Operator.run_room(TestHTTPServer.base_url(server), "room-timeout",
+             Operator.start_room_run_operation(TestHTTPServer.base_url(server), "room-timeout",
                request_timeout_ms: 10,
                assignment_timeout_ms: 5,
                operation_id: "room_run-test"
