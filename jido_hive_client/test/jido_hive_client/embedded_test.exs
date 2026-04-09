@@ -292,13 +292,13 @@ defmodule JidoHiveClient.EmbeddedTest do
   test "starts with a room snapshot and allows subscription", %{embedded: embedded} do
     assert :ok = Embedded.subscribe(embedded)
     assert_receive {:room_session_snapshot, "room-1", initial_snapshot}
-    assert initial_snapshot.room_id == "room-1"
+    assert initial_snapshot["room_id"] == "room-1"
     assert {:ok, snapshot} = Embedded.refresh(embedded)
-    assert snapshot.room_id == "room-1"
-    assert snapshot.participant.participant_id == "alice"
-    assert snapshot.runtime.identity.participant_id == "alice"
+    assert snapshot["room_id"] == "room-1"
+    assert snapshot["participant"].participant_id == "alice"
+    assert snapshot["runtime"].identity.participant_id == "alice"
 
-    if snapshot.last_sync_at != initial_snapshot.last_sync_at do
+    if snapshot["last_sync_at"] != initial_snapshot["last_sync_at"] do
       assert_receive {:room_session_snapshot, "room-1", refreshed_snapshot}
       assert (refreshed_snapshot[:status] || refreshed_snapshot["status"]) == "running"
     end
@@ -319,7 +319,7 @@ defmodule JidoHiveClient.EmbeddedTest do
 
     wait_until(fn ->
       snapshot = Embedded.snapshot(embedded)
-      length(snapshot.timeline) == 1 and length(snapshot.context_objects) >= 4
+      length(snapshot["timeline"]) == 1 and length(snapshot["context_objects"]) >= 4
     end)
   end
 
@@ -329,10 +329,10 @@ defmodule JidoHiveClient.EmbeddedTest do
 
     assert_receive {:submit_contribution, "room-1", _initial_payload}
 
-    wait_until(fn -> Embedded.snapshot(embedded).context_objects != [] end)
+    wait_until(fn -> Embedded.snapshot(embedded)["context_objects"] != [] end)
 
     candidate =
-      Embedded.snapshot(embedded).context_objects
+      Embedded.snapshot(embedded)["context_objects"]
       |> Enum.find(&(&1["object_type"] == "decision_candidate"))
 
     {:ok, contribution} = Embedded.accept_context(embedded, candidate["context_id"])
@@ -348,7 +348,7 @@ defmodule JidoHiveClient.EmbeddedTest do
            ]
 
     wait_until(fn ->
-      Embedded.snapshot(embedded).context_objects
+      Embedded.snapshot(embedded)["context_objects"]
       |> Enum.any?(&(&1["object_type"] == "decision"))
     end)
   end
@@ -452,13 +452,13 @@ defmodule JidoHiveClient.EmbeddedTest do
 
     assert_receive {:room_session_snapshot, "room-1", accepted_snapshot}
 
-    assert Enum.any?(accepted_snapshot.operations, fn operation ->
+    assert Enum.any?(accepted_snapshot["operations"], fn operation ->
              operation["operation_id"] == operation_id and
                operation["status"] in ["accepted", "preparing", "sending", "server_acknowledged"]
            end)
 
     wait_until(fn ->
-      Embedded.snapshot(embedded).operations
+      Embedded.snapshot(embedded)["operations"]
       |> Enum.any?(fn operation ->
         operation["operation_id"] == operation_id and operation["status"] == "completed"
       end)
@@ -467,7 +467,7 @@ defmodule JidoHiveClient.EmbeddedTest do
     assert_receive {:room_session_snapshot, "room-1", _later_snapshot}
 
     wait_until(fn ->
-      Embedded.snapshot(embedded).context_objects
+      Embedded.snapshot(embedded)["context_objects"]
       |> Enum.any?(fn object -> object["body"] == "Broadcast the new snapshot" end)
     end)
   end
@@ -532,7 +532,7 @@ defmodule JidoHiveClient.EmbeddedTest do
     assert_receive {:missing_fetch_timeline, "missing-room", _query_opts, 2}, 500
     assert_receive {:missing_fetch_timeline, "missing-room", _query_opts, 3}, 500
 
-    wait_until(fn -> Embedded.snapshot(embedded).last_error == :room_not_found end)
+    wait_until(fn -> Embedded.snapshot(embedded)["last_error"] == :room_not_found end)
     Process.sleep(80)
 
     assert Agent.get(server, & &1.timeline_fetches) == 3

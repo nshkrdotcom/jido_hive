@@ -117,7 +117,7 @@ defmodule JidoHiveClient.RelayWorker do
             {:ok, contribution} -> contribution
             {:error, reason} -> failed_contribution(normalized_assignment, reason)
           end
-          |> Map.put_new("contribution_id", unique_id("contrib"))
+          |> Map.put_new("contribution_id", contribution_id(normalized_assignment, state))
           |> Map.put_new("room_id", normalized_assignment["room_id"])
           |> Map.put_new("assignment_id", normalized_assignment["assignment_id"])
           |> Map.put_new("target_id", state.target_id)
@@ -223,8 +223,31 @@ defmodule JidoHiveClient.RelayWorker do
     )
   end
 
-  defp unique_id(prefix) do
-    "#{prefix}-#{System.unique_integer([:positive, :monotonic])}"
+  defp contribution_id(assignment, state) do
+    room_id = assignment["room_id"]
+    assignment_id = assignment["assignment_id"]
+    participant_id = assignment["participant_id"] || state.participant_id
+    target_id = assignment["target_id"] || state.target_id
+
+    if Enum.all?([room_id, assignment_id, participant_id, target_id], &is_binary/1) do
+      stable_contribution_id([room_id, assignment_id, participant_id, target_id])
+    else
+      random_contribution_id()
+    end
+  end
+
+  defp stable_contribution_id(components) do
+    digest =
+      components
+      |> Enum.join(":")
+      |> then(&:crypto.hash(:sha256, &1))
+      |> Base.encode16(case: :lower)
+
+    "contrib-" <> String.slice(digest, 0, 24)
+  end
+
+  defp random_contribution_id do
+    "contrib-" <> Base.url_encode64(:crypto.strong_rand_bytes(12), padding: false)
   end
 
   defp publish_signal(type, data) do

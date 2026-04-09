@@ -484,16 +484,17 @@ defmodule JidoHiveClient.Embedded do
 
   defp current_snapshot(%__MODULE__{} = state) do
     state.room_snapshot
-    |> Map.put(:room_id, state.room_id)
-    |> Map.put(:participant, state.participant)
-    |> Map.put(:runtime, Runtime.snapshot(state.runtime))
-    |> Map.put(:timeline, state.timeline)
-    |> Map.put(:context_objects, state.context_objects)
-    |> Map.put(:next_cursor, state.next_cursor)
-    |> Map.put(:last_sync_at, state.last_sync_at)
-    |> Map.put(:last_error, state.last_error)
-    |> Map.put(:operations, current_operations(state))
-    |> Map.put(:transport, TransportHTTP.diagnostics())
+    |> normalize_room_snapshot()
+    |> Map.put("room_id", state.room_id)
+    |> Map.put("participant", state.participant)
+    |> Map.put("runtime", Runtime.snapshot(state.runtime))
+    |> Map.put("timeline", state.timeline)
+    |> Map.put("context_objects", state.context_objects)
+    |> Map.put("next_cursor", state.next_cursor)
+    |> Map.put("last_sync_at", state.last_sync_at)
+    |> Map.put("last_error", state.last_error)
+    |> Map.put("operations", current_operations(state))
+    |> Map.put("transport", TransportHTTP.diagnostics())
   end
 
   defp request_sync(%__MODULE__{} = state, record_event?, waiters, force_full?) do
@@ -663,7 +664,11 @@ defmodule JidoHiveClient.Embedded do
   defp maybe_fetch_room_snapshot(%__MODULE__{}, false), do: nil
 
   defp apply_sync_result(%__MODULE__{} = state, sync_result, record_event?) do
-    room_snapshot = sync_result.room_snapshot || state.room_snapshot
+    room_snapshot =
+      case sync_result.room_snapshot do
+        nil -> state.room_snapshot
+        snapshot -> normalize_room_snapshot(snapshot)
+      end
 
     timeline =
       state.timeline
@@ -707,10 +712,15 @@ defmodule JidoHiveClient.Embedded do
 
   defp fetch_room_snapshot(%__MODULE__{} = state) do
     case state.room_api.fetch_room(room_api_sync_opts(state), state.room_id) do
-      {:ok, room_snapshot} when is_map(room_snapshot) -> room_snapshot
+      {:ok, room_snapshot} when is_map(room_snapshot) -> normalize_room_snapshot(room_snapshot)
       _other -> nil
     end
   end
+
+  defp normalize_room_snapshot(%{"data" => %{} = snapshot}), do: snapshot
+  defp normalize_room_snapshot(%{data: %{} = snapshot}), do: snapshot
+  defp normalize_room_snapshot(%{} = snapshot), do: snapshot
+  defp normalize_room_snapshot(_other), do: %{}
 
   defp append_timeline_entries(existing, []), do: existing
 

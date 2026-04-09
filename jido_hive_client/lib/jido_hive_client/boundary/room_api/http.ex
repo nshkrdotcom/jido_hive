@@ -9,7 +9,10 @@ defmodule JidoHiveClient.Boundary.RoomApi.Http do
 
   @impl true
   def fetch_room(opts, room_id) do
-    request(:get, opts, "/rooms/#{URI.encode_www_form(room_id)}", nil)
+    with {:ok, %{"data" => room_snapshot}} when is_map(room_snapshot) <-
+           request(:get, opts, "/rooms/#{URI.encode_www_form(room_id)}", nil) do
+      {:ok, room_snapshot}
+    end
   end
 
   @impl true

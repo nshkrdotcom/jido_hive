@@ -126,22 +126,27 @@ defmodule JidoHiveServer.Collaboration.RoomServer do
   end
 
   defp do_record_contribution(snapshot, payload, participant, write_intent) do
-    if duplicate_contribution?(snapshot, payload) do
-      {:ok, snapshot}
-    else
-      with :ok <- ContextManager.validate_append(participant, write_intent, snapshot),
-           {:ok, event} <- room_event(snapshot.room_id, :contribution_recorded, payload),
-           base_snapshot <- EventReducer.apply_event(snapshot, event),
-           appended_context_ids <- appended_context_ids(snapshot, base_snapshot),
-           %{room_events: derived_event_attrs} <-
-             ContextManager.after_append(snapshot, base_snapshot, appended_context_ids),
-           {:ok, derived_events} <-
-             room_events_from_attrs(snapshot.room_id, event, derived_event_attrs),
-           final_snapshot <- EventReducer.reduce(base_snapshot, derived_events),
-           {:ok, _snapshot} <-
-             Persistence.persist_room_transition(final_snapshot, [event | derived_events]) do
-        {:ok, final_snapshot}
-      end
+    case contribution_recording_decision(snapshot, payload) do
+      :record ->
+        with :ok <- ContextManager.validate_append(participant, write_intent, snapshot),
+             {:ok, event} <- room_event(snapshot.room_id, :contribution_recorded, payload),
+             base_snapshot <- EventReducer.apply_event(snapshot, event),
+             appended_context_ids <- appended_context_ids(snapshot, base_snapshot),
+             %{room_events: derived_event_attrs} <-
+               ContextManager.after_append(snapshot, base_snapshot, appended_context_ids),
+             {:ok, derived_events} <-
+               room_events_from_attrs(snapshot.room_id, event, derived_event_attrs),
+             final_snapshot <- EventReducer.reduce(base_snapshot, derived_events),
+             {:ok, _snapshot} <-
+               Persistence.persist_room_transition(final_snapshot, [event | derived_events]) do
+          {:ok, final_snapshot}
+        end
+
+      :idempotent ->
+        {:ok, snapshot}
+
+      {:error, reason} ->
+        {:error, reason}
     end
   end
 
@@ -269,15 +274,44 @@ defmodule JidoHiveServer.Collaboration.RoomServer do
 
   defp valid_relation_target_id?(_target_id), do: false
 
-  defp duplicate_contribution?(snapshot, payload) do
+  defp contribution_recording_decision(snapshot, payload) do
     contribution = map_value(payload, "contribution")
     contribution_id = value(contribution, "contribution_id")
     assignment_id = value(contribution, "assignment_id")
     participant_id = value(contribution, "participant_id")
 
-    Enum.any?(snapshot.contributions, fn existing ->
-      duplicate_contribution_id?(existing, contribution_id) or
-        duplicate_assignment_result?(existing, assignment_id, participant_id)
+    Enum.reduce_while(snapshot.contributions, :record, fn existing, _decision ->
+      cond do
+        duplicate_contribution_id?(existing, contribution_id) and
+            duplicate_assignment_result?(existing, assignment_id, participant_id) ->
+          {:halt, :idempotent}
+
+        duplicate_contribution_id?(existing, contribution_id) ->
+          {:halt,
+           {:error,
+            {:duplicate_contribution_id_conflict,
+             %{
+               contribution_id: contribution_id,
+               existing_assignment_id: value(existing, "assignment_id"),
+               incoming_assignment_id: assignment_id,
+               existing_participant_id: value(existing, "participant_id"),
+               incoming_participant_id: participant_id
+             }}}}
+
+        duplicate_assignment_result?(existing, assignment_id, participant_id) ->
+          {:halt,
+           {:error,
+            {:duplicate_assignment_result_conflict,
+             %{
+               assignment_id: assignment_id,
+               participant_id: participant_id,
+               existing_contribution_id: value(existing, "contribution_id"),
+               incoming_contribution_id: contribution_id
+             }}}}
+
+        true ->
+          {:cont, :record}
+      end
     end)
   end
 
