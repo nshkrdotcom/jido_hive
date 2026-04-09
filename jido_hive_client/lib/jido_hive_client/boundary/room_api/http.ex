@@ -2,6 +2,8 @@ defmodule JidoHiveClient.Boundary.RoomApi.Http do
   @moduledoc false
 
   @behaviour JidoHiveClient.Boundary.RoomApi
+  @request_timeout_ms 10_000
+  @connect_timeout_ms 3_000
 
   @impl true
   def fetch_timeline(opts, room_id, query_opts \\ []) do
@@ -53,7 +55,9 @@ defmodule JidoHiveClient.Boundary.RoomApi.Http do
         :post -> {url, headers, ~c"application/json", Jason.encode!(payload)}
       end
 
-    case :httpc.request(method, request, [], body_format: :binary) do
+    http_opts = [timeout: @request_timeout_ms, connect_timeout: @connect_timeout_ms]
+
+    case :httpc.request(method, request, http_opts, body_format: :binary) do
       {:ok, {{_version, status, _reason_phrase}, _response_headers, body}}
       when status in 200..299 ->
         {:ok, decode_body(body)}

@@ -129,7 +129,9 @@ defmodule JidoHiveTermuiConsole.App do
   def update(:poll, state) do
     next_state =
       if state.active_screen in [:room, :conflict, :publish] do
-        Nav.refresh_room_snapshot(state)
+        state
+        |> Nav.refresh_room_snapshot()
+        |> reconcile_pending_room_submit()
       else
         state
       end
@@ -711,14 +713,7 @@ defmodule JidoHiveTermuiConsole.App do
     next_state =
       case state.pending_room_submit do
         %{room_id: ^room_id, text: ^text} ->
-          Logger.error(
-            "room chat submit failed room_id=#{room_id} participant_id=#{state.participant_id} reason=#{inspect(reason)}"
-          )
-
-          state
-          |> Map.put(:pending_room_submit, nil)
-          |> set_room_input(text)
-          |> Model.set_status("Submit failed: #{inspect(reason)}", :error)
+          reconcile_room_submit_failure(state, room_id, text, reason)
 
         _other ->
           state
@@ -971,7 +966,11 @@ defmodule JidoHiveTermuiConsole.App do
     api_base_url = state.api_base_url
 
     spawn(fn ->
-      result = http_module.post(api_base_url, "/rooms/#{URI.encode_www_form(room_id)}/run", %{})
+      result =
+        safe_async_result(fn ->
+          http_module.post(api_base_url, "/rooms/#{URI.encode_www_form(room_id)}/run", %{})
+        end)
+
       send(caller, {:run_room_result, room_id, result})
     end)
 
@@ -986,10 +985,15 @@ defmodule JidoHiveTermuiConsole.App do
 
     spawn(fn ->
       result =
-        with {:ok, response} <- http_module.post(api_base_url, "/rooms", payload),
-             :ok <- config_add_room(config_module, room_id, api_base_url) do
-          {:ok, response}
-        end
+        safe_async_result(fn ->
+          create_room_and_store_config(
+            http_module,
+            api_base_url,
+            config_module,
+            room_id,
+            payload
+          )
+        end)
 
       send(caller, {:wizard_create_result, room_id, result})
     end)
@@ -1003,11 +1007,22 @@ defmodule JidoHiveTermuiConsole.App do
     embedded = state.embedded
 
     spawn(fn ->
-      result = embedded_module.submit_chat(embedded, submit_attrs)
+      result =
+        safe_async_result(fn ->
+          embedded_module.submit_chat(embedded, submit_attrs)
+        end)
+
       send(caller, {:room_submit_result, room_id, text, result})
     end)
 
     :ok
+  end
+
+  defp create_room_and_store_config(http_module, api_base_url, config_module, room_id, payload) do
+    with {:ok, response} <- http_module.post(api_base_url, "/rooms", payload),
+         :ok <- config_add_room(config_module, room_id, api_base_url) do
+      {:ok, response}
+    end
   end
 
   defp config_add_room(config_module, room_id, api_base_url) do
@@ -1051,6 +1066,95 @@ defmodule JidoHiveTermuiConsole.App do
       |> Model.set_status("Submitting chat message...", :info)
 
     {next_state, [{:submit_room_chat, room_id, text, submit_attrs}]}
+  end
+
+  defp reconcile_pending_room_submit(%Model{pending_room_submit: nil} = state), do: state
+
+  defp reconcile_pending_room_submit(%Model{} = state) do
+    case state.pending_room_submit do
+      %{text: text} ->
+        if submit_visible_in_snapshot?(state.snapshot, state.participant_id, text) do
+          state
+          |> Map.put(:pending_room_submit, nil)
+          |> Model.set_status("Submitted chat message", :info)
+        else
+          state
+        end
+    end
+  end
+
+  defp reconcile_room_submit_failure(%Model{} = state, room_id, text, reason) do
+    Logger.error(
+      "room chat submit failed room_id=#{room_id} participant_id=#{state.participant_id} reason=#{inspect(reason)}"
+    )
+
+    refreshed_state =
+      state
+      |> Map.put(:pending_room_submit, nil)
+      |> Nav.refresh_room_snapshot()
+
+    if submit_visible_in_snapshot?(refreshed_state.snapshot, state.participant_id, text) do
+      Model.set_status(
+        refreshed_state,
+        "Chat message submitted; local acknowledgement failed, room refreshed",
+        :warn
+      )
+    else
+      refreshed_state
+      |> set_room_input(text)
+      |> Model.set_status("Submit failed: #{inspect(reason)}", :error)
+    end
+  end
+
+  defp submit_visible_in_snapshot?(snapshot, participant_id, text) when is_binary(text) do
+    normalized_text = String.trim(text)
+
+    contribution_visible?(snapshot, participant_id, normalized_text) or
+      context_message_visible?(snapshot, participant_id, normalized_text)
+  end
+
+  defp contribution_visible?(snapshot, participant_id, normalized_text) do
+    snapshot
+    |> Map.get("contributions", [])
+    |> Enum.any?(fn contribution ->
+      contribution_participant_id(contribution) == participant_id and
+        String.trim(
+          to_string(Map.get(contribution, "summary") || Map.get(contribution, :summary) || "")
+        ) ==
+          normalized_text
+    end)
+  end
+
+  defp context_message_visible?(snapshot, participant_id, normalized_text) do
+    snapshot
+    |> Map.get("context_objects", [])
+    |> Enum.any?(fn object ->
+      object_type(object) == "message" and authored_by_participant_id(object) == participant_id and
+        String.trim(to_string(Map.get(object, "body") || Map.get(object, :body) || "")) ==
+          normalized_text
+    end)
+  end
+
+  defp contribution_participant_id(contribution) do
+    Map.get(contribution, "participant_id") ||
+      Map.get(contribution, :participant_id) ||
+      get_in(contribution, ["authored_by", "participant_id"]) ||
+      get_in(contribution, [:authored_by, :participant_id])
+  end
+
+  defp authored_by_participant_id(object) do
+    get_in(object, ["authored_by", "participant_id"]) ||
+      get_in(object, [:authored_by, :participant_id])
+  end
+
+  defp safe_async_result(fun) when is_function(fun, 0) do
+    fun.()
+  rescue
+    exception ->
+      {:error, {:exception, Exception.message(exception)}}
+  catch
+    :exit, reason -> {:error, {:exit, reason}}
+    kind, reason -> {:error, {kind, reason}}
   end
 
   defp room_submit_attrs(text, state) do

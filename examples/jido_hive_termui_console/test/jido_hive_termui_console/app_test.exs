@@ -155,6 +155,55 @@ defmodule JidoHiveTermuiConsole.AppTest do
     end
   end
 
+  defmodule PendingSubmitRefreshHTTPStub do
+    def get(_base, "/rooms/room-1") do
+      {:ok,
+       %{
+         "data" => %{
+           "room_id" => "room-1",
+           "status" => "running",
+           "dispatch_state" => %{"completed_slots" => 1, "total_slots" => 2},
+           "participants" => [],
+           "contributions" => [
+             %{
+               "participant_id" => "alice",
+               "participant_role" => "coordinator",
+               "contribution_type" => "chat",
+               "summary" => "stale but accepted"
+             }
+           ],
+           "context_objects" => [
+             %{
+               "context_id" => "ctx-message-1",
+               "object_type" => "message",
+               "title" => "alice said",
+               "body" => "stale but accepted",
+               "authored_by" => %{"participant_id" => "alice"}
+             }
+           ],
+           "timeline" => []
+         }
+       }}
+    end
+  end
+
+  defmodule EmptyRoomHTTPStub do
+    def get(_base, "/rooms/room-1") do
+      {:ok,
+       %{
+         "data" => %{
+           "room_id" => "room-1",
+           "status" => "running",
+           "dispatch_state" => %{"completed_slots" => 0, "total_slots" => 2},
+           "participants" => [],
+           "contributions" => [],
+           "context_objects" => [],
+           "timeline" => []
+         }
+       }}
+    end
+  end
+
   setup do
     Application.put_env(:jido_hive_termui_console, :app_test_pid, self())
 
@@ -295,6 +344,12 @@ defmodule JidoHiveTermuiConsole.AppTest do
     end
   end
 
+  defmodule ExitEmbeddedStub do
+    def submit_chat(_server, _attrs) do
+      exit(:submit_timeout)
+    end
+  end
+
   test "room view renders without crashing across width breakpoints", %{model: model} do
     render_text =
       [80, 120, 200]
@@ -389,6 +444,57 @@ defmodule JidoHiveTermuiConsole.AppTest do
 
     assert next_state.event_log_cursor == "c1"
     assert next_state.event_log_lines == ["contribution.recorded"]
+  end
+
+  test "poll clears stale pending chat submission when the refreshed room snapshot already contains it",
+       %{model: model} do
+    state =
+      %{
+        model
+        | http_module: PendingSubmitRefreshHTTPStub,
+          pending_room_submit: %{room_id: "room-1", text: "stale but accepted"},
+          status_line: "Submitting chat message..."
+      }
+
+    {next_state, [{:timer, _timeout_ms, :poll}]} = App.update(:poll, state)
+
+    assert next_state.pending_room_submit == nil
+    assert next_state.status_line == "Submitted chat message"
+    assert next_state.status_severity == :info
+
+    assert [
+             %{
+               "context_id" => "ctx-message-1",
+               "body" => "stale but accepted"
+             }
+           ] = next_state.snapshot["context_objects"]
+  end
+
+  test "room enter restores the draft when the async submit worker exits before server confirmation",
+       %{model: model} do
+    state =
+      %{
+        model
+        | http_module: EmptyRoomHTTPStub,
+          embedded: self(),
+          embedded_module: ExitEmbeddedStub,
+          input_buffer: "retry me"
+      }
+
+    assert {:noreply, pending_state} = App.handle_event(%Key{code: "enter", kind: "press"}, state)
+
+    assert_receive {:room_submit_result, "room-1", "retry me", {:error, {:exit, :submit_timeout}}}
+
+    assert {:noreply, next_state} =
+             App.handle_info(
+               {:room_submit_result, "room-1", "retry me", {:error, {:exit, :submit_timeout}}},
+               pending_state
+             )
+
+    assert next_state.pending_room_submit == nil
+    assert next_state.input_buffer == "retry me"
+    assert next_state.status_severity == :error
+    assert next_state.status_line =~ "Submit failed"
   end
 
   test "wizard view renders phase maps without crashing" do

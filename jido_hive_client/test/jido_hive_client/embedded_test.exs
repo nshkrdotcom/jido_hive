@@ -93,6 +93,28 @@ defmodule JidoHiveClient.EmbeddedTest do
     defp next_cursor(entries), do: List.last(entries)["cursor"]
   end
 
+  defmodule SubmitOkSyncFailRoomApiStub do
+    @behaviour JidoHiveClient.Boundary.RoomApi
+
+    @impl true
+    def fetch_timeline(opts, room_id, query_opts) do
+      send(Keyword.fetch!(opts, :test_pid), {:sync_fail_fetch_timeline, room_id, query_opts})
+      {:error, :sync_failed}
+    end
+
+    @impl true
+    def fetch_context_objects(opts, room_id) do
+      send(Keyword.fetch!(opts, :test_pid), {:sync_fail_fetch_context_objects, room_id})
+      {:error, :sync_failed}
+    end
+
+    @impl true
+    def submit_contribution(opts, room_id, payload) do
+      send(Keyword.fetch!(opts, :test_pid), {:submit_contribution, room_id, payload})
+      {:ok, %{"data" => %{"room_id" => room_id}}}
+    end
+  end
+
   defp wait_until(fun, attempts \\ 20)
 
   defp wait_until(fun, attempts) when attempts > 0 do
@@ -219,5 +241,25 @@ defmodule JidoHiveClient.EmbeddedTest do
 
     assert_receive {:submit_contribution, "room-1", payload}
     assert payload["authority_level"] == "binding"
+  end
+
+  test "submit_chat succeeds even when the post-submit sync fails" do
+    {:ok, embedded} =
+      Embedded.start_link(
+        room_id: "room-1",
+        participant_id: "alice",
+        participant_role: "operator",
+        room_api: {SubmitOkSyncFailRoomApiStub, [test_pid: self()]},
+        poll_interval_ms: 60_000
+      )
+
+    assert {:ok, contribution} =
+             Embedded.submit_chat(embedded, %{
+               text: "Acknowledge now, sync later"
+             })
+
+    assert contribution["summary"] == "Acknowledge now, sync later"
+    assert_receive {:submit_contribution, "room-1", payload}
+    assert payload["summary"] == "Acknowledge now, sync later"
   end
 end

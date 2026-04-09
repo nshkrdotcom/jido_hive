@@ -155,9 +155,9 @@ defmodule JidoHiveClient.Embedded do
                "summary" => contribution["summary"],
                "context_count" => length(contribution["context_objects"] || [])
              }
-           }),
-         {:ok, next_state, _changed?} <- sync_room(state, record_event?: true) do
-      {:reply, {:ok, contribution}, next_state}
+           }) do
+      send(self(), {:sync_room_async, true})
+      {:reply, {:ok, contribution}, %{state | last_error: nil}}
     else
       {:error, reason} ->
         :ok =
@@ -190,9 +190,9 @@ defmodule JidoHiveClient.Embedded do
                  type: "embedded.context.accepted",
                  room_id: state.room_id,
                  payload: %{"context_id" => context_id}
-               }),
-             {:ok, next_state, _changed?} <- sync_room(state, record_event?: true) do
-          {:reply, {:ok, contribution}, next_state}
+               }) do
+          send(self(), {:sync_room_async, true})
+          {:reply, {:ok, contribution}, %{state | last_error: nil}}
         else
           {:error, reason} -> {:reply, {:error, reason}, %{state | last_error: reason}}
         end
@@ -200,6 +200,16 @@ defmodule JidoHiveClient.Embedded do
   end
 
   @impl true
+  def handle_info({:sync_room_async, record_event?}, %__MODULE__{} = state) do
+    next_state =
+      case sync_room(state, record_event?: record_event?) do
+        {:ok, synced, _changed?} -> synced
+        {:error, _reason, failed_state} -> failed_state
+      end
+
+    {:noreply, next_state}
+  end
+
   def handle_info(:poll, %__MODULE__{} = state) do
     next_state =
       case sync_room(state, record_event?: false) do
