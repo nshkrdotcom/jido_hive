@@ -643,6 +643,63 @@ defmodule JidoHiveTermuiConsole.AppTest do
     assert next_state.event_log_lines == ["contribution.recorded"]
   end
 
+  test "room-session placeholder snapshots do not overwrite authoritative room state", %{
+    model: model
+  } do
+    state =
+      %{
+        model
+        | snapshot: %{
+            "room_id" => "room-1",
+            "status" => "running",
+            "dispatch_state" => %{"completed_slots" => 3, "total_slots" => 6},
+            "participants" => [%{"participant_id" => "worker-1"}],
+            "timeline" => [%{"kind" => "assignment.opened", "cursor" => "evt-32"}],
+            "context_objects" => [
+              %{
+                "context_id" => "ctx-1",
+                "object_type" => "message",
+                "title" => "alice said",
+                "body" => "authoritative message"
+              }
+            ],
+            "last_sync_at" => "2026-04-09T22:00:00Z"
+          }
+      }
+
+    assert {:noreply, next_state} =
+             App.handle_info(
+               {:room_session_snapshot, "room-1",
+                %{
+                  "room_id" => "room-1",
+                  "status" => "idle",
+                  "dispatch_state" => %{"completed_slots" => 0, "total_slots" => 0},
+                  "participants" => [],
+                  "timeline" => [],
+                  "context_objects" => [],
+                  "last_sync_at" => nil,
+                  "last_error" => nil
+                }},
+               state
+             )
+
+    assert next_state.snapshot["status"] == "running"
+    assert next_state.snapshot["dispatch_state"] == %{"completed_slots" => 3, "total_slots" => 6}
+
+    assert next_state.snapshot["timeline"] == [
+             %{"kind" => "assignment.opened", "cursor" => "evt-32"}
+           ]
+
+    assert next_state.snapshot["context_objects"] == [
+             %{
+               "context_id" => "ctx-1",
+               "object_type" => "message",
+               "title" => "alice said",
+               "body" => "authoritative message"
+             }
+           ]
+  end
+
   test "room enter restores the draft when the async submit worker exits before server confirmation",
        %{model: model} do
     state =

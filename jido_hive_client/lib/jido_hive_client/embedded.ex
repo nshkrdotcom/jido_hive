@@ -156,7 +156,7 @@ defmodule JidoHiveClient.Embedded do
 
   def handle_call(:subscribe, {pid, _tag}, %__MODULE__{} = state) do
     next_state = %{state | subscribers: MapSet.put(state.subscribers, pid)}
-    push_snapshot(pid, current_snapshot(next_state))
+    maybe_push_subscriber_snapshot(pid, next_state)
     {:reply, :ok, next_state}
   end
 
@@ -1024,6 +1024,21 @@ defmodule JidoHiveClient.Embedded do
   defp current_operations(%__MODULE__{} = state) do
     Enum.map(state.submit_order, &Map.get(state.submit_operations, &1))
     |> Enum.reject(&is_nil/1)
+  end
+
+  defp maybe_push_subscriber_snapshot(pid, %__MODULE__{} = state) do
+    if subscriber_snapshot_ready?(state) do
+      push_snapshot(pid, current_snapshot(state))
+    end
+  end
+
+  defp subscriber_snapshot_ready?(%__MODULE__{} = state) do
+    not is_nil(state.last_sync_at) or
+      not is_nil(state.last_error) or
+      map_size(state.room_snapshot) > 0 or
+      state.timeline != [] or
+      state.context_objects != [] or
+      map_size(state.submit_operations) > 0
   end
 
   defp broadcast_snapshot(%__MODULE__{subscribers: subscribers} = state) do

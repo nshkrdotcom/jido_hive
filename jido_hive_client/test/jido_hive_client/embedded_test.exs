@@ -289,19 +289,39 @@ defmodule JidoHiveClient.EmbeddedTest do
     refute_receive {:fetch_room, "room-1"}, 50
   end
 
-  test "starts with a room snapshot and allows subscription", %{embedded: embedded} do
-    assert :ok = Embedded.subscribe(embedded)
-    assert_receive {:room_session_snapshot, "room-1", initial_snapshot}
-    assert initial_snapshot["room_id"] == "room-1"
+  test "subscribe pushes the current snapshot after hydration", %{embedded: embedded} do
     assert {:ok, snapshot} = Embedded.refresh(embedded)
     assert snapshot["room_id"] == "room-1"
     assert snapshot["participant"].participant_id == "alice"
     assert snapshot["runtime"].identity.participant_id == "alice"
+    flush_mailbox()
 
-    if snapshot["last_sync_at"] != initial_snapshot["last_sync_at"] do
-      assert_receive {:room_session_snapshot, "room-1", refreshed_snapshot}
-      assert (refreshed_snapshot[:status] || refreshed_snapshot["status"]) == "running"
-    end
+    assert :ok = Embedded.subscribe(embedded)
+    assert_receive {:room_session_snapshot, "room-1", subscribed_snapshot}
+    assert subscribed_snapshot["room_id"] == "room-1"
+    assert subscribed_snapshot["last_sync_at"] == snapshot["last_sync_at"]
+    assert subscribed_snapshot["status"] == "running"
+  end
+
+  test "subscribe does not emit a placeholder snapshot before first hydration" do
+    {:ok, embedded} =
+      Embedded.start_link(
+        room_id: "room-1",
+        participant_id: "alice",
+        participant_role: "operator",
+        room_api: {BlockingSyncRoomApiStub, [test_pid: self()]},
+        poll_interval_ms: 5_000
+      )
+
+    assert_receive {:blocking_fetch_timeline, blocker, "room-1", [after: nil]}
+
+    assert :ok = Embedded.subscribe(embedded)
+    refute_receive {:room_session_snapshot, "room-1", _snapshot}, 80
+
+    send(blocker, :release_fetch_timeline)
+
+    assert_receive {:room_session_snapshot, "room-1", hydrated_snapshot}
+    assert hydrated_snapshot["status"] == "running"
   end
 
   test "submits chat through the mock backend and updates room state", %{embedded: embedded} do
@@ -444,6 +464,9 @@ defmodule JidoHiveClient.EmbeddedTest do
   test "submit_chat_async broadcasts accepted and completed snapshots to subscribers", %{
     embedded: embedded
   } do
+    assert {:ok, _snapshot} = Embedded.refresh(embedded)
+    flush_mailbox()
+
     assert :ok = Embedded.subscribe(embedded)
     assert_receive {:room_session_snapshot, "room-1", _initial_snapshot}
 

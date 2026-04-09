@@ -381,13 +381,14 @@ defmodule JidoHiveTermuiConsole.Nav do
   end
 
   defp load_room_session_snapshot(state, room_id, embedded) do
-    :ok = state.embedded_module.subscribe(embedded)
-
     case state.embedded_module.refresh(embedded) do
       {:ok, snapshot} ->
+        safe_subscribe_room_session(state, embedded)
         stringify_keys(snapshot)
 
       {:error, reason} ->
+        maybe_subscribe_room_session(state, embedded, reason)
+
         embedded
         |> state.embedded_module.snapshot()
         |> stringify_keys()
@@ -406,6 +407,19 @@ defmodule JidoHiveTermuiConsole.Nav do
     _error ->
       missing_or_unavailable_room_snapshot(room_id, :unavailable)
   end
+
+  defp safe_subscribe_room_session(state, embedded) do
+    :ok = state.embedded_module.subscribe(embedded)
+  rescue
+    _error -> :ok
+  end
+
+  defp maybe_subscribe_room_session(_state, _embedded, reason)
+       when reason in [:not_found, :room_not_found],
+       do: :ok
+
+  defp maybe_subscribe_room_session(state, embedded, _reason),
+    do: safe_subscribe_room_session(state, embedded)
 
   defp room_fetch_status(room_id, fetch_error) when fetch_error in [:not_found, :room_not_found],
     do: "Room #{room_id} was not found on this server"

@@ -628,9 +628,13 @@ defmodule JidoHiveTermuiConsole.App do
 
   def handle_message({:room_session_snapshot, room_id, snapshot}, %{room_id: room_id} = state) do
     next_state =
-      state
-      |> Nav.apply_room_snapshot(snapshot)
-      |> reconcile_pending_room_submit()
+      if stale_placeholder_room_snapshot?(state.snapshot, snapshot) do
+        state
+      else
+        state
+        |> Nav.apply_room_snapshot(snapshot)
+        |> reconcile_pending_room_submit()
+      end
 
     {next_state, []}
   end
@@ -914,6 +918,56 @@ defmodule JidoHiveTermuiConsole.App do
   end
 
   def handle_message(_msg, state), do: {state, []}
+
+  defp stale_placeholder_room_snapshot?(current_snapshot, incoming_snapshot) do
+    authoritative_room_snapshot?(current_snapshot) and
+      placeholder_room_snapshot?(incoming_snapshot)
+  end
+
+  defp authoritative_room_snapshot?(snapshot) do
+    not is_nil(snapshot_value(snapshot, "last_sync_at")) ||
+      not is_nil(snapshot_value(snapshot, "last_error")) ||
+      snapshot_value(snapshot, "status") not in [nil, "idle"] ||
+      non_empty_snapshot_list?(snapshot, "timeline") ||
+      non_empty_snapshot_list?(snapshot, "context_objects") ||
+      non_empty_snapshot_list?(snapshot, "participants") ||
+      non_zero_dispatch_state?(snapshot_value(snapshot, "dispatch_state"))
+  end
+
+  defp placeholder_room_snapshot?(snapshot) do
+    is_nil(snapshot_value(snapshot, "last_sync_at")) and
+      is_nil(snapshot_value(snapshot, "last_error")) and
+      snapshot_value(snapshot, "status") in [nil, "idle"] and
+      empty_snapshot_list?(snapshot, "timeline") and
+      empty_snapshot_list?(snapshot, "context_objects") and
+      empty_snapshot_list?(snapshot, "participants") and
+      zero_dispatch_state?(snapshot_value(snapshot, "dispatch_state"))
+  end
+
+  defp snapshot_value(snapshot, key) when is_map(snapshot) do
+    Map.get(snapshot, key) || Map.get(snapshot, String.to_atom(key))
+  end
+
+  defp snapshot_value(_snapshot, _key), do: nil
+
+  defp empty_snapshot_list?(snapshot, key), do: not non_empty_snapshot_list?(snapshot, key)
+
+  defp non_empty_snapshot_list?(snapshot, key) do
+    case snapshot_value(snapshot, key) do
+      list when is_list(list) -> list != []
+      _other -> false
+    end
+  end
+
+  defp non_zero_dispatch_state?(dispatch_state) when is_map(dispatch_state) do
+    dispatch_state
+    |> Map.values()
+    |> Enum.any?(&(is_integer(&1) and &1 > 0))
+  end
+
+  defp non_zero_dispatch_state?(_dispatch_state), do: false
+
+  defp zero_dispatch_state?(dispatch_state), do: not non_zero_dispatch_state?(dispatch_state)
 
   @spec view(Model.t()) :: [{term(), term()}]
   def view(state) do

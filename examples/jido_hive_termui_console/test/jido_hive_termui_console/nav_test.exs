@@ -183,7 +183,7 @@ defmodule JidoHiveTermuiConsole.NavTest do
     assert_receive {:fetch_room, "room-b"}
   end
 
-  test "transition to room starts embedded, subscribes, and refreshes the room session" do
+  test "transition to room refreshes before subscribing to the room session" do
     state =
       Model.new(
         api_base_url: "http://localhost:4000/api",
@@ -199,8 +199,8 @@ defmodule JidoHiveTermuiConsole.NavTest do
     assert is_pid(next_state.embedded)
     assert next_state.event_log_poller_pid == nil
     assert_receive {:embedded_start, _opts}
-    assert_receive {:embedded_subscribe, _pid}
     assert_receive {:embedded_refresh, _pid}
+    assert_receive {:embedded_subscribe, _pid}
     refute_receive {:poller_start, _opts}, 50
   end
 
