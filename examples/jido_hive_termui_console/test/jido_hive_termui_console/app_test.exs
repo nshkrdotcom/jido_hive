@@ -384,7 +384,7 @@ defmodule JidoHiveTermuiConsole.AppTest do
     assert next_state.conflict_right["context_id"] == "ctx-2"
   end
 
-  test "room guide copy renders when help is visible", %{model: model} do
+  test "room help renders contextual workflow and key guidance when visible", %{model: model} do
     render_text =
       model
       |> Map.put(:help_visible, true)
@@ -392,10 +392,11 @@ defmodule JidoHiveTermuiConsole.AppTest do
       |> TestSupport.collect_text()
       |> Enum.join("\n")
 
-    assert render_text =~ "Room Guide"
-    assert render_text =~ "including q"
-    assert render_text =~ "edit the draft"
-    assert render_text =~ "Ctrl+Q quits"
+    assert render_text =~ "Room Help"
+    assert render_text =~ "CURRENT STATE"
+    assert render_text =~ "Selected context: ctx-1."
+    assert render_text =~ "Ctrl+D derives_from"
+    assert render_text =~ "WORKFLOW"
   end
 
   test "room guide swallows normal typing until dismissed", %{model: model} do
@@ -408,13 +409,16 @@ defmodule JidoHiveTermuiConsole.AppTest do
 
     assert App.event_to_msg(%Key{code: "g", kind: "press", modifiers: ["ctrl"]}, state) ==
              {:msg, :dismiss_help}
+
+    assert App.event_to_msg(%Key{code: "f2", kind: "press"}, state) ==
+             {:msg, :toggle_debug}
   end
 
-  test "global Ctrl+C quits and Ctrl+D toggles debug mode", %{model: model} do
+  test "global Ctrl+C quits and F2 toggles debug mode", %{model: model} do
     assert App.event_to_msg(%Key{code: "c", kind: "press", modifiers: ["ctrl"]}, model) ==
              {:msg, :quit}
 
-    assert App.event_to_msg(%Key{code: "d", kind: "press", modifiers: ["ctrl"]}, model) ==
+    assert App.event_to_msg(%Key{code: "f2", kind: "press"}, model) ==
              {:msg, :toggle_debug}
   end
 
@@ -423,8 +427,13 @@ defmodule JidoHiveTermuiConsole.AppTest do
 
     assert App.event_to_msg(%Key{code: "q", kind: "press"}, state) == :ignore
 
-    assert App.event_to_msg(%Key{code: "d", kind: "press", modifiers: ["ctrl"]}, state) ==
+    assert App.event_to_msg(%Key{code: "f2", kind: "press"}, state) ==
              {:msg, :dismiss_debug}
+  end
+
+  test "Ctrl+D remains available for derives_from relation mode in the room", %{model: model} do
+    assert App.event_to_msg(%Key{code: "d", kind: "press", modifiers: ["ctrl"]}, model) ==
+             {:msg, {:set_relation_mode, :derives_from}}
   end
 
   test "event log updates append formatted lines", %{model: model} do

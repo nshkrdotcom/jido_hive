@@ -5,7 +5,7 @@ defmodule JidoHiveTermuiConsole.Screens.Room do
   alias ExRatatui.Layout
   alias ExRatatui.Style
   alias ExRatatui.Widgets.{Paragraph, TextInput}
-  alias JidoHiveTermuiConsole.{InputKey, Model, Projection, ScreenUI}
+  alias JidoHiveTermuiConsole.{HelpGuide, InputKey, Model, Projection, ScreenUI}
 
   @spec event_to_msg(Event.t(), Model.t()) :: term() | nil
   def event_to_msg(%Event.Key{code: "up"}, _state), do: :select_prev
@@ -54,7 +54,8 @@ defmodule JidoHiveTermuiConsole.Screens.Room do
           {status_widget(state), status_area}
         ]
 
-    widgets ++ ScreenUI.help_popup_widgets(frame, state, "Room Guide", help_lines(state))
+    widgets ++
+      ScreenUI.help_popup_widgets(frame, state, HelpGuide.title(state), HelpGuide.lines(state))
   end
 
   defp main_widgets(state, area) when area.width < 88 do
@@ -173,7 +174,7 @@ defmodule JidoHiveTermuiConsole.Screens.Room do
 
   defp footer_widget(state) do
     ScreenUI.text_widget(
-      "Type to edit draft  ·  Enter submit/open conflict  ·  Ctrl+E provenance  ·  Ctrl+A accept  ·  Ctrl+P publish  ·  Ctrl+B back  ·  Ctrl+Q quit  ·  Mode #{Atom.to_string(state.relation_mode)}",
+      "Type draft  ·  Enter send/open conflict  ·  Ctrl+E provenance  ·  Ctrl+A accept  ·  Ctrl+R refresh  ·  Ctrl+P publish  ·  Ctrl+G help  ·  F2 debug  ·  Ctrl+B back  ·  Ctrl+Q quit  ·  Mode #{Atom.to_string(state.relation_mode)}",
       style: ScreenUI.meta_style(),
       wrap: true
     )
@@ -204,20 +205,6 @@ defmodule JidoHiveTermuiConsole.Screens.Room do
       nil -> "none"
       object -> Map.get(object, "context_id") || Map.get(object, :context_id) || "none"
     end
-  end
-
-  defp help_lines(state) do
-    [
-      "This is the room workspace.",
-      "Conversation shows recent contributions. Context shows the selected room knowledge. Events shows recent runtime activity.",
-      "Type directly in the draft box at the bottom. Plain letters, including q, edit the draft. Only Ctrl+Q quits.",
-      "Press Enter to send the current draft.",
-      "If the draft is empty and the selected item is a contradiction, Enter opens conflict resolution.",
-      "Use Up and Down to move the selected context item.",
-      "Ctrl+N switches to plain chat. Ctrl+T contextual. Ctrl+F references. Ctrl+D derives_from. Ctrl+S supports. Ctrl+X contradicts. Ctrl+V resolves.",
-      "Ctrl+E opens provenance for the selected context. Ctrl+A accepts the selected item. Ctrl+P opens publish. Ctrl+B returns to the lobby.",
-      "Current draft mode is #{Atom.to_string(state.relation_mode)} and the selected context is #{selected_context_label(state)}."
-    ]
   end
 
   defp stale?(object) do

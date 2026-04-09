@@ -102,7 +102,7 @@ Use this order if you are onboarding from zero:
 - `Ctrl+Q`: quit the console
 - `Ctrl+C`: emergency quit path
 - `Ctrl+G` or `F1`: open the current screen guide
-- `Ctrl+D` or `F2`: open the debug popup
+- `F2`: open the debug popup
 - `Enter` or `Esc` on guide dialogs: close the guide
 
 ### Lobby
@@ -126,7 +126,7 @@ Use this order if you are onboarding from zero:
 
 - `Enter`: confirm the active step or submit the current screen when enabled
 - `Esc`: back out of the current dialog or step
-- guide overlays explain each screen and can be reopened with `Ctrl+G`
+- guide overlays explain each screen and can be reopened with `Ctrl+G` or `F1`
 
 ## Debugging order
 

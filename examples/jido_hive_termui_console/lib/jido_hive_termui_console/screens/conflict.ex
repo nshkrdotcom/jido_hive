@@ -5,7 +5,7 @@ defmodule JidoHiveTermuiConsole.Screens.Conflict do
   alias ExRatatui.Layout
   alias ExRatatui.Style
   alias ExRatatui.Widgets.{Paragraph, TextInput}
-  alias JidoHiveTermuiConsole.{InputKey, Model, Projection, ScreenUI}
+  alias JidoHiveTermuiConsole.{HelpGuide, InputKey, Model, Projection, ScreenUI}
 
   @spec event_to_msg(Event.t(), Model.t()) :: term() | nil
   def event_to_msg(%Event.Key{code: "enter"}, _state), do: :submit_conflict_resolution
@@ -51,7 +51,8 @@ defmodule JidoHiveTermuiConsole.Screens.Conflict do
       {status_widget(state), status_area}
     ]
 
-    widgets ++ ScreenUI.help_popup_widgets(frame, state, "Conflict Guide", help_lines())
+    widgets ++
+      ScreenUI.help_popup_widgets(frame, state, HelpGuide.title(state), HelpGuide.lines(state))
   end
 
   defp conflict_lines(state) do
@@ -111,7 +112,7 @@ defmodule JidoHiveTermuiConsole.Screens.Conflict do
 
   defp footer_widget do
     ScreenUI.text_widget(
-      "a accept left  ·  b accept right  ·  s ask AI synthesis  ·  Enter submit  ·  Esc cancel  ·  Ctrl+Q quit",
+      "a accept left  ·  b accept right  ·  s ask AI synthesis  ·  Enter submit  ·  Esc cancel  ·  Ctrl+G help  ·  F2 debug  ·  Ctrl+Q quit",
       style: ScreenUI.meta_style(),
       wrap: true
     )
@@ -119,17 +120,5 @@ defmodule JidoHiveTermuiConsole.Screens.Conflict do
 
   defp status_widget(state) do
     ScreenUI.text_widget(state.status_line, style: ScreenUI.status_style(state), wrap: false)
-  end
-
-  defp help_lines do
-    [
-      "This screen is for resolving a contradiction.",
-      "Read the left and right sides, then write a decision in the draft box.",
-      "Press a to prefill an accept-left decision.",
-      "Press b to prefill an accept-right decision.",
-      "Press s to ask the system for an AI synthesis request.",
-      "Press Enter to submit the draft as a resolving decision.",
-      "Press Esc to cancel and return to the room."
-    ]
   end
 end

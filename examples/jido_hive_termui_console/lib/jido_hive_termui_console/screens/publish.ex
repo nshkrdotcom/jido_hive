@@ -5,7 +5,7 @@ defmodule JidoHiveTermuiConsole.Screens.Publish do
   alias ExRatatui.Layout
   alias ExRatatui.Style
   alias ExRatatui.Widgets.{List, Paragraph, TextInput}
-  alias JidoHiveTermuiConsole.{InputKey, Model, Projection, ScreenUI}
+  alias JidoHiveTermuiConsole.{HelpGuide, InputKey, Model, Projection, ScreenUI}
 
   @spec event_to_msg(Event.t(), Model.t()) :: term() | nil
   def event_to_msg(%Event.Key{code: "tab"}, _state), do: :publish_next_focus
@@ -63,7 +63,8 @@ defmodule JidoHiveTermuiConsole.Screens.Publish do
       {status_widget(state), status_area}
     ]
 
-    widgets ++ ScreenUI.help_popup_widgets(frame, state, "Publish Guide", help_lines())
+    widgets ++
+      ScreenUI.help_popup_widgets(frame, state, HelpGuide.title(state), HelpGuide.lines(state))
   end
 
   @spec focus_items(Model.t()) :: [map()]
@@ -188,7 +189,7 @@ defmodule JidoHiveTermuiConsole.Screens.Publish do
 
   defp footer_widget do
     ScreenUI.text_widget(
-      "Tab cycle focus  ·  Space toggle channel  ·  Type to edit focused binding  ·  r refresh auth  ·  Enter publish  ·  Esc back  ·  Ctrl+Q quit",
+      "Tab focus  ·  Space toggle channel  ·  Type binding  ·  r refresh auth on channel rows  ·  Enter publish  ·  Esc back  ·  Ctrl+G help  ·  F2 debug  ·  Ctrl+Q quit",
       style: ScreenUI.meta_style(),
       wrap: true
     )
@@ -347,17 +348,4 @@ defmodule JidoHiveTermuiConsole.Screens.Publish do
   end
 
   defp publication_channel(publication), do: publication["channel"] || publication[:channel]
-
-  defp help_lines do
-    [
-      "This screen submits publications for the current room.",
-      "The left pane lists available channels and any required binding fields.",
-      "Use Tab to cycle through channels and binding fields.",
-      "Press Space to toggle the currently focused channel on or off.",
-      "When a binding field is focused, typing edits that field in the editor below.",
-      "Press r to refresh server auth state.",
-      "Press Enter to publish the selected channels once validation passes.",
-      "Press Esc to return to the room."
-    ]
-  end
 end

@@ -5,7 +5,7 @@ defmodule JidoHiveTermuiConsole.Screens.Lobby do
   alias ExRatatui.Layout
   alias ExRatatui.Style
   alias ExRatatui.Widgets.{Paragraph, Table}
-  alias JidoHiveTermuiConsole.{Model, Projection, ScreenUI}
+  alias JidoHiveTermuiConsole.{HelpGuide, Model, Projection, ScreenUI}
 
   @spec event_to_msg(Event.t(), Model.t()) :: term() | nil
   def event_to_msg(%Event.Key{code: "up"}, _state), do: :lobby_prev
@@ -38,14 +38,14 @@ defmodule JidoHiveTermuiConsole.Screens.Lobby do
       {header_widget(state), header_area},
       {subtitle_widget(), subtitle_area},
       {body_widget(state), body_area},
-      {footer_widget("Ctrl+G guide  ·  ↑↓ select  ·  Enter open  ·  n new room"),
-       footer_top_area},
-      {footer_widget("r refresh  ·  d remove stale entry  ·  Ctrl+Q quit from lobby"),
+      {footer_widget("Ctrl+G help  ·  ↑↓ select  ·  Enter open  ·  n new room"), footer_top_area},
+      {footer_widget("r refresh  ·  d remove stale entry  ·  F2 debug  ·  Ctrl+Q quit"),
        footer_bottom_area},
       {status_widget(state), status_area}
     ]
 
-    widgets ++ ScreenUI.help_popup_widgets(frame, state, "Lobby Guide", help_lines())
+    widgets ++
+      ScreenUI.help_popup_widgets(frame, state, HelpGuide.title(state), HelpGuide.lines(state))
   end
 
   @spec placeholder_row(String.t()) :: Model.lobby_row()
@@ -216,17 +216,5 @@ defmodule JidoHiveTermuiConsole.Screens.Lobby do
       border_style: %Style{fg: :cyan},
       padding: {0, 0, 0, 0}
     }
-  end
-
-  defp help_lines do
-    [
-      "This is the home screen for the console.",
-      "Use Up and Down to move through the saved room list.",
-      "Press Enter to open the selected room.",
-      "Press n to open the new-room wizard.",
-      "Press r to refresh room summaries from the current server.",
-      "Press d to remove a stale local room entry.",
-      "Press Ctrl+Q to quit from the lobby."
-    ]
   end
 end

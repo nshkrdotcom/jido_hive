@@ -5,7 +5,7 @@ defmodule JidoHiveTermuiConsole.Screens.Wizard do
   alias ExRatatui.Layout
   alias ExRatatui.Style
   alias ExRatatui.Widgets.{List, Paragraph, TextInput}
-  alias JidoHiveTermuiConsole.{InputKey, Model, ScreenUI}
+  alias JidoHiveTermuiConsole.{HelpGuide, InputKey, Model, ScreenUI}
 
   @spec event_to_msg(Event.t(), Model.t()) :: term() | nil
   def event_to_msg(%Event.Key{code: "up"}, _state), do: :wizard_prev_option
@@ -40,7 +40,8 @@ defmodule JidoHiveTermuiConsole.Screens.Wizard do
       {status_widget(state), status_area}
     ]
 
-    widgets ++ ScreenUI.help_popup_widgets(frame, state, "Wizard Guide", guide_lines(state))
+    widgets ++
+      ScreenUI.help_popup_widgets(frame, state, HelpGuide.title(state), HelpGuide.lines(state))
   end
 
   @spec room_payload(Model.t()) :: map()
@@ -217,7 +218,7 @@ defmodule JidoHiveTermuiConsole.Screens.Wizard do
         "Workers: #{Enum.map_join(participants, ", ", & &1["participant_id"])}",
         "",
         if(pending_room_id,
-          do: "Creating room #{pending_room_id} in the background. Ctrl+D shows debug details.",
+          do: "Creating room #{pending_room_id} in the background. F2 shows debug details.",
           else: "Enter to create and run the room."
         )
       ],
@@ -227,7 +228,7 @@ defmodule JidoHiveTermuiConsole.Screens.Wizard do
   end
 
   defp footer_widget(state) do
-    ScreenUI.text_widget(Enum.join(help_lines(state), "  ·  "),
+    ScreenUI.text_widget(Enum.join(footer_lines(state), "  ·  "),
       style: ScreenUI.meta_style(),
       wrap: true
     )
@@ -237,57 +238,17 @@ defmodule JidoHiveTermuiConsole.Screens.Wizard do
     ScreenUI.text_widget(state.status_line, style: ScreenUI.status_style(state), wrap: false)
   end
 
-  defp help_lines(%{wizard_step: 0}),
+  defp footer_lines(%{wizard_step: 0}),
     do: ["Type brief", "Enter continue", "Esc cancel", "Ctrl+Q quit"]
 
-  defp help_lines(%{wizard_step: 3}),
+  defp footer_lines(%{wizard_step: 3}),
     do: ["Up/Down move", "Space toggle worker", "Enter continue", "Esc back", "Ctrl+Q quit"]
 
-  defp help_lines(%{wizard_step: 4}),
-    do: ["Review plan", "Enter create room", "Esc back", "Ctrl+D debug", "Ctrl+C quit"]
+  defp footer_lines(%{wizard_step: 4}),
+    do: ["Review plan", "Enter create room", "Esc back", "Ctrl+G help", "F2 debug", "Ctrl+Q quit"]
 
-  defp help_lines(_state), do: ["Up/Down move", "Enter continue", "Esc back", "Ctrl+Q quit"]
-
-  defp guide_lines(%{wizard_step: 0}) do
-    [
-      "Step 0 collects the room brief.",
-      "Type a concrete objective. The brief must be at least 10 characters long.",
-      "Press Enter to continue once the brief is ready."
-    ]
-  end
-
-  defp guide_lines(%{wizard_step: 1}) do
-    [
-      "Step 1 selects the dispatch policy.",
-      "Use Up and Down to move through policies.",
-      "Press Enter to choose the highlighted policy."
-    ]
-  end
-
-  defp guide_lines(%{wizard_step: 2}) do
-    [
-      "Step 2 reviews the phases that came from the selected policy.",
-      "This step is read-only.",
-      "Press Enter to continue to worker selection."
-    ]
-  end
-
-  defp guide_lines(%{wizard_step: 3}) do
-    [
-      "Step 3 chooses worker targets for the room.",
-      "Use Up and Down to move through targets.",
-      "Press Space to toggle the highlighted worker.",
-      "Press Enter when you have selected at least one worker."
-    ]
-  end
-
-  defp guide_lines(%{wizard_step: 4}) do
-    [
-      "Step 4 confirms the plan.",
-      "Review the brief, policy, phases, and selected workers.",
-      "Press Enter to create the room and start it in the background."
-    ]
-  end
+  defp footer_lines(_state),
+    do: ["Up/Down move", "Enter continue", "Esc back", "Ctrl+G help", "F2 debug", "Ctrl+Q quit"]
 
   defp title_for_step(%{wizard_step: 0}), do: "NEW ROOM — Step 0 of 4: Brief"
   defp title_for_step(%{wizard_step: 1}), do: "NEW ROOM — Step 1 of 4: Dispatch Policy"

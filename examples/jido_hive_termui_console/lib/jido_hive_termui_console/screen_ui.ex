@@ -64,13 +64,19 @@ defmodule JidoHiveTermuiConsole.ScreenUI do
 
   def help_popup_widgets(frame, %Model{help_visible: true}, title, lines) do
     area = root_area(frame)
-    width = min(max(frame.width - 4, 40), 96)
-    height = min(max(length(lines) + 5, 12), max(frame.height - 4, 10))
+    available_width = max(frame.width - 4, 20)
+    width = available_width |> min(124) |> max(min(56, available_width))
+    available_height = max(frame.height - 4, 10)
+    height = min(max(length(lines) + 6, 16), available_height)
 
     content =
       text_widget(
         Enum.join(
-          lines ++ ["", "Enter or Esc closes this guide. Ctrl+G or F1 opens it again."],
+          lines ++
+            [
+              "",
+              "Enter or Esc closes this help. Ctrl+G or F1 opens it again. F2 shows debug."
+            ],
           "\n"
         ),
         style: %Style{fg: :white},
@@ -147,7 +153,7 @@ defmodule JidoHiveTermuiConsole.ScreenUI do
       "Pending room submit: #{pending_submit}",
       "Poll interval: #{state.poll_interval_ms}ms",
       "",
-      "Ctrl+D or F2 closes this view.",
+      "F2, Enter, or Esc closes this view.",
       "Ctrl+C or Ctrl+Q exits the console.",
       "For file logging, rerun with --debug and inspect ~/.config/hive/termui_console.log.",
       "If the terminal is ever left dirty after a crash, run: reset"

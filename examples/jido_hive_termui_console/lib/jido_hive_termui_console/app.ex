@@ -885,20 +885,17 @@ defmodule JidoHiveTermuiConsole.App do
        when code in ["c", "q"],
        do: :quit
 
-  defp global_event_to_msg(%Event.Key{code: code, modifiers: ["ctrl"]}, %{debug_visible: true})
-       when code == "d",
-       do: :dismiss_debug
-
   defp global_event_to_msg(%Event.Key{code: code}, %{debug_visible: true})
        when code in ["enter", "esc", "f2"],
        do: :dismiss_debug
 
   defp global_event_to_msg(%Event.Key{}, %{debug_visible: true}), do: :ignore
-  defp global_event_to_msg(%Event.Key{code: "d", modifiers: ["ctrl"]}, _state), do: :toggle_debug
   defp global_event_to_msg(%Event.Key{code: "f2"}, _state), do: :toggle_debug
 
   defp global_event_to_msg(%Event.Key{code: code, modifiers: ["ctrl"]}, %{help_visible: true})
        when code == "g", do: :dismiss_help
+
+  defp global_event_to_msg(%Event.Key{code: "f2"}, %{help_visible: true}), do: :toggle_debug
 
   defp global_event_to_msg(%Event.Key{code: code}, %{help_visible: true})
        when code in ["enter", "esc", "f1"], do: :dismiss_help

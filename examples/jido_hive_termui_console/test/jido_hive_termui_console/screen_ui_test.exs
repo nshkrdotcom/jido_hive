@@ -14,7 +14,7 @@ defmodule JidoHiveTermuiConsole.ScreenUITest do
     state = Model.new([]) |> Map.put(:help_visible, true)
 
     assert [
-             {%Popup{block: %{title: "Guide"}, fixed_width: 96, content: %Paragraph{text: text}},
+             {%Popup{block: %{title: "Guide"}, fixed_width: 124, content: %Paragraph{text: text}},
               %Rect{width: 140, height: 32}}
            ] =
              ScreenUI.help_popup_widgets(%{width: 140, height: 32}, state, "Guide", [
@@ -23,7 +23,7 @@ defmodule JidoHiveTermuiConsole.ScreenUITest do
              ])
 
     assert text =~ "Line 1"
-    assert text =~ "Ctrl+G or F1 opens it again."
+    assert text =~ "Ctrl+G or F1 opens it again. F2 shows debug."
 
     assert [
              {%Popup{fixed_width: 40, fixed_height: 12}, %Rect{width: 44, height: 16}}
