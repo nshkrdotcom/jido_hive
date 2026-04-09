@@ -120,25 +120,28 @@ defmodule JidoHiveServer.Collaboration.RoomServer do
   defp do_apply_single_event(snapshot, type, payload) do
     with {:ok, event} <- room_event(snapshot.room_id, type, payload),
          next_snapshot <- EventReducer.apply_event(snapshot, event),
-         :ok <- Persistence.append_room_events(snapshot.room_id, [event]),
-         {:ok, _snapshot} <- Persistence.persist_room_snapshot(next_snapshot) do
+         {:ok, _snapshot} <- Persistence.persist_room_transition(next_snapshot, [event]) do
       {:ok, next_snapshot, event}
     end
   end
 
   defp do_record_contribution(snapshot, payload, participant, write_intent) do
-    with :ok <- ContextManager.validate_append(participant, write_intent, snapshot),
-         {:ok, event} <- room_event(snapshot.room_id, :contribution_recorded, payload),
-         base_snapshot <- EventReducer.apply_event(snapshot, event),
-         appended_context_ids <- appended_context_ids(snapshot, base_snapshot),
-         %{room_events: derived_event_attrs} <-
-           ContextManager.after_append(snapshot, base_snapshot, appended_context_ids),
-         {:ok, derived_events} <-
-           room_events_from_attrs(snapshot.room_id, event, derived_event_attrs),
-         final_snapshot <- EventReducer.reduce(base_snapshot, derived_events),
-         :ok <- Persistence.append_room_events(snapshot.room_id, [event | derived_events]),
-         {:ok, _snapshot} <- Persistence.persist_room_snapshot(final_snapshot) do
-      {:ok, final_snapshot}
+    if duplicate_contribution?(snapshot, payload) do
+      {:ok, snapshot}
+    else
+      with :ok <- ContextManager.validate_append(participant, write_intent, snapshot),
+           {:ok, event} <- room_event(snapshot.room_id, :contribution_recorded, payload),
+           base_snapshot <- EventReducer.apply_event(snapshot, event),
+           appended_context_ids <- appended_context_ids(snapshot, base_snapshot),
+           %{room_events: derived_event_attrs} <-
+             ContextManager.after_append(snapshot, base_snapshot, appended_context_ids),
+           {:ok, derived_events} <-
+             room_events_from_attrs(snapshot.room_id, event, derived_event_attrs),
+           final_snapshot <- EventReducer.reduce(base_snapshot, derived_events),
+           {:ok, _snapshot} <-
+             Persistence.persist_room_transition(final_snapshot, [event | derived_events]) do
+        {:ok, final_snapshot}
+      end
     end
   end
 
@@ -265,6 +268,33 @@ defmodule JidoHiveServer.Collaboration.RoomServer do
     do: String.trim(target_id) != ""
 
   defp valid_relation_target_id?(_target_id), do: false
+
+  defp duplicate_contribution?(snapshot, payload) do
+    contribution = map_value(payload, "contribution")
+    contribution_id = value(contribution, "contribution_id")
+    assignment_id = value(contribution, "assignment_id")
+    participant_id = value(contribution, "participant_id")
+
+    Enum.any?(snapshot.contributions, fn existing ->
+      duplicate_contribution_id?(existing, contribution_id) or
+        duplicate_assignment_result?(existing, assignment_id, participant_id)
+    end)
+  end
+
+  defp duplicate_contribution_id?(_existing, nil), do: false
+
+  defp duplicate_contribution_id?(existing, contribution_id) do
+    value(existing, "contribution_id") == contribution_id
+  end
+
+  defp duplicate_assignment_result?(_existing, assignment_id, participant_id)
+       when not is_binary(assignment_id) or not is_binary(participant_id),
+       do: false
+
+  defp duplicate_assignment_result?(existing, assignment_id, participant_id) do
+    value(existing, "assignment_id") == assignment_id and
+      value(existing, "participant_id") == participant_id
+  end
 
   defp value(map, key) when is_map(map) and is_binary(key) do
     Map.get(map, key) || Map.get(map, existing_atom_key(key))

@@ -38,6 +38,7 @@ defmodule JidoHiveTermuiConsole.AppTest do
 
     def snapshot(server), do: Agent.get(server, & &1.snapshot)
     def refresh(server), do: {:ok, snapshot(server)}
+    def subscribe(server), do: send(test_pid(), {:embedded_subscribe, server})
 
     def submit_chat(server, attrs) do
       Agent.update(server, &Map.put(&1, :submitted, attrs))
@@ -284,7 +285,34 @@ defmodule JidoHiveTermuiConsole.AppTest do
                pending_state
              )
 
-    {next_state, [{:timer, _timeout_ms, :poll}]} = App.update(:poll, accepted_state)
+    assert {:noreply, next_state} =
+             App.handle_info(
+               {:room_session_snapshot, "room-1",
+                %{
+                  "room_id" => "room-1",
+                  "status" => "running",
+                  "dispatch_state" => %{"completed_slots" => 1, "total_slots" => 2},
+                  "participants" => [],
+                  "timeline" => [%{"kind" => "contribution.recorded", "cursor" => "evt-1"}],
+                  "context_objects" => [
+                    %{
+                      "context_id" => "ctx-message-1",
+                      "object_type" => "message",
+                      "title" => "alice said",
+                      "body" => "plain update",
+                      "authored_by" => %{"participant_id" => "alice"}
+                    }
+                  ],
+                  "operations" => [
+                    %{
+                      "operation_id" => operation_id,
+                      "status" => "completed",
+                      "type" => "room_submit"
+                    }
+                  ]
+                }},
+               accepted_state
+             )
 
     assert next_state.pending_room_submit == nil
     assert next_state.status_line == "Submitted chat message"
@@ -328,7 +356,34 @@ defmodule JidoHiveTermuiConsole.AppTest do
                pending_state
              )
 
-    {next_state, [{:timer, _timeout_ms, :poll}]} = App.update(:poll, accepted_state)
+    assert {:noreply, next_state} =
+             App.handle_info(
+               {:room_session_snapshot, "room-1",
+                %{
+                  "room_id" => "room-1",
+                  "status" => "running",
+                  "dispatch_state" => %{"completed_slots" => 1, "total_slots" => 2},
+                  "participants" => [],
+                  "timeline" => [%{"kind" => "contribution.recorded", "cursor" => "evt-2"}],
+                  "context_objects" => [
+                    %{
+                      "context_id" => "ctx-message-2",
+                      "object_type" => "message",
+                      "title" => "alice said",
+                      "body" => "I think auth is broken",
+                      "authored_by" => %{"participant_id" => "alice"}
+                    }
+                  ],
+                  "operations" => [
+                    %{
+                      "operation_id" => operation_id,
+                      "status" => "completed",
+                      "type" => "room_submit"
+                    }
+                  ]
+                }},
+               accepted_state
+             )
 
     assert next_state.pending_room_submit == nil
     assert next_state.status_line == "Submitted chat message"
@@ -489,36 +544,12 @@ defmodule JidoHiveTermuiConsole.AppTest do
     assert next_state.event_log_lines == ["contribution.recorded"]
   end
 
-  test "poll clears stale pending chat submission when the refreshed room snapshot already contains it",
+  test "room-session snapshot clears stale pending chat submission when the room snapshot already contains it",
        %{model: model} do
-    {:ok, embedded} =
-      Agent.start_link(fn ->
-        %{
-          snapshot: %{
-            "room_id" => "room-1",
-            "status" => "running",
-            "dispatch_state" => %{"completed_slots" => 1, "total_slots" => 2},
-            "participants" => [],
-            "context_objects" => [
-              %{
-                "context_id" => "ctx-message-1",
-                "object_type" => "message",
-                "title" => "alice said",
-                "body" => "stale but accepted",
-                "authored_by" => %{"participant_id" => "alice"}
-              }
-            ],
-            "timeline" => []
-          },
-          submitted: nil
-        }
-      end)
-
     state =
       %{
         model
-        | embedded: embedded,
-          pending_room_submit: %{
+        | pending_room_submit: %{
             room_id: "room-1",
             text: "stale but accepted",
             operation_id: "room_submit-stale"
@@ -526,7 +557,27 @@ defmodule JidoHiveTermuiConsole.AppTest do
           status_line: "Submitting chat message... op=room_submit-stale"
       }
 
-    {next_state, [{:timer, _timeout_ms, :poll}]} = App.update(:poll, state)
+    assert {:noreply, next_state} =
+             App.handle_info(
+               {:room_session_snapshot, "room-1",
+                %{
+                  "room_id" => "room-1",
+                  "status" => "running",
+                  "dispatch_state" => %{"completed_slots" => 1, "total_slots" => 2},
+                  "participants" => [],
+                  "context_objects" => [
+                    %{
+                      "context_id" => "ctx-message-1",
+                      "object_type" => "message",
+                      "title" => "alice said",
+                      "body" => "stale but accepted",
+                      "authored_by" => %{"participant_id" => "alice"}
+                    }
+                  ],
+                  "timeline" => []
+                }},
+               state
+             )
 
     assert next_state.pending_room_submit == nil
     assert next_state.status_line == "Submitted chat message"
@@ -538,6 +589,58 @@ defmodule JidoHiveTermuiConsole.AppTest do
                "body" => "stale but accepted"
              }
            ] = next_state.snapshot["context_objects"]
+  end
+
+  test "room-session snapshot updates room state and event log without a timer pull", %{
+    model: model
+  } do
+    state =
+      %{
+        model
+        | snapshot: %{
+            "room_id" => "room-1",
+            "status" => "idle",
+            "dispatch_state" => %{"completed_slots" => 0, "total_slots" => 6},
+            "participants" => [],
+            "context_objects" => [],
+            "timeline" => []
+          },
+          event_log_lines: []
+      }
+
+    assert {:noreply, next_state} =
+             App.handle_info(
+               {:room_session_snapshot, "room-1",
+                %{
+                  "room_id" => "room-1",
+                  "status" => "running",
+                  "dispatch_state" => %{"completed_slots" => 3, "total_slots" => 6},
+                  "participants" => [],
+                  "timeline" => [%{"kind" => "contribution.recorded", "cursor" => "evt-32"}],
+                  "context_objects" => [
+                    %{
+                      "context_id" => "ctx-1",
+                      "object_type" => "message",
+                      "title" => "alice said",
+                      "body" => "test message for context"
+                    }
+                  ]
+                }},
+               state
+             )
+
+    assert next_state.snapshot["dispatch_state"] == %{"completed_slots" => 3, "total_slots" => 6}
+
+    assert next_state.snapshot["context_objects"] == [
+             %{
+               "context_id" => "ctx-1",
+               "object_type" => "message",
+               "title" => "alice said",
+               "body" => "test message for context"
+             }
+           ]
+
+    assert next_state.event_log_lines == ["contribution.recorded"]
   end
 
   test "room enter restores the draft when the async submit worker exits before server confirmation",
@@ -648,7 +751,7 @@ defmodule JidoHiveTermuiConsole.AppTest do
           %{
             "participant_id" => "worker-01",
             "target_id" => "target-01",
-            "capability_id" => "codex.exec.session"
+            "capability_id" => "workspace.exec.session"
           }
         ]
       })
@@ -679,7 +782,7 @@ defmodule JidoHiveTermuiConsole.AppTest do
             "participant_role" => "worker",
             "provider" => "test",
             "target_id" => "target-01",
-            "capability_id" => "codex.exec.session"
+            "capability_id" => "workspace.exec.session"
           }
         ]
       })

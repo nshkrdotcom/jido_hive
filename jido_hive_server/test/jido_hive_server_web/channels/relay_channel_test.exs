@@ -18,7 +18,7 @@ defmodule JidoHiveServerWeb.RelayChannelTest do
                    "participant_kind" => "runtime",
                    "authority_level" => "advisory",
                    "target_id" => "target-worker-01",
-                   "capability_id" => "codex.exec.session",
+                   "capability_id" => "workspace.exec.session",
                    "metadata" => %{}
                  }
                ]
@@ -31,7 +31,7 @@ defmodule JidoHiveServerWeb.RelayChannelTest do
       "participant_id" => "worker-01",
       "participant_role" => "worker",
       "target_id" => "target-worker-01",
-      "capability_id" => "codex.exec.session",
+      "capability_id" => "workspace.exec.session",
       "contribution_type" => "reasoning",
       "authority_level" => "advisory",
       "summary" => "Invalid relation target.",

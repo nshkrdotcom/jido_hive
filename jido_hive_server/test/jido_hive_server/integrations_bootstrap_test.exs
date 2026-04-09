@@ -4,8 +4,13 @@ defmodule JidoHiveServer.IntegrationsBootstrapTest do
   alias Jido.Integration.V2
   alias JidoHiveServer.IntegrationsBootstrap
 
-  test "registers GitHub and Notion publication connectors with compatible direct targets" do
+  test "registers workspace session plus publication connectors" do
     :ok = IntegrationsBootstrap.bootstrap!()
+
+    assert {:ok, workspace_session} = V2.fetch_connector("workspace_session")
+    assert workspace_session.runtime_families == [:session]
+    assert {:ok, workspace_capability} = V2.fetch_capability("workspace.exec.session")
+    assert workspace_capability.runtime_class == :session
 
     assert {:ok, github} = V2.fetch_connector("github")
     assert github.runtime_families == [:direct]

@@ -30,7 +30,6 @@ RUN mix deps.compile \
   jido_harness \
   jido_integration_v2 \
   jido_integration_v2_runtime_asm_bridge \
-  jido_integration_v2_codex_cli \
   jido_integration_v2_github \
   jido_integration_v2_notion \
   --include-children

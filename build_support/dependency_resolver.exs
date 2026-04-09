@@ -94,19 +94,6 @@ defmodule JidoHive.Build.DependencyResolver do
     )
   end
 
-  def jido_integration_codex_cli(opts \\ []) do
-    resolve(
-      :jido_integration_v2_codex_cli,
-      [],
-      [
-        git: @jido_integration_repo,
-        branch: "bridge/jido_os_compose",
-        subdir: "connectors/codex_cli"
-      ],
-      opts
-    )
-  end
-
   def jido_integration_github(opts \\ []) do
     resolve(
       :jido_integration_v2_github,

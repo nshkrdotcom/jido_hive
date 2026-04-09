@@ -18,7 +18,7 @@ defmodule JidoHiveServer.CollaborationTest do
                    participant_role: "analyst",
                    participant_kind: "runtime",
                    target_id: "target-worker-01",
-                   capability_id: "codex.exec.session"
+                   capability_id: "workspace.exec.session"
                  }
                ]
              })
@@ -34,7 +34,7 @@ defmodule JidoHiveServer.CollaborationTest do
                  "participant_id" => "worker-01",
                  "participant_role" => "analyst",
                  "target_id" => "target-worker-01",
-                 "capability_id" => "codex.exec.session",
+                 "capability_id" => "workspace.exec.session",
                  "phase" => "analysis",
                  "objective" => "Analyze the first draft.",
                  "contribution_contract" => %{"allowed_contribution_types" => ["reasoning"]},
@@ -56,7 +56,7 @@ defmodule JidoHiveServer.CollaborationTest do
                    participant_role: "analyst",
                    participant_kind: "runtime",
                    target_id: "target-worker-01",
-                   capability_id: "codex.exec.session"
+                   capability_id: "workspace.exec.session"
                  }
                ]
              })

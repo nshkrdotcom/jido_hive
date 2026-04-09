@@ -15,12 +15,38 @@ defmodule JidoHiveServer.Persistence do
 
   alias JidoHiveServer.Repo
 
+  @spec persist_room_transition(map(), [RoomEvent.t()]) :: {:ok, map()} | {:error, term()}
+  def persist_room_transition(%{room_id: room_id} = snapshot, events)
+      when is_binary(room_id) and is_list(events) do
+    snapshot_attrs = room_snapshot_attrs(snapshot)
+
+    Repo.transaction(fn ->
+      Enum.each(events, fn %RoomEvent{} = event ->
+        room_id
+        |> room_event_attrs(event)
+        |> insert_room_event_record()
+      end)
+
+      %RoomSnapshotRecord{}
+      |> RoomSnapshotRecord.changeset(snapshot_attrs)
+      |> Repo.insert(
+        on_conflict: [set: [snapshot: snapshot_attrs.snapshot, updated_at: DateTime.utc_now()]],
+        conflict_target: :room_id
+      )
+      |> case do
+        {:ok, record} -> rehydrate_room_snapshot(record.snapshot)
+        {:error, changeset} -> Repo.rollback(changeset)
+      end
+    end)
+    |> case do
+      {:ok, persisted_snapshot} -> {:ok, persisted_snapshot}
+      {:error, error} -> {:error, error}
+    end
+  end
+
   @spec persist_room_snapshot(map()) :: {:ok, map()} | {:error, Ecto.Changeset.t()}
   def persist_room_snapshot(%{room_id: room_id} = snapshot) when is_binary(room_id) do
-    attrs = %{
-      room_id: room_id,
-      snapshot: snapshot |> SnapshotProjection.strip_derived() |> normalize()
-    }
+    attrs = room_snapshot_attrs(snapshot)
 
     %RoomSnapshotRecord{}
     |> RoomSnapshotRecord.changeset(attrs)
@@ -181,23 +207,42 @@ defmodule JidoHiveServer.Persistence do
   def append_room_events(room_id, events) when is_binary(room_id) and is_list(events) do
     Repo.transaction(fn ->
       Enum.each(events, fn %RoomEvent{} = event ->
-        attrs = %{
-          event_id: event.event_id,
-          room_id: room_id,
-          event_type: Atom.to_string(event.type),
-          causation_id: event.causation_id,
-          correlation_id: event.correlation_id,
-          payload: normalize(event.payload || %{})
-        }
-
-        %RoomEventRecord{}
-        |> RoomEventRecord.changeset(attrs)
-        |> Repo.insert!()
+        room_id
+        |> room_event_attrs(event)
+        |> insert_room_event_record()
       end)
     end)
     |> case do
       {:ok, _value} -> :ok
       {:error, error} -> {:error, error}
+    end
+  end
+
+  defp room_snapshot_attrs(%{room_id: room_id} = snapshot) do
+    %{
+      room_id: room_id,
+      snapshot: snapshot |> SnapshotProjection.strip_derived() |> normalize()
+    }
+  end
+
+  defp room_event_attrs(room_id, %RoomEvent{} = event) do
+    %{
+      event_id: event.event_id,
+      room_id: room_id,
+      event_type: Atom.to_string(event.type),
+      causation_id: event.causation_id,
+      correlation_id: event.correlation_id,
+      payload: normalize(event.payload || %{})
+    }
+  end
+
+  defp insert_room_event_record(attrs) do
+    %RoomEventRecord{}
+    |> RoomEventRecord.changeset(attrs)
+    |> Repo.insert(on_conflict: :nothing, conflict_target: :event_id)
+    |> case do
+      {:ok, _record} -> :ok
+      {:error, changeset} -> Repo.rollback(changeset)
     end
   end
 

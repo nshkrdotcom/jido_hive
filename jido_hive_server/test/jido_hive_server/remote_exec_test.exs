@@ -30,7 +30,7 @@ defmodule JidoHiveServer.RemoteExecTest do
                "participant_id" => "architect",
                "participant_role" => "architect",
                "target_id" => "target-observable",
-               "capability_id" => "codex.exec.session",
+               "capability_id" => "workspace.exec.session",
                "runtime_driver" => "asm",
                "provider" => "codex",
                "workspace_root" => "/tmp/jido_hive_observable",
@@ -49,7 +49,7 @@ defmodule JidoHiveServer.RemoteExecTest do
     assert target.participant_id == "architect"
     assert target.participant_role == "architect"
     assert target.target_id == "target-observable"
-    assert target.capability_id == "codex.exec.session"
+    assert target.capability_id == "workspace.exec.session"
     assert target.provider == "codex"
     assert target.execution_surface["surface_kind"] == "ssh_exec"
     assert target.execution_environment["workspace_root"] == "/tmp/jido_hive_observable"
@@ -57,7 +57,7 @@ defmodule JidoHiveServer.RemoteExecTest do
 
     assert {:ok, fetched_target} = RemoteExec.fetch_target("target-observable")
     assert fetched_target.participant_id == "architect"
-    assert fetched_target.capability_id == "codex.exec.session"
+    assert fetched_target.capability_id == "workspace.exec.session"
     assert fetched_target.execution_surface["surface_kind"] == "ssh_exec"
     assert fetched_target.execution_environment["allowed_tools"] == ["git.status"]
     assert fetched_target.provider_options["reasoning_effort"] == "low"
@@ -81,17 +81,17 @@ defmodule JidoHiveServer.RemoteExecTest do
                "participant_id" => "cleanup",
                "participant_role" => "architect",
                "target_id" => "target-cleanup",
-               "capability_id" => "codex.exec.session",
+               "capability_id" => "workspace.exec.session",
                "runtime_driver" => "asm",
                "provider" => "codex",
                "workspace_root" => "/tmp/jido_hive_cleanup"
              })
 
-    assert target_ids_for("codex.exec.session") |> Enum.member?("target-cleanup")
+    assert target_ids_for("workspace.exec.session") |> Enum.member?("target-cleanup")
 
     assert :ok = RemoteExec.remove_channel(channel_pid)
     refute Enum.any?(RemoteExec.list_targets(), &(&1.target_id == "target-cleanup"))
-    refute target_ids_for("codex.exec.session") |> Enum.member?("target-cleanup")
+    refute target_ids_for("workspace.exec.session") |> Enum.member?("target-cleanup")
   end
 
   defp target_ids_for(capability_id) do

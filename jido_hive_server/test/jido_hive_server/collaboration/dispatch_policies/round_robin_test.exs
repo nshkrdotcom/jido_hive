@@ -62,7 +62,7 @@ defmodule JidoHiveServer.Collaboration.DispatchPolicies.RoundRobinTest do
           target_id: "target-worker-01",
           participant_kind: "runtime",
           participant_role: "worker",
-          capability_id: "codex.exec.session"
+          capability_id: "workspace.exec.session"
         }
       ],
       context_objects: [],

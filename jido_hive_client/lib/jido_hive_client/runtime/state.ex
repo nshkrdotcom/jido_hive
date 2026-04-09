@@ -159,7 +159,7 @@ defmodule JidoHiveClient.Runtime.State do
       participant_id: Keyword.get(opts, :participant_id, "participant-local"),
       participant_role: Keyword.get(opts, :participant_role, "worker"),
       target_id: Keyword.get(opts, :target_id, "target-local"),
-      capability_id: Keyword.get(opts, :capability_id, "codex.exec.session"),
+      capability_id: Keyword.get(opts, :capability_id, "workspace.exec.session"),
       workspace_root: Keyword.get(opts, :workspace_root, File.cwd!()),
       provider: normalize_atomish(Keyword.get(executor_opts, :provider, :codex)),
       model: Keyword.get(executor_opts, :model),

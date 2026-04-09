@@ -24,7 +24,7 @@ defmodule JidoHiveServer.Collaboration.ProtocolCodecTest do
         "target_id" => "target-1",
         "participant_id" => "participant-1",
         "participant_role" => "analyst",
-        "capability_id" => "codex.exec.session",
+        "capability_id" => "workspace.exec.session",
         "provider" => "codex",
         "execution_surface" => %{"transport" => "cli"},
         "execution_environment" => %{"workspace_root" => "/workspace"},

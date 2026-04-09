@@ -47,6 +47,10 @@ defmodule JidoHiveTermuiConsole.NavTest do
 
       Agent.start_link(fn ->
         %{
+          "room_id" => "room-1",
+          "status" => "running",
+          "dispatch_state" => %{"completed_slots" => 0, "total_slots" => 2},
+          "participants" => [],
           "timeline" => [],
           "context_objects" => [],
           "last_error" => nil
@@ -55,7 +59,16 @@ defmodule JidoHiveTermuiConsole.NavTest do
     end
 
     def snapshot(server), do: Agent.get(server, & &1)
-    def refresh(server), do: {:ok, snapshot(server)}
+
+    def refresh(server) do
+      send(self(), {:embedded_refresh, server})
+      {:ok, snapshot(server)}
+    end
+
+    def subscribe(server) do
+      send(self(), {:embedded_subscribe, server})
+      :ok
+    end
 
     def shutdown(server) do
       send(self(), {:embedded_shutdown, server})
@@ -90,6 +103,7 @@ defmodule JidoHiveTermuiConsole.NavTest do
 
     def snapshot(server), do: Agent.get(server, & &1)
     def refresh(server), do: {:ok, snapshot(server)}
+    def subscribe(_server), do: :ok
 
     def shutdown(server) do
       GenServer.stop(server)
@@ -117,6 +131,40 @@ defmodule JidoHiveTermuiConsole.NavTest do
     end
 
     def refresh(server), do: {:ok, Agent.get(server, & &1)}
+    def subscribe(server), do: send(self(), {:embedded_subscribe, server})
+
+    def shutdown(server) do
+      send(self(), {:embedded_shutdown, server})
+      GenServer.stop(server)
+      :ok
+    end
+  end
+
+  defmodule EmbeddedMissingRoomStub do
+    def start_link(opts) do
+      send(self(), {:embedded_start, opts})
+
+      Agent.start_link(fn ->
+        %{
+          "room_id" => "missing-room",
+          "status" => "not_found",
+          "dispatch_state" => %{"completed_slots" => 0, "total_slots" => 0},
+          "participants" => [],
+          "timeline" => [],
+          "context_objects" => [],
+          "last_error" => :room_not_found
+        }
+      end)
+    end
+
+    def snapshot(server), do: Agent.get(server, & &1)
+
+    def refresh(_server), do: {:error, :room_not_found}
+
+    def subscribe(server) do
+      send(self(), {:embedded_subscribe, server})
+      :ok
+    end
 
     def shutdown(server) do
       send(self(), {:embedded_shutdown, server})
@@ -135,7 +183,7 @@ defmodule JidoHiveTermuiConsole.NavTest do
     assert_receive {:fetch_room, "room-b"}
   end
 
-  test "transition to room starts embedded and poller" do
+  test "transition to room starts embedded, subscribes, and refreshes the room session" do
     state =
       Model.new(
         api_base_url: "http://localhost:4000/api",
@@ -151,10 +199,12 @@ defmodule JidoHiveTermuiConsole.NavTest do
     assert is_pid(next_state.embedded)
     assert next_state.event_log_poller_pid == nil
     assert_receive {:embedded_start, _opts}
+    assert_receive {:embedded_subscribe, _pid}
+    assert_receive {:embedded_refresh, _pid}
     refute_receive {:poller_start, _opts}, 50
   end
 
-  test "transition to room does not snapshot embedded process during initial open" do
+  test "transition to room refreshes the embedded room session instead of pulling snapshot" do
     state =
       Model.new(
         api_base_url: "http://localhost:4000/api",
@@ -167,27 +217,29 @@ defmodule JidoHiveTermuiConsole.NavTest do
 
     assert next_state.active_screen == :room
     assert is_pid(next_state.embedded)
+    assert_receive {:embedded_subscribe, _pid}
     refute_receive {:embedded_snapshot_called, _pid}, 50
   end
 
-  test "transition to room preserves fetched server context when embedded snapshot is empty" do
+  test "transition to room uses the embedded room session snapshot as the authoritative room state" do
     state =
       Model.new(
         api_base_url: "http://localhost:4000/api",
-        embedded_module: EmbeddedStub,
+        embedded_module: EmbeddedSnapshotStub,
         event_log_poller_module: PollerStub,
         operator_module: OperatorStub
       )
 
-    next_state = Nav.transition(state, :room, room_id: "room-with-context", app_pid: self())
+    next_state = Nav.transition(state, :room, room_id: "room-1", app_pid: self())
 
-    assert next_state.snapshot["timeline"] == [%{"body" => "server timeline"}]
+    assert next_state.snapshot["status"] == "publication_ready"
+    assert next_state.snapshot["timeline"] == [%{"body" => "embedded timeline"}]
 
     assert next_state.snapshot["context_objects"] == [
              %{
                "context_id" => "ctx-1",
                "object_type" => "note",
-               "title" => "server context"
+               "title" => "embedded context"
              }
            ]
   end
@@ -196,7 +248,7 @@ defmodule JidoHiveTermuiConsole.NavTest do
     state =
       Model.new(
         api_base_url: "http://localhost:4000/api",
-        embedded_module: EmbeddedStub,
+        embedded_module: EmbeddedMissingRoomStub,
         event_log_poller_module: PollerStub,
         operator_module: OperatorStub
       )

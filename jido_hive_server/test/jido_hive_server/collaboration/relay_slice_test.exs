@@ -16,7 +16,7 @@ defmodule JidoHiveServer.Collaboration.RelaySliceTest do
     start_worker(:worker_02_client, url, "worker-02")
 
     assert wait_until(fn ->
-             case V2.compatible_targets_for("codex.exec.session", %{}) do
+             case V2.compatible_targets_for("workspace.exec.session", %{}) do
                {:ok, matches} ->
                  length(RemoteExec.list_targets()) == 2 and length(matches) == 2
 
@@ -75,7 +75,7 @@ defmodule JidoHiveServer.Collaboration.RelaySliceTest do
        participant_id: worker_id,
        participant_role: "worker",
        target_id: "target-#{worker_id}",
-       capability_id: "codex.exec.session",
+       capability_id: "workspace.exec.session",
        executor: {Session, [provider: :claude, driver: ScriptedRunModule]}}
     )
   end
@@ -89,7 +89,7 @@ defmodule JidoHiveServer.Collaboration.RelaySliceTest do
         participant_role: "worker",
         participant_kind: "runtime",
         target_id: "target-#{worker_id}",
-        capability_id: "codex.exec.session"
+        capability_id: "workspace.exec.session"
       }
     end)
   end

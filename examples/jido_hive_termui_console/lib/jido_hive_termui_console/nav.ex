@@ -16,6 +16,13 @@ defmodule JidoHiveTermuiConsole.Nav do
     end
   end
 
+  @spec apply_room_snapshot(Model.t(), map()) :: Model.t()
+  def apply_room_snapshot(%Model{} = state, snapshot) when is_map(snapshot) do
+    state
+    |> Model.apply_snapshot(snapshot)
+    |> sync_event_log_from_snapshot()
+  end
+
   @spec refresh_room_snapshot(Model.t()) :: Model.t()
   def refresh_room_snapshot(%Model{room_id: nil} = state), do: state
 
@@ -23,12 +30,17 @@ defmodule JidoHiveTermuiConsole.Nav do
 
   def refresh_room_snapshot(%Model{} = state) do
     snapshot = state.embedded_module.snapshot(state.embedded)
-
-    state
-    |> Model.apply_snapshot(snapshot)
-    |> sync_event_log_from_snapshot()
+    apply_room_snapshot(state, snapshot)
   rescue
-    _error -> state
+    error ->
+      state
+      |> Map.put(:sync_error, true)
+      |> Model.set_status("Room snapshot failed: #{Exception.message(error)}", :error)
+  catch
+    :exit, reason ->
+      state
+      |> Map.put(:sync_error, true)
+      |> Model.set_status("Room snapshot failed: #{inspect(reason)}", :error)
   end
 
   defp transition_to_lobby(%Model{} = state, opts) do
@@ -55,17 +67,16 @@ defmodule JidoHiveTermuiConsole.Nav do
 
   defp transition_to_room(%Model{} = state, opts) do
     room_id = Keyword.fetch!(opts, :room_id)
-    app_pid = Keyword.get(opts, :app_pid)
     preserve_existing = Keyword.get(opts, :preserve_existing, false)
 
-    {embedded, poller_pid, embedded_snapshot} =
-      room_processes_for_transition(state, room_id, app_pid, preserve_existing, opts)
+    {embedded, poller_pid} =
+      room_processes_for_transition(state, room_id, preserve_existing, opts)
 
-    room_snapshot = fetch_room_snapshot(state, room_id, embedded_snapshot)
+    room_snapshot = load_room_session_snapshot(state, room_id, embedded)
     fetch_error = Map.get(room_snapshot, "last_error")
 
     {embedded, poller_pid} =
-      if fetch_error == :not_found do
+      if fetch_error in [:not_found, :room_not_found] do
         stop_poller(poller_pid)
         stop_embedded(state.embedded_module, embedded)
         {nil, nil}
@@ -73,7 +84,8 @@ defmodule JidoHiveTermuiConsole.Nav do
         {embedded, poller_pid}
       end
 
-    build_state(state, %{
+    state
+    |> build_state(%{
       active_screen: :room,
       room_id: room_id,
       embedded: embedded,
@@ -84,7 +96,7 @@ defmodule JidoHiveTermuiConsole.Nav do
       status_line: room_fetch_status(room_id, fetch_error),
       status_severity: room_fetch_severity(fetch_error)
     })
-    |> sync_event_log_from_snapshot()
+    |> apply_room_snapshot(room_snapshot)
   end
 
   defp transition_to_conflict(%Model{} = state) do
@@ -266,53 +278,6 @@ defmodule JidoHiveTermuiConsole.Nav do
     }
   end
 
-  defp merge_room_snapshot(room_snapshot, embedded_snapshot) do
-    room_snapshot = stringify_keys(room_snapshot)
-    embedded_snapshot = stringify_keys(embedded_snapshot)
-
-    room_snapshot
-    |> Map.put(
-      "timeline",
-      prefer_list(Map.get(embedded_snapshot, "timeline"), Map.get(room_snapshot, "timeline", []))
-    )
-    |> Map.put(
-      "context_objects",
-      prefer_list(
-        Map.get(embedded_snapshot, "context_objects"),
-        Map.get(room_snapshot, "context_objects", [])
-      )
-    )
-    |> Map.put(
-      "next_cursor",
-      prefer_value(
-        Map.get(embedded_snapshot, "next_cursor"),
-        Map.get(room_snapshot, "next_cursor")
-      )
-    )
-    |> Map.put(
-      "last_sync_at",
-      prefer_value(
-        Map.get(embedded_snapshot, "last_sync_at"),
-        Map.get(room_snapshot, "last_sync_at")
-      )
-    )
-    |> Map.put(
-      "last_error",
-      prefer_value(Map.get(embedded_snapshot, "last_error"), Map.get(room_snapshot, "last_error"))
-    )
-    |> Map.put(
-      "participant",
-      prefer_value(
-        Map.get(embedded_snapshot, "participant"),
-        Map.get(room_snapshot, "participant")
-      )
-    )
-    |> Map.put(
-      "runtime",
-      prefer_value(Map.get(embedded_snapshot, "runtime"), Map.get(room_snapshot, "runtime"))
-    )
-  end
-
   defp find_conflict_partner(conflict_left, snapshot) do
     conflict_left
     |> conflict_edges(snapshot)
@@ -404,37 +369,45 @@ defmodule JidoHiveTermuiConsole.Nav do
 
   defp stringify_keys(_other), do: %{}
 
-  defp prefer_list(value, fallback) when value in [nil, []], do: fallback
-  defp prefer_list(value, _fallback), do: value
-
-  defp prefer_value(nil, fallback), do: fallback
-  defp prefer_value(value, _fallback), do: value
-
-  defp room_processes_for_transition(state, room_id, app_pid, true, _opts)
+  defp room_processes_for_transition(state, room_id, true, _opts)
        when state.room_id == room_id and not is_nil(state.embedded) do
-    _ = app_pid
-    {state.embedded, nil, embedded_metadata_snapshot(state.snapshot)}
+    {state.embedded, nil}
   end
 
-  defp room_processes_for_transition(state, room_id, app_pid, _preserve_existing, opts) do
+  defp room_processes_for_transition(state, room_id, _preserve_existing, opts) do
     stop_room_processes(state)
     embedded = ensure_embedded(state, room_id, opts)
-    _ = app_pid
-    {embedded, nil, embedded_metadata_snapshot(state.snapshot)}
+    {embedded, nil}
   end
 
-  defp fetch_room_snapshot(state, room_id, embedded_snapshot) do
-    case state.operator_module.fetch_room(state.api_base_url, room_id, lane: :room_hydrate) do
+  defp load_room_session_snapshot(state, room_id, embedded) do
+    :ok = state.embedded_module.subscribe(embedded)
+
+    case state.embedded_module.refresh(embedded) do
       {:ok, snapshot} ->
-        merge_room_snapshot(snapshot, embedded_snapshot)
+        stringify_keys(snapshot)
 
       {:error, reason} ->
-        missing_or_unavailable_room_snapshot(room_id, reason)
-        |> merge_room_snapshot(embedded_metadata_snapshot(embedded_snapshot))
+        embedded
+        |> state.embedded_module.snapshot()
+        |> stringify_keys()
+        |> Map.put("room_id", room_id)
+        |> Map.put("last_error", reason)
+        |> Map.put_new(
+          "status",
+          if(room_not_found?(reason), do: "not_found", else: "unavailable")
+        )
+        |> Map.put_new("context_objects", [])
+        |> Map.put_new("timeline", [])
+        |> Map.put_new("participants", [])
+        |> Map.put_new("dispatch_state", %{"completed_slots" => 0, "total_slots" => 0})
     end
+  rescue
+    _error ->
+      missing_or_unavailable_room_snapshot(room_id, :unavailable)
   end
 
-  defp room_fetch_status(room_id, :not_found),
+  defp room_fetch_status(room_id, fetch_error) when fetch_error in [:not_found, :room_not_found],
     do: "Room #{room_id} was not found on this server"
 
   defp room_fetch_status(_room_id, fetch_error) when not is_nil(fetch_error),
@@ -448,7 +421,7 @@ defmodule JidoHiveTermuiConsole.Nav do
   defp missing_or_unavailable_room_snapshot(room_id, reason) do
     %{
       "room_id" => room_id,
-      "status" => if(reason == :not_found, do: "not_found", else: "unavailable"),
+      "status" => if(room_not_found?(reason), do: "not_found", else: "unavailable"),
       "context_objects" => [],
       "timeline" => [],
       "participants" => [],
@@ -491,17 +464,7 @@ defmodule JidoHiveTermuiConsole.Nav do
     }
   end
 
-  defp embedded_metadata_snapshot(snapshot) when is_map(snapshot) do
-    %{
-      "next_cursor" => Map.get(snapshot, "next_cursor") || Map.get(snapshot, :next_cursor),
-      "last_sync_at" => Map.get(snapshot, "last_sync_at") || Map.get(snapshot, :last_sync_at),
-      "last_error" => Map.get(snapshot, "last_error") || Map.get(snapshot, :last_error),
-      "participant" => Map.get(snapshot, "participant") || Map.get(snapshot, :participant),
-      "runtime" => Map.get(snapshot, "runtime") || Map.get(snapshot, :runtime)
-    }
-    |> Enum.reject(fn {_key, value} -> is_nil(value) end)
-    |> Map.new()
-  end
-
-  defp embedded_metadata_snapshot(_snapshot), do: %{}
+  defp room_not_found?(:room_not_found), do: true
+  defp room_not_found?(:not_found), do: true
+  defp room_not_found?(_reason), do: false
 end

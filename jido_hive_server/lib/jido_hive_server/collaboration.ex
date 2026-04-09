@@ -39,8 +39,7 @@ defmodule JidoHiveServer.Collaboration do
            ),
          :ok <- replace_room_server(room_id),
          :ok <- Persistence.delete_room_events(room_id),
-         {:ok, _snapshot} <- Persistence.persist_room_snapshot(snapshot),
-         :ok <- append_room_created_event(snapshot),
+         :ok <- persist_room_created(snapshot),
          {:ok, _pid} <- ensure_room_server(snapshot) do
       fetch_room(room_id)
     else
@@ -369,7 +368,7 @@ defmodule JidoHiveServer.Collaboration do
     end
   end
 
-  defp append_room_created_event(snapshot) do
+  defp persist_room_created(snapshot) do
     {:ok, event} =
       RoomEvent.new(%{
         event_id: unique_id("evt"),
@@ -379,7 +378,10 @@ defmodule JidoHiveServer.Collaboration do
         recorded_at: DateTime.utc_now()
       })
 
-    Persistence.append_room_events(snapshot.room_id, [event])
+    case Persistence.persist_room_transition(snapshot, [event]) do
+      {:ok, _snapshot} -> :ok
+      {:error, reason} -> {:error, reason}
+    end
   end
 
   defp assignment_wait_timeout_ms do

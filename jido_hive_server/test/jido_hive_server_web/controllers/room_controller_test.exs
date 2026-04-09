@@ -25,12 +25,12 @@ defmodule JidoHiveServerWeb.RoomControllerTest do
        participant_id: "analyst",
        participant_role: "worker",
        target_id: "target-analyst-http",
-       capability_id: "codex.exec.session",
+       capability_id: "workspace.exec.session",
        executor: {Session, [provider: :claude, driver: ScriptedRunModule]}}
     )
 
     assert wait_until(fn ->
-             case V2.compatible_targets_for("codex.exec.session", %{}) do
+             case V2.compatible_targets_for("workspace.exec.session", %{}) do
                {:ok, matches} ->
                  length(RemoteExec.list_targets()) == 1 and
                    length(matches) == 1 and
@@ -63,7 +63,7 @@ defmodule JidoHiveServerWeb.RoomControllerTest do
           "participant_role" => "worker",
           "participant_kind" => "runtime",
           "target_id" => "target-analyst-http",
-          "capability_id" => "codex.exec.session"
+          "capability_id" => "workspace.exec.session"
         }
       ]
     }
@@ -128,12 +128,12 @@ defmodule JidoHiveServerWeb.RoomControllerTest do
        participant_id: "analyst",
        participant_role: "worker",
        target_id: "target-analyst-http",
-       capability_id: "codex.exec.session",
+       capability_id: "workspace.exec.session",
        executor: {Session, [provider: :claude, driver: ScriptedRunModule]}}
     )
 
     assert wait_until(fn ->
-             case V2.compatible_targets_for("codex.exec.session", %{}) do
+             case V2.compatible_targets_for("workspace.exec.session", %{}) do
                {:ok, matches} ->
                  length(RemoteExec.list_targets()) == 1 and
                    length(matches) == 1 and
@@ -158,7 +158,7 @@ defmodule JidoHiveServerWeb.RoomControllerTest do
           "participant_role" => "worker",
           "participant_kind" => "runtime",
           "target_id" => "target-analyst-http",
-          "capability_id" => "codex.exec.session"
+          "capability_id" => "workspace.exec.session"
         }
       ]
     }

@@ -33,6 +33,12 @@ defmodule JidoHiveClient.RelayWorkerTest do
       {:ok, payload}
     end
 
+    def push(channel, event, payload, timeout) do
+      test_pid = Agent.get(channel, & &1.test_pid)
+      send(test_pid, {:channel_push, event, payload, timeout})
+      {:ok, payload}
+    end
+
     def leave(channel), do: Agent.stop(channel)
   end
 
@@ -43,14 +49,28 @@ defmodule JidoHiveClient.RelayWorkerTest do
       ChannelStub.join(socket, topic, payload)
     end
 
-    def push(channel, "contribution.submit", payload) do
-      test_pid = Agent.get(channel, & &1.test_pid)
-      send(test_pid, {:channel_push, "contribution.submit", payload})
-      {:error, %{"error" => "scope_violation"}}
+    def push(channel, event, payload) do
+      case event do
+        "contribution.submit" ->
+          test_pid = Agent.get(channel, & &1.test_pid)
+          send(test_pid, {:channel_push, "contribution.submit", payload})
+          {:error, %{"error" => "scope_violation"}}
+
+        _other ->
+          ChannelStub.push(channel, event, payload)
+      end
     end
 
-    def push(channel, event, payload) do
-      ChannelStub.push(channel, event, payload)
+    def push(channel, event, payload, timeout) do
+      case event do
+        "contribution.submit" ->
+          test_pid = Agent.get(channel, & &1.test_pid)
+          send(test_pid, {:channel_push, "contribution.submit", payload, timeout})
+          {:error, %{"error" => "scope_violation"}}
+
+        _other ->
+          ChannelStub.push(channel, event, payload, timeout)
+      end
     end
 
     def leave(channel), do: Agent.stop(channel)
@@ -131,13 +151,18 @@ defmodule JidoHiveClient.RelayWorkerTest do
   end
 
   test "executes an inbound assignment and publishes contribution.submit", %{runtime: runtime} do
-    {:ok, worker} = RelayWorker.start_link(worker_opts(runtime, self()))
+    {:ok, worker} =
+      RelayWorker.start_link(
+        worker_opts(runtime, self()) ++ [contribution_submit_timeout_ms: 12_345]
+      )
+
     await_handshake()
 
     send(worker, %Message{event: "assignment.start", payload: assignment_payload()})
 
-    assert_receive {:channel_push, "contribution.submit", contribution}
+    assert_receive {:channel_push, "contribution.submit", contribution, 12_345}
     assert contribution["assignment_id"] == "asn-1"
+    assert String.starts_with?(contribution["contribution_id"], "contrib-")
     assert contribution["status"] == "completed"
     assert Runtime.snapshot(runtime).metrics.assignments_completed == 1
   end
@@ -163,7 +188,7 @@ defmodule JidoHiveClient.RelayWorkerTest do
 
     send(worker, %Message{event: "assignment.start", payload: assignment_payload()})
 
-    assert_receive {:channel_push, "contribution.submit", _contribution}
+    assert_receive {:channel_push, "contribution.submit", _contribution, 30_000}
     assert Process.alive?(worker)
 
     assert_assignment_failed(runtime)

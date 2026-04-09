@@ -82,7 +82,7 @@ all locked workers for each of those three stages.
 
 The steady-state room loop is:
 
-1. workers connect to the relay and register `codex.exec.session` targets
+1. workers connect to the relay and register `workspace.exec.session` targets
 2. the operator creates a room from the currently selected connected workers
 3. the server locks those workers into an execution plan
 4. `run-room` opens one turn at a time

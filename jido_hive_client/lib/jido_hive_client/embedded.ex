@@ -9,11 +9,11 @@ defmodule JidoHiveClient.Embedded do
   alias JidoHiveClient.DebugTrace
   alias JidoHiveClient.Interceptor
   alias JidoHiveClient.Operation
+  alias JidoHiveClient.Polling
   alias JidoHiveClient.Runtime
   alias JidoHiveClient.Transport.HTTP, as: TransportHTTP
 
-  @default_poll_interval_ms 1_000
-  @max_poll_backoff_ms 10_000
+  @default_poll_interval_ms Polling.default_interval_ms()
   @room_not_found_retry_limit 3
   @timeline_limit 200
   @operation_history_limit 25
@@ -44,13 +44,17 @@ defmodule JidoHiveClient.Embedded do
     :last_error,
     room_snapshot: %{},
     subscribers: MapSet.new(),
+    polling: %{
+      timer_ref: nil,
+      interval_ms: @default_poll_interval_ms,
+      next_delay_ms: @default_poll_interval_ms,
+      failure_count: 0,
+      idle_count: 0,
+      halted_reason: nil
+    },
     timeline: [],
     context_objects: [],
     next_cursor: nil,
-    poll_interval_ms: @default_poll_interval_ms,
-    next_poll_delay_ms: @default_poll_interval_ms,
-    poll_failure_count: 0,
-    polling_halted_reason: nil,
     sync_task_pid: nil,
     sync_task_ref: nil,
     sync_waiters: [],
@@ -112,6 +116,7 @@ defmodule JidoHiveClient.Embedded do
     participant = participant_from_opts(opts)
     {runtime, owned_runtime?} = ensure_runtime(opts, participant)
     {room_api, room_api_opts} = normalize_room_api(Keyword.get(opts, :room_api))
+    poll_interval_ms = Keyword.get(opts, :poll_interval_ms, @default_poll_interval_ms)
 
     {agent_backend, agent_backend_opts} =
       normalize_agent_backend(Keyword.get(opts, :agent_backend))
@@ -128,8 +133,7 @@ defmodule JidoHiveClient.Embedded do
       agent_backend_opts: agent_backend_opts,
       room_id: Keyword.fetch!(opts, :room_id),
       participant: participant,
-      poll_interval_ms: Keyword.get(opts, :poll_interval_ms, @default_poll_interval_ms),
-      next_poll_delay_ms: Keyword.get(opts, :poll_interval_ms, @default_poll_interval_ms)
+      polling: new_polling_state(poll_interval_ms)
     }
 
     :ok = Runtime.connect(runtime, %{"mode" => "embedded", "room_id" => state.room_id})
@@ -142,8 +146,7 @@ defmodule JidoHiveClient.Embedded do
         payload: participant
       })
 
-    Process.send_after(self(), :poll, 0)
-    {:ok, state}
+    {:ok, schedule_poll(state, 0)}
   end
 
   @impl true
@@ -153,6 +156,7 @@ defmodule JidoHiveClient.Embedded do
 
   def handle_call(:subscribe, {pid, _tag}, %__MODULE__{} = state) do
     next_state = %{state | subscribers: MapSet.put(state.subscribers, pid)}
+    push_snapshot(pid, current_snapshot(next_state))
     {:reply, :ok, next_state}
   end
 
@@ -306,16 +310,15 @@ defmodule JidoHiveClient.Embedded do
     {:noreply, request_sync(state, record_event?, [], false)}
   end
 
-  def handle_info(:poll, %__MODULE__{} = state) do
-    if terminal_poll_halted?(state) do
-      {:noreply, state}
-    else
-      next_state = request_sync(state, false, [], false)
+  def handle_info(:poll, %__MODULE__{} = state), do: handle_poll(clear_poll_timer(state))
 
-      Process.send_after(self(), :poll, state.next_poll_delay_ms)
-      {:noreply, next_state}
-    end
-  end
+  def handle_info(
+        {:poll, token},
+        %__MODULE__{polling: %{timer_ref: {_timer_ref, token}}} = state
+      ),
+      do: handle_poll(clear_poll_timer(state))
+
+  def handle_info({:poll, _stale_token}, %__MODULE__{} = state), do: {:noreply, state}
 
   def handle_info(
         {:sync_result, pid, result},
@@ -331,6 +334,7 @@ defmodule JidoHiveClient.Embedded do
       |> clear_sync_task()
       |> complete_sync(result, record_event?, waiters)
       |> maybe_start_queued_sync()
+      |> maybe_schedule_poll()
 
     {:noreply, next_state}
   end
@@ -347,6 +351,7 @@ defmodule JidoHiveClient.Embedded do
       |> clear_sync_task()
       |> complete_sync({:error, {:sync_task_exit, reason}}, record_event?, waiters)
       |> maybe_start_queued_sync()
+      |> maybe_schedule_poll()
 
     {:noreply, next_state}
   end
@@ -463,10 +468,19 @@ defmodule JidoHiveClient.Embedded do
     :ok
   end
 
-  defp terminal_poll_halted?(%__MODULE__{polling_halted_reason: reason}) when not is_nil(reason),
-    do: true
+  defp terminal_poll_halted?(%__MODULE__{polling: %{halted_reason: reason}})
+       when not is_nil(reason),
+       do: true
 
   defp terminal_poll_halted?(%__MODULE__{}), do: false
+
+  defp handle_poll(%__MODULE__{} = state) do
+    if terminal_poll_halted?(state) do
+      {:noreply, state}
+    else
+      {:noreply, request_sync(state, false, [], false)}
+    end
+  end
 
   defp current_snapshot(%__MODULE__{} = state) do
     state.room_snapshot
@@ -521,8 +535,9 @@ defmodule JidoHiveClient.Embedded do
   end
 
   defp start_sync_task(%__MODULE__{} = state, record_event?, waiters, force_full?) do
+    next_state = cancel_poll_timer(state)
     parent = self()
-    sync_state = state
+    sync_state = next_state
 
     {pid, ref} =
       spawn_monitor(fn ->
@@ -530,7 +545,7 @@ defmodule JidoHiveClient.Embedded do
       end)
 
     %{
-      state
+      next_state
       | sync_task_pid: pid,
         sync_task_ref: ref,
         sync_waiters: waiters,
@@ -566,8 +581,12 @@ defmodule JidoHiveClient.Embedded do
   end
 
   defp complete_sync(%__MODULE__{} = state, {:ok, sync_result}, record_event?, waiters) do
-    {next_state, _changed?} = apply_sync_result(state, sync_result, record_event?)
-    maybe_resume_polling(state, next_state)
+    {next_state, changed?} = apply_sync_result(state, sync_result, record_event?)
+
+    if changed? do
+      broadcast_snapshot(next_state)
+    end
+
     reply_sync_waiters(waiters, {:ok, current_snapshot(next_state)})
     next_state
   end
@@ -585,13 +604,18 @@ defmodule JidoHiveClient.Embedded do
     next_state =
       state
       |> Map.put(:last_error, reason)
-      |> Map.put(:poll_failure_count, state.poll_failure_count + 1)
-      |> Map.put(
-        :next_poll_delay_ms,
-        backoff_delay(state.poll_interval_ms, state.poll_failure_count + 1)
+      |> put_polling(
+        failure_count: state.polling.failure_count + 1,
+        idle_count: 0,
+        next_delay_ms:
+          Polling.failure_backoff_delay(
+            state.polling.interval_ms,
+            state.polling.failure_count + 1
+          )
       )
       |> maybe_halt_polling(reason)
 
+    broadcast_snapshot(next_state)
     reply_sync_waiters(waiters, {:error, reason})
     next_state
   end
@@ -639,25 +663,32 @@ defmodule JidoHiveClient.Embedded do
   defp maybe_fetch_room_snapshot(%__MODULE__{}, false), do: nil
 
   defp apply_sync_result(%__MODULE__{} = state, sync_result, record_event?) do
+    room_snapshot = sync_result.room_snapshot || state.room_snapshot
+
     timeline =
       state.timeline
       |> append_timeline_entries(sync_result.entries)
       |> Enum.take(-@timeline_limit)
 
-    changed? = timeline != state.timeline or sync_result.context_objects != state.context_objects
+    changed? = sync_changed?(state, room_snapshot, timeline, sync_result.context_objects)
+    {idle_poll_count, next_poll_delay_ms} = next_success_polling(state, changed?)
 
-    next_state = %{
-      state
-      | room_snapshot: sync_result.room_snapshot || state.room_snapshot,
-        timeline: timeline,
-        context_objects: sync_result.context_objects,
-        next_cursor: sync_result.next_cursor || state.next_cursor,
-        last_sync_at: DateTime.utc_now(),
-        last_error: nil,
-        poll_failure_count: 0,
-        next_poll_delay_ms: state.poll_interval_ms,
-        polling_halted_reason: nil
-    }
+    next_state =
+      %{
+        state
+        | room_snapshot: room_snapshot,
+          timeline: timeline,
+          context_objects: sync_result.context_objects,
+          next_cursor: sync_result.next_cursor || state.next_cursor,
+          last_sync_at: DateTime.utc_now(),
+          last_error: nil
+      }
+      |> put_polling(
+        failure_count: 0,
+        next_delay_ms: next_poll_delay_ms,
+        idle_count: idle_poll_count,
+        halted_reason: nil
+      )
 
     if changed? and record_event? do
       :ok =
@@ -723,27 +754,72 @@ defmodule JidoHiveClient.Embedded do
   end
 
   defp maybe_halt_polling(%__MODULE__{} = state, reason) do
-    if room_not_found?(reason) and state.poll_failure_count >= @room_not_found_retry_limit do
-      %{state | polling_halted_reason: reason}
+    if room_not_found?(reason) and state.polling.failure_count >= @room_not_found_retry_limit do
+      put_polling(state, halted_reason: reason)
     else
       state
     end
-  end
-
-  defp maybe_resume_polling(%__MODULE__{polling_halted_reason: nil}, _next_state), do: :ok
-
-  defp maybe_resume_polling(%__MODULE__{}, %__MODULE__{} = next_state) do
-    Process.send_after(self(), :poll, next_state.next_poll_delay_ms)
-    :ok
   end
 
   defp room_not_found?(:room_not_found), do: true
   defp room_not_found?(:not_found), do: true
   defp room_not_found?(_reason), do: false
 
-  defp backoff_delay(base_interval_ms, failures) do
-    multiplier = Integer.pow(2, min(failures - 1, 4))
-    min(base_interval_ms * multiplier, @max_poll_backoff_ms)
+  defp maybe_schedule_poll(%__MODULE__{} = state) do
+    cond do
+      terminal_poll_halted?(state) -> state
+      sync_inflight?(state) -> state
+      true -> schedule_poll(state, state.polling.next_delay_ms)
+    end
+  end
+
+  defp schedule_poll(%__MODULE__{} = state, delay_ms)
+       when is_integer(delay_ms) and delay_ms >= 0 do
+    next_state = cancel_poll_timer(state)
+    token = make_ref()
+    timer_ref = Process.send_after(self(), {:poll, token}, delay_ms)
+    put_polling(next_state, timer_ref: {timer_ref, token})
+  end
+
+  defp cancel_poll_timer(%__MODULE__{polling: %{timer_ref: nil}} = state), do: state
+
+  defp cancel_poll_timer(%__MODULE__{polling: %{timer_ref: timer_ref}} = state) do
+    {native_timer_ref, _token} = timer_ref
+    Process.cancel_timer(native_timer_ref, async: true, info: false)
+    put_polling(state, timer_ref: nil)
+  end
+
+  defp clear_poll_timer(%__MODULE__{} = state), do: put_polling(state, timer_ref: nil)
+
+  defp new_polling_state(interval_ms) do
+    %{
+      timer_ref: nil,
+      interval_ms: interval_ms,
+      next_delay_ms: interval_ms,
+      failure_count: 0,
+      idle_count: 0,
+      halted_reason: nil
+    }
+  end
+
+  defp put_polling(%__MODULE__{} = state, attrs) when is_list(attrs) do
+    %{state | polling: Map.merge(state.polling, Map.new(attrs))}
+  end
+
+  defp sync_changed?(%__MODULE__{} = state, room_snapshot, timeline, context_objects) do
+    room_snapshot != state.room_snapshot or
+      timeline != state.timeline or
+      context_objects != state.context_objects or
+      not is_nil(state.last_error)
+  end
+
+  defp next_success_polling(%__MODULE__{} = state, true) do
+    {0, state.polling.interval_ms}
+  end
+
+  defp next_success_polling(%__MODULE__{} = state, false) do
+    idle_count = state.polling.idle_count + 1
+    {idle_count, Polling.idle_backoff_delay(state.polling.interval_ms, idle_count)}
   end
 
   defp acceptance_contribution(context_object, attrs, %__MODULE__{} = state) do
@@ -920,7 +996,9 @@ defmodule JidoHiveClient.Embedded do
       |> Map.put(operation_id, operation)
       |> Map.take(submit_order)
 
-    %{state | submit_operations: operations, submit_order: submit_order}
+    next_state = %{state | submit_operations: operations, submit_order: submit_order}
+    broadcast_snapshot(next_state)
+    next_state
   end
 
   defp update_submit_operation(%__MODULE__{} = state, operation_id, fun) do
@@ -936,6 +1014,17 @@ defmodule JidoHiveClient.Embedded do
   defp current_operations(%__MODULE__{} = state) do
     Enum.map(state.submit_order, &Map.get(state.submit_operations, &1))
     |> Enum.reject(&is_nil/1)
+  end
+
+  defp broadcast_snapshot(%__MODULE__{subscribers: subscribers} = state) do
+    snapshot = current_snapshot(state)
+    Enum.each(subscribers, &push_snapshot(&1, snapshot))
+    state
+  end
+
+  defp push_snapshot(pid, snapshot) when is_pid(pid) do
+    room_id = Map.get(snapshot, :room_id) || Map.get(snapshot, "room_id")
+    send(pid, {:room_session_snapshot, room_id, snapshot})
   end
 
   defp new_submit_operation(operation_id, text) do

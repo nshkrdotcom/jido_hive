@@ -130,7 +130,6 @@ defmodule JidoHiveTermuiConsole.App do
     next_state =
       if state.active_screen in [:room, :conflict, :publish] do
         state
-        |> Nav.refresh_room_snapshot()
         |> poll_pending_room_run()
         |> reconcile_pending_room_submit()
       else
@@ -232,8 +231,11 @@ defmodule JidoHiveTermuiConsole.App do
   def update(:refresh_room, state) do
     next_state =
       case state.embedded_module.refresh(state.embedded) do
-        {:ok, _snapshot} ->
-          state |> Nav.refresh_room_snapshot() |> Model.set_status("Refreshed", :info)
+        {:ok, snapshot} ->
+          state
+          |> Nav.apply_room_snapshot(snapshot)
+          |> reconcile_pending_room_submit()
+          |> Model.set_status("Refreshed", :info)
 
         {:error, reason} ->
           Model.set_status(state, "Refresh failed: #{inspect(reason)}", :error)
@@ -252,12 +254,7 @@ defmodule JidoHiveTermuiConsole.App do
 
         case state.embedded_module.accept_context(state.embedded, context_id, %{}) do
           {:ok, _contribution} ->
-            next_state =
-              state
-              |> Nav.refresh_room_snapshot()
-              |> Model.set_status("Accepted selected context object", :info)
-
-            {next_state, []}
+            {Model.set_status(state, "Accepted selected context object", :info), []}
 
           {:error, reason} ->
             {Model.set_status(state, "Accept failed: #{inspect(reason)}", :error), []}
@@ -629,6 +626,17 @@ defmodule JidoHiveTermuiConsole.App do
     {next_state, []}
   end
 
+  def handle_message({:room_session_snapshot, room_id, snapshot}, %{room_id: room_id} = state) do
+    next_state =
+      state
+      |> Nav.apply_room_snapshot(snapshot)
+      |> reconcile_pending_room_submit()
+
+    {next_state, []}
+  end
+
+  def handle_message({:room_session_snapshot, _room_id, _snapshot}, state), do: {state, []}
+
   def handle_message(
         {:room_submit_accepted, room_id, text, operation_id, {:ok, _operation}},
         state
@@ -728,7 +736,6 @@ defmodule JidoHiveTermuiConsole.App do
         %{room_id: ^room_id, text: ^text} ->
           state
           |> Map.put(:pending_room_submit, nil)
-          |> Nav.refresh_room_snapshot()
           |> Model.set_status("Submitted chat message", :info)
 
         _other ->
@@ -1198,10 +1205,7 @@ defmodule JidoHiveTermuiConsole.App do
   end
 
   defp reconcile_room_submit_failure(%Model{} = state, _room_id, text, reason) do
-    refreshed_state =
-      state
-      |> Map.put(:pending_room_submit, nil)
-      |> Nav.refresh_room_snapshot()
+    refreshed_state = state |> Map.put(:pending_room_submit, nil) |> refresh_room_state()
 
     if submit_visible_in_snapshot?(refreshed_state.snapshot, state.participant_id, text) do
       Model.set_status(
@@ -1214,6 +1218,19 @@ defmodule JidoHiveTermuiConsole.App do
       |> set_room_input(text)
       |> Model.set_status("Submit failed: #{inspect(reason)}", :error)
     end
+  end
+
+  defp refresh_room_state(%Model{embedded: nil} = state), do: state
+
+  defp refresh_room_state(%Model{} = state) do
+    case state.embedded_module.refresh(state.embedded) do
+      {:ok, snapshot} -> Nav.apply_room_snapshot(state, snapshot)
+      {:error, _reason} -> state
+    end
+  rescue
+    _error -> state
+  catch
+    :exit, _reason -> state
   end
 
   defp poll_pending_room_run(%Model{pending_room_run: nil} = state), do: state

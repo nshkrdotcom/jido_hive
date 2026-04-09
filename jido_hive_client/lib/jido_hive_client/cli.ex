@@ -134,7 +134,7 @@ defmodule JidoHiveClient.CLI do
       participant_id: Keyword.get(opts, :participant_id, "participant-local"),
       participant_role: Keyword.get(opts, :participant_role, "architect"),
       target_id: Keyword.get(opts, :target_id, "target-local"),
-      capability_id: Keyword.get(opts, :capability_id, "codex.exec.session"),
+      capability_id: Keyword.get(opts, :capability_id, "workspace.exec.session"),
       workspace_root: Keyword.get(opts, :workspace_root, File.cwd!()),
       runtime_id: :asm,
       control_port: control_port,

@@ -2,10 +2,11 @@ defmodule JidoHiveTermuiConsole do
   @moduledoc false
 
   alias JidoHiveClient.Operator
+  alias JidoHiveClient.Polling
   alias JidoHiveTermuiConsole.{App, Identity}
 
   @default_api_base_url "http://127.0.0.1:4000/api"
-  @default_poll_interval_ms 500
+  @default_poll_interval_ms Polling.default_interval_ms()
 
   @spec run(keyword()) :: :ok | {:error, term()}
   def run(opts \\ []) do
@@ -14,6 +15,11 @@ defmodule JidoHiveTermuiConsole do
     config = operator_module.load_config()
     identity = Identity.load(Keyword.put(opts, :operator_module, operator_module))
     route = Keyword.get(opts, :route, default_route(opts))
+
+    poll_interval_ms =
+      opts
+      |> option_or_config(:poll_interval_ms, config, @default_poll_interval_ms)
+      |> Polling.normalize_interval_ms()
 
     app_opts =
       [
@@ -24,8 +30,7 @@ defmodule JidoHiveTermuiConsole do
         participant_id: identity.participant_id,
         participant_role: identity.participant_role,
         authority_level: identity.authority_level,
-        poll_interval_ms:
-          option_or_config(opts, :poll_interval_ms, config, @default_poll_interval_ms),
+        poll_interval_ms: poll_interval_ms,
         embedded: Keyword.get(opts, :embedded),
         embedded_module: Keyword.get(opts, :embedded_module, JidoHiveClient.RoomSession),
         event_log_poller_module:

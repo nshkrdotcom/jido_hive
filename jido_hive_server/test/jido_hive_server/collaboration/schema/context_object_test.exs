@@ -18,7 +18,7 @@ defmodule JidoHiveServer.Collaboration.Schema.ContextObjectTest do
                    participant_id: "worker-01",
                    participant_role: "analyst",
                    target_id: "target-worker-01",
-                   capability_id: "codex.exec.session"
+                   capability_id: "workspace.exec.session"
                  },
                  provenance: %{
                    contribution_id: "contrib-1",

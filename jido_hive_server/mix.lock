@@ -53,7 +53,6 @@
   "jido_harness": {:git, "https://github.com/nshkrdotcom/jido_harness.git", "257cab7d4d2c0ba2fd7a17c6dea1e70b3110d239", [branch: "main"]},
   "jido_integration_v2": {:git, "https://github.com/agentjido/jido_integration.git", "d1237387de9c6b3d4511566fddccdb941f29446f", [branch: "bridge/jido_os_compose", subdir: "core/platform"]},
   "jido_integration_v2_auth": {:git, "https://github.com/agentjido/jido_integration.git", "d1237387de9c6b3d4511566fddccdb941f29446f", [subdir: "core/auth", branch: "bridge/jido_os_compose"]},
-  "jido_integration_v2_codex_cli": {:git, "https://github.com/agentjido/jido_integration.git", "d1237387de9c6b3d4511566fddccdb941f29446f", [branch: "bridge/jido_os_compose", subdir: "connectors/codex_cli"]},
   "jido_integration_v2_consumer_surfaces": {:git, "https://github.com/agentjido/jido_integration.git", "d1237387de9c6b3d4511566fddccdb941f29446f", [subdir: "core/consumer_surfaces", branch: "bridge/jido_os_compose"]},
   "jido_integration_v2_contracts": {:git, "https://github.com/agentjido/jido_integration.git", "d1237387de9c6b3d4511566fddccdb941f29446f", [subdir: "core/contracts", branch: "bridge/jido_os_compose"]},
   "jido_integration_v2_control_plane": {:git, "https://github.com/agentjido/jido_integration.git", "d1237387de9c6b3d4511566fddccdb941f29446f", [subdir: "core/control_plane", branch: "bridge/jido_os_compose"]},

@@ -4,7 +4,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 LOCAL_API_BASE="http://127.0.0.1:4000/api"
 PROD_API_BASE="https://jido-hive-server-test.app.nsai.online/api"
-JIDO_HIVE_EXEC_CAPABILITY_ID="${JIDO_HIVE_EXEC_CAPABILITY_ID:-codex.exec.session}"
+JIDO_HIVE_EXEC_CAPABILITY_ID="${JIDO_HIVE_EXEC_CAPABILITY_ID:-workspace.exec.session}"
 
 mode="local"
 

@@ -4,13 +4,13 @@ defmodule JidoHiveServer.IntegrationsBootstrap do
   use GenServer
 
   alias Jido.Integration.V2
-  alias Jido.Integration.V2.Connectors.CodexCli
   alias Jido.Integration.V2.Connectors.{GitHub, Notion}
   alias Jido.Integration.V2.ControlPlane.Stores
   alias Jido.Integration.V2.RuntimeAsmBridge.HarnessDriver
   alias Jido.Integration.V2.TargetDescriptor
+  alias JidoHiveServer.Connectors.WorkspaceSession
 
-  @connectors [CodexCli, GitHub, Notion]
+  @connectors [WorkspaceSession, GitHub, Notion]
 
   def start_link(opts \\ []) do
     GenServer.start_link(__MODULE__, opts, name: __MODULE__)

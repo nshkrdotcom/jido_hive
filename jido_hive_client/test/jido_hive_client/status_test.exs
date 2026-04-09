@@ -34,7 +34,7 @@ defmodule JidoHiveClient.StatusTest do
           participant_id: "analyst",
           participant_role: "analyst",
           target_id: "target-analyst",
-          capability_id: "codex.exec.session",
+          capability_id: "workspace.exec.session",
           relay_topic: "relay:workspace-prod",
           workspace_id: "workspace-prod",
           socket_url: "wss://jido-hive-server-test.app.nsai.online/socket/websocket",
@@ -76,7 +76,7 @@ defmodule JidoHiveClient.StatusTest do
             participant_id: "analyst",
             participant_role: "analyst",
             socket_url: "wss://jido-hive-server-test.app.nsai.online/socket/websocket",
-            capability_id: "codex.exec.session"
+            capability_id: "workspace.exec.session"
           ],
           request
         )

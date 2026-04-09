@@ -399,7 +399,9 @@ defmodule JidoHiveClient.HeadlessCLI do
       room_id: room_id,
       api_base_url: api_base_url(parsed, config),
       poll_interval_ms:
-        Keyword.get(parsed, :poll_interval_ms) || Map.get(config, "poll_interval_ms") || 500,
+        JidoHiveClient.Polling.normalize_interval_ms(
+          Keyword.get(parsed, :poll_interval_ms) || Map.get(config, "poll_interval_ms")
+        ),
       participant_id: identity_opts.participant_id,
       participant_role: identity_opts.participant_role,
       participant_kind: "human"

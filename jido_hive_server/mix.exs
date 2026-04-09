@@ -80,7 +80,6 @@ defmodule JidoHiveServer.MixProject do
       DependencyResolver.pristine(override: true),
       DependencyResolver.jido_integration_platform(),
       DependencyResolver.jido_integration_runtime_asm_bridge(override: true),
-      DependencyResolver.jido_integration_codex_cli(),
       DependencyResolver.jido_integration_github(),
       DependencyResolver.jido_integration_notion(),
       DependencyResolver.coolify_ex(only: :coolify, runtime: false),

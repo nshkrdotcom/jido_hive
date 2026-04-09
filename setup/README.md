@@ -31,7 +31,7 @@ Useful defaults:
 ```bash
 export JIDO_HIVE_TENANT_ID=workspace-local
 export JIDO_HIVE_ACTOR_ID=operator-1
-export JIDO_HIVE_EXEC_CAPABILITY_ID=codex.exec.session
+export JIDO_HIVE_EXEC_CAPABILITY_ID=workspace.exec.session
 ```
 
 ## Recommended Demo Flow

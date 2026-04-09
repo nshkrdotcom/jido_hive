@@ -11,7 +11,7 @@ defmodule JidoHiveServer.Collaboration.Schema.AssignmentTest do
                participant_id: "worker-01",
                participant_role: "analyst",
                target_id: "target-worker-01",
-               capability_id: "codex.exec.session",
+               capability_id: "workspace.exec.session",
                phase: "analysis",
                objective: "Analyze the brief.",
                contribution_contract: %{"allowed_contribution_types" => ["reasoning"]},

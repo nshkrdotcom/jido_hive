@@ -291,10 +291,17 @@ defmodule JidoHiveClient.EmbeddedTest do
 
   test "starts with a room snapshot and allows subscription", %{embedded: embedded} do
     assert :ok = Embedded.subscribe(embedded)
+    assert_receive {:room_session_snapshot, "room-1", initial_snapshot}
+    assert initial_snapshot.room_id == "room-1"
     assert {:ok, snapshot} = Embedded.refresh(embedded)
     assert snapshot.room_id == "room-1"
     assert snapshot.participant.participant_id == "alice"
     assert snapshot.runtime.identity.participant_id == "alice"
+
+    if snapshot.last_sync_at != initial_snapshot.last_sync_at do
+      assert_receive {:room_session_snapshot, "room-1", refreshed_snapshot}
+      assert (refreshed_snapshot[:status] || refreshed_snapshot["status"]) == "running"
+    end
   end
 
   test "submits chat through the mock backend and updates room state", %{embedded: embedded} do
@@ -432,6 +439,81 @@ defmodule JidoHiveClient.EmbeddedTest do
     assert payload["summary"] == "Submit while sync is blocked"
 
     send(blocker, :release_fetch_timeline)
+  end
+
+  test "submit_chat_async broadcasts accepted and completed snapshots to subscribers", %{
+    embedded: embedded
+  } do
+    assert :ok = Embedded.subscribe(embedded)
+    assert_receive {:room_session_snapshot, "room-1", _initial_snapshot}
+
+    assert {:ok, %{"operation_id" => operation_id, "status" => "accepted"}} =
+             Embedded.submit_chat_async(embedded, %{text: "Broadcast the new snapshot"})
+
+    assert_receive {:room_session_snapshot, "room-1", accepted_snapshot}
+
+    assert Enum.any?(accepted_snapshot.operations, fn operation ->
+             operation["operation_id"] == operation_id and
+               operation["status"] in ["accepted", "preparing", "sending", "server_acknowledged"]
+           end)
+
+    wait_until(fn ->
+      Embedded.snapshot(embedded).operations
+      |> Enum.any?(fn operation ->
+        operation["operation_id"] == operation_id and operation["status"] == "completed"
+      end)
+    end)
+
+    assert_receive {:room_session_snapshot, "room-1", _later_snapshot}
+
+    wait_until(fn ->
+      Embedded.snapshot(embedded).context_objects
+      |> Enum.any?(fn object -> object["body"] == "Broadcast the new snapshot" end)
+    end)
+  end
+
+  test "quiet syncs back off their next poll delay" do
+    {:ok, server} = RoomApiStub.start_link()
+
+    {:ok, embedded} =
+      Embedded.start_link(
+        room_id: "room-1",
+        participant_id: "alice",
+        participant_role: "operator",
+        room_api: {RoomApiStub, [server: server, test_pid: self()]},
+        poll_interval_ms: 10
+      )
+
+    wait_until(fn ->
+      state = :sys.get_state(embedded)
+      state.polling.idle_count >= 2 and state.polling.next_delay_ms >= 40
+    end)
+  end
+
+  test "quiet syncs do not rebroadcast unchanged snapshots" do
+    {:ok, server} = RoomApiStub.start_link()
+
+    {:ok, embedded} =
+      Embedded.start_link(
+        room_id: "room-1",
+        participant_id: "alice",
+        participant_role: "operator",
+        room_api: {RoomApiStub, [server: server, test_pid: self()]},
+        poll_interval_ms: 10
+      )
+
+    wait_until(fn ->
+      state = :sys.get_state(embedded)
+
+      not is_nil(state.last_sync_at) and state.sync_task_pid == nil and
+        state.polling.idle_count >= 1
+    end)
+
+    assert :ok = Embedded.subscribe(embedded)
+    assert_receive {:room_session_snapshot, "room-1", _snapshot}
+    flush_mailbox()
+
+    refute_receive {:room_session_snapshot, "room-1", _snapshot}, 80
   end
 
   test "stops polling after repeated room_not_found failures" do

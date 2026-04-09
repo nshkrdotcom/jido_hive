@@ -10,6 +10,7 @@ defmodule JidoHiveClient.RelayWorker do
   alias PhoenixClient.{Channel, Message, Socket}
 
   @join_retry_ms 200
+  @default_contribution_submit_timeout_ms 30_000
 
   def child_spec(opts) do
     %{
@@ -60,6 +61,7 @@ defmodule JidoHiveClient.RelayWorker do
       capability_id: Keyword.fetch!(opts, :capability_id),
       workspace_root: Keyword.get(opts, :workspace_root, File.cwd!()),
       runtime_id: :asm,
+      contribution_submit_timeout_ms: contribution_submit_timeout_ms(opts),
       executor: executor,
       opts: opts
     }
@@ -115,6 +117,7 @@ defmodule JidoHiveClient.RelayWorker do
             {:ok, contribution} -> contribution
             {:error, reason} -> failed_contribution(normalized_assignment, reason)
           end
+          |> Map.put_new("contribution_id", unique_id("contrib"))
           |> Map.put_new("room_id", normalized_assignment["room_id"])
           |> Map.put_new("assignment_id", normalized_assignment["assignment_id"])
           |> Map.put_new("target_id", state.target_id)
@@ -128,7 +131,12 @@ defmodule JidoHiveClient.RelayWorker do
             normalized_assignment["participant_role"] || state.participant_role
           )
 
-        case state.channel_module.push(channel, "contribution.submit", contribution) do
+        case state.channel_module.push(
+               channel,
+               "contribution.submit",
+               contribution,
+               state.contribution_submit_timeout_ms
+             ) do
           {:ok, _reply} ->
             Status.result_published(normalized_assignment, contribution)
 
@@ -201,6 +209,22 @@ defmodule JidoHiveClient.RelayWorker do
 
   defp normalize_executor(nil) do
     {JidoHiveClient.Executor.Session, [provider: :codex]}
+  end
+
+  defp contribution_submit_timeout_ms(opts) do
+    Keyword.get(
+      opts,
+      :contribution_submit_timeout_ms,
+      Application.get_env(
+        :jido_hive_client,
+        :relay_contribution_submit_timeout_ms,
+        @default_contribution_submit_timeout_ms
+      )
+    )
+  end
+
+  defp unique_id(prefix) do
+    "#{prefix}-#{System.unique_integer([:positive, :monotonic])}"
   end
 
   defp publish_signal(type, data) do

@@ -23,7 +23,7 @@ defmodule JidoHiveServer.Collaboration.RoomServerTest do
                participant_kind: "runtime",
                authority_level: "advisory",
                target_id: "target-worker-01",
-               capability_id: "codex.exec.session",
+               capability_id: "workspace.exec.session",
                metadata: %{}
              }
            ],
@@ -48,7 +48,7 @@ defmodule JidoHiveServer.Collaboration.RoomServerTest do
                  "participant_id" => "worker-01",
                  "participant_role" => "analyst",
                  "target_id" => "target-worker-01",
-                 "capability_id" => "codex.exec.session",
+                 "capability_id" => "workspace.exec.session",
                  "phase" => "analysis",
                  "objective" => "Analyze the brief.",
                  "contribution_contract" => %{"allowed_contribution_types" => ["reasoning"]},
@@ -68,7 +68,7 @@ defmodule JidoHiveServer.Collaboration.RoomServerTest do
                  "participant_id" => "worker-01",
                  "participant_role" => "analyst",
                  "target_id" => "target-worker-01",
-                 "capability_id" => "codex.exec.session",
+                 "capability_id" => "workspace.exec.session",
                  "contribution_type" => "reasoning",
                  "authority_level" => "advisory",
                  "summary" => "Added a belief.",
@@ -116,7 +116,7 @@ defmodule JidoHiveServer.Collaboration.RoomServerTest do
                participant_kind: "runtime",
                authority_level: "advisory",
                target_id: "target-worker-01",
-               capability_id: "codex.exec.session",
+               capability_id: "workspace.exec.session",
                metadata: %{}
              }
            ])
@@ -138,7 +138,7 @@ defmodule JidoHiveServer.Collaboration.RoomServerTest do
                  "participant_id" => "worker-01",
                  "participant_role" => "analyst",
                  "target_id" => "target-worker-01",
-                 "capability_id" => "codex.exec.session",
+                 "capability_id" => "workspace.exec.session",
                  "contribution_type" => "reasoning",
                  "authority_level" => "advisory",
                  "summary" => "Out of scope decision.",
@@ -343,6 +343,87 @@ defmodule JidoHiveServer.Collaboration.RoomServerTest do
              :contribution_recorded,
              :contradiction_detected,
              :downstream_invalidated
+           ]
+  end
+
+  test "treats repeated assignment contributions from the same participant as idempotent" do
+    room =
+      start_supervised!(
+        {RoomServer,
+         room_id: "room-idempotent-1",
+         snapshot:
+           base_snapshot("room-idempotent-1")
+           |> Map.put(:participants, [
+             %{
+               participant_id: "worker-01",
+               participant_role: "analyst",
+               participant_kind: "runtime",
+               authority_level: "advisory",
+               target_id: "target-worker-01",
+               capability_id: "workspace.exec.session",
+               metadata: %{}
+             }
+           ])}
+      )
+
+    assert {:ok, _opened} =
+             RoomServer.open_assignment(room, %{
+               "assignment" => %{
+                 "assignment_id" => "asn-1",
+                 "room_id" => "room-idempotent-1",
+                 "participant_id" => "worker-01",
+                 "participant_role" => "analyst",
+                 "target_id" => "target-worker-01",
+                 "capability_id" => "workspace.exec.session",
+                 "phase" => "analysis",
+                 "objective" => "Analyze the brief.",
+                 "contribution_contract" => %{"allowed_contribution_types" => ["reasoning"]},
+                 "context_view" => %{"brief" => "Design a substrate.", "context_objects" => []},
+                 "status" => "running",
+                 "opened_at" => DateTime.utc_now()
+               }
+             })
+
+    payload = %{
+      "contribution" => %{
+        "contribution_id" => "contrib-idempotent-1",
+        "room_id" => "room-idempotent-1",
+        "assignment_id" => "asn-1",
+        "participant_id" => "worker-01",
+        "participant_role" => "analyst",
+        "target_id" => "target-worker-01",
+        "capability_id" => "workspace.exec.session",
+        "contribution_type" => "reasoning",
+        "authority_level" => "advisory",
+        "summary" => "Added a belief once.",
+        "consumed_context_ids" => [],
+        "context_objects" => [
+          %{
+            "object_type" => "belief",
+            "title" => "Shared state",
+            "body" => "Server-owned state."
+          }
+        ],
+        "artifacts" => [],
+        "events" => [],
+        "tool_events" => [],
+        "approvals" => [],
+        "execution" => %{"status" => "completed"},
+        "status" => "completed",
+        "schema_version" => "jido_hive/contribution.submit.v1"
+      }
+    }
+
+    assert {:ok, first} = RoomServer.record_contribution(room, payload)
+    assert {:ok, second} = RoomServer.record_contribution(room, payload)
+
+    assert length(first.contributions) == 1
+    assert length(second.contributions) == 1
+    assert length(second.context_objects) == 1
+
+    assert Enum.map(Persistence.list_room_events("room-idempotent-1"), & &1.type) == [
+             :assignment_opened,
+             :contribution_recorded
            ]
   end
 

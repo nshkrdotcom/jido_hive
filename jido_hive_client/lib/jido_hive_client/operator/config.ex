@@ -129,7 +129,7 @@ defmodule JidoHiveClient.Operator.Config do
       "participant_id" => nil,
       "participant_role" => "coordinator",
       "authority_level" => "binding",
-      "poll_interval_ms" => 500,
+      "poll_interval_ms" => JidoHiveClient.Polling.default_interval_ms(),
       "tenant_id" => "workspace-local",
       "actor_id" => "operator-1"
     }

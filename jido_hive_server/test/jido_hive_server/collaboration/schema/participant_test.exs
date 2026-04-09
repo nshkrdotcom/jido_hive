@@ -9,7 +9,7 @@ defmodule JidoHiveServer.Collaboration.Schema.ParticipantTest do
                participant_id: "worker-01",
                participant_role: "analyst",
                target_id: "target-worker-01",
-               capability_id: "codex.exec.session"
+               capability_id: "workspace.exec.session"
              })
 
     assert participant.participant_kind == "runtime"
