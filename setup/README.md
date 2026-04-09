@@ -67,7 +67,9 @@ bin/client-worker --worker-index 2
 ```
 
 `bin/live-demo-server` waits for workers, creates or reuses the room, runs the
-demo, and prints the room snapshot plus publication plan.
+demo in the foreground, and exits with the live-demo result. The run wait budget
+is derived from the room's remaining slots plus the assignment timeout contract
+unless `JIDO_HIVE_WAIT_TIMEOUT_MS` or `--wait-timeout-ms` overrides it.
 
 ## Core Commands
 
@@ -155,6 +157,8 @@ compatible workers.
   round-robining across the remaining workers
 - `run-room` starts an explicit run operation and returns the accepted operation record
 - `live-demo` waits for that run operation to complete before printing the final room snapshot
+- `live-demo` now derives its default wait timeout from the room's remaining
+  assignment budget and `assignment_timeout_ms` instead of using a fixed wall clock timeout
 - `run-room` uses the locked room plan by default when `--max-assignments` is omitted
 
 For the current human-facing graph-authoring path, see:

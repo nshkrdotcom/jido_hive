@@ -89,6 +89,68 @@ require_room_id() {
   [[ -n "$room_id" ]] || die "room id is required"
 }
 
+derive_live_demo_wait_budget_json() {
+  local room_json="$1"
+  local assignment_timeout_ms="$2"
+  local requested_assignments="${3:-}"
+
+  local total_slots='0'
+  local completed_slots='0'
+  local remaining_slots='0'
+  local planned_assignments='0'
+  local per_assignment_slack_ms='5000'
+  local fixed_slack_ms='30000'
+  local min_wait_timeout_ms='30000'
+  local wait_timeout_ms='30000'
+
+  total_slots="$(jq -r '.data.dispatch_state.total_slots // 0' <<<"$room_json")"
+  completed_slots="$(jq -r '.data.dispatch_state.completed_slots // 0' <<<"$room_json")"
+
+  remaining_slots=$(( total_slots - completed_slots ))
+  if (( remaining_slots < 0 )); then
+    remaining_slots=0
+  fi
+
+  if [[ -n "$requested_assignments" ]]; then
+    planned_assignments="$requested_assignments"
+    if (( planned_assignments > remaining_slots )); then
+      planned_assignments="$remaining_slots"
+    fi
+  else
+    planned_assignments="$remaining_slots"
+  fi
+
+  if (( planned_assignments < 0 )); then
+    planned_assignments=0
+  fi
+
+  wait_timeout_ms=$(( planned_assignments * (assignment_timeout_ms + per_assignment_slack_ms) + fixed_slack_ms ))
+
+  if (( wait_timeout_ms < min_wait_timeout_ms )); then
+    wait_timeout_ms="$min_wait_timeout_ms"
+  fi
+
+  jq -n \
+    --argjson wait_timeout_ms "$wait_timeout_ms" \
+    --argjson planned_assignments "$planned_assignments" \
+    --argjson remaining_slots "$remaining_slots" \
+    --argjson total_slots "$total_slots" \
+    --argjson completed_slots "$completed_slots" \
+    --argjson assignment_timeout_ms "$assignment_timeout_ms" \
+    --argjson per_assignment_slack_ms "$per_assignment_slack_ms" \
+    --argjson fixed_slack_ms "$fixed_slack_ms" \
+    '{
+      wait_timeout_ms: $wait_timeout_ms,
+      planned_assignments: $planned_assignments,
+      remaining_slots: $remaining_slots,
+      total_slots: $total_slots,
+      completed_slots: $completed_slots,
+      assignment_timeout_ms: $assignment_timeout_ms,
+      per_assignment_slack_ms: $per_assignment_slack_ms,
+      fixed_slack_ms: $fixed_slack_ms
+    }'
+}
+
 build_room_payload() {
   local room_id="$1"
   local brief="$2"
@@ -613,7 +675,8 @@ cmd_live_demo() {
   local using_default_rules=1
   local max_assignments=''
   local assignment_timeout_ms="${JIDO_HIVE_ASSIGNMENT_TIMEOUT_MS:-180000}"
-  local wait_timeout_ms='120000'
+  local wait_timeout_ms="${JIDO_HIVE_WAIT_TIMEOUT_MS:-}"
+  local bootstrap_timeout_ms='30000'
   local publish_from_env=0
 
   while (($# > 0)); do
@@ -683,9 +746,11 @@ cmd_live_demo() {
   done
 
   local -a create_room_args=("$room_id" "--if-missing" "--brief" "$brief")
-  local -a wait_target_args=(--timeout-ms "$wait_timeout_ms" --interval-ms 250)
+  local -a wait_target_args=(--timeout-ms "$bootstrap_timeout_ms" --interval-ms 250)
   local -a run_room_args=("$room_id" --assignment-timeout-ms "$assignment_timeout_ms")
   local rule=''
+  local room_json=''
+  local wait_budget_json=''
 
   for rule in "${rules[@]}"; do
     create_room_args+=("--rule" "$rule")
@@ -709,9 +774,20 @@ cmd_live_demo() {
 
   log "live demo room: $room_id"
 
-  cmd_wait_server --timeout-ms "$wait_timeout_ms" --interval-ms 250 >/dev/null
+  cmd_wait_server --timeout-ms "$bootstrap_timeout_ms" --interval-ms 250 >/dev/null
   cmd_wait_targets "${wait_target_args[@]}" >/dev/null
-  cmd_create_room "${create_room_args[@]}" >/dev/null
+  room_json="$(cmd_create_room "${create_room_args[@]}")"
+
+  if [[ -z "$wait_timeout_ms" ]]; then
+    wait_budget_json="$(
+      derive_live_demo_wait_budget_json "$room_json" "$assignment_timeout_ms" "$max_assignments"
+    )"
+    wait_timeout_ms="$(jq -r '.wait_timeout_ms' <<<"$wait_budget_json")"
+
+    log "derived live-demo wait timeout: ${wait_timeout_ms}ms (planned_assignments=$(jq -r '.planned_assignments' <<<"$wait_budget_json"), remaining_slots=$(jq -r '.remaining_slots' <<<"$wait_budget_json"), assignment_timeout_ms=$(jq -r '.assignment_timeout_ms' <<<"$wait_budget_json"))"
+  else
+    log "using explicit live-demo wait timeout: ${wait_timeout_ms}ms"
+  fi
 
   printf '\n=== Starting Run %s ===\n' "$room_id"
   local run_operation_json

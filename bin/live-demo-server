@@ -4,19 +4,14 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 ROOM_ID="${ROOM_ID:-room-live-$(date +%s)}"
-WAIT_TIMEOUT_MS="${JIDO_HIVE_WAIT_TIMEOUT_MS:-120000}"
+WAIT_TIMEOUT_MS="${JIDO_HIVE_WAIT_TIMEOUT_MS:-}"
 PUBLISH_FLAG=()
 ROOM_FLAGS=()
+WAIT_FLAGS=()
 SERVER_PID=''
-DEMO_PID=''
 
 cleanup() {
   local exit_code=$?
-
-  if [[ -n "$DEMO_PID" ]] && kill -0 "$DEMO_PID" >/dev/null 2>&1; then
-    kill "$DEMO_PID" >/dev/null 2>&1 || true
-    wait "$DEMO_PID" >/dev/null 2>&1 || true
-  fi
 
   if [[ -n "$SERVER_PID" ]] && kill -0 "$SERVER_PID" >/dev/null 2>&1; then
     kill "$SERVER_PID" >/dev/null 2>&1 || true
@@ -36,6 +31,10 @@ if [[ -n "${JIDO_HIVE_PARTICIPANT_COUNT:-}" ]]; then
   ROOM_FLAGS+=(--participant-count "$JIDO_HIVE_PARTICIPANT_COUNT")
 fi
 
+if [[ -n "$WAIT_TIMEOUT_MS" ]]; then
+  WAIT_FLAGS+=(--wait-timeout-ms "$WAIT_TIMEOUT_MS")
+fi
+
 printf '[jido_hive live-demo] room id: %s\n' "$ROOM_ID" >&2
 printf '[jido_hive live-demo] server terminal booting now\n' >&2
 printf '[jido_hive live-demo] start these in two more terminals:\n' >&2
@@ -44,15 +43,17 @@ printf '  bin/client-worker --worker-index 2\n' >&2
 
 trap cleanup EXIT INT TERM
 
+if "$ROOT/setup/hive" --local wait-server --timeout-ms 500 --interval-ms 100 >/dev/null 2>&1; then
+  printf '[jido_hive live-demo] local server is already reachable on http://127.0.0.1:4000; stop it first or run setup/hive live-demo directly\n' >&2
+  exit 1
+fi
+
 env JIDO_HIVE_LOG_LEVEL="${JIDO_HIVE_LOG_LEVEL:-info}" "$ROOT/bin/server" &
 SERVER_PID=$!
 
 "$ROOT/setup/hive" live-demo \
   --room-id "$ROOM_ID" \
-  --wait-timeout-ms "$WAIT_TIMEOUT_MS" \
+  "${WAIT_FLAGS[@]}" \
   "${ROOM_FLAGS[@]}" \
   "${PUBLISH_FLAG[@]}" \
-  "$@" &
-DEMO_PID=$!
-
-wait "$SERVER_PID"
+  "$@"
