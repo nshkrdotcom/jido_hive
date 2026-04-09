@@ -31,10 +31,13 @@ For the console room screen specifically, the expected live pattern is:
 
 - one initial `GET /rooms/:id` when the room is opened
 - repeated `GET /rooms/:id/timeline?after=...` polling while the room is open
+- occasional `GET /rooms/:id/context_objects` and `GET /rooms/:id` only when
+  new timeline entries arrive or an explicit refresh is requested
 
 If you see repeated `GET /rooms/:id` requests during steady-state room viewing,
-that is a regression in the room-refresh seam between the console and the room
-session, not expected behavior.
+or a second independent timeline poller, that is a regression in the
+room-refresh seam between the console and the room session, not expected
+behavior.
 
 ## What each layer owns
 

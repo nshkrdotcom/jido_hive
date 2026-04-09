@@ -133,7 +133,24 @@ defmodule JidoHiveClient.Status do
   end
 
   defp emit(message) do
-    IO.puts("[jido_hive client] #{message}")
+    IO.puts("#{timestamp()} [jido_hive client] #{message}")
+  end
+
+  defp timestamp do
+    unix_ms = System.os_time(:millisecond)
+    unix_seconds = div(unix_ms, 1_000)
+    millisecond = rem(unix_ms, 1_000)
+
+    {hour, minute, second} =
+      unix_seconds
+      |> :calendar.system_time_to_universal_time(:second)
+      |> :calendar.universal_time_to_local_time()
+      |> then(fn {{_year, _month, _day}, {hour, minute, second}} ->
+        {hour, minute, second}
+      end)
+
+    :io_lib.format("~2..0B:~2..0B:~2..0B.~3..0B", [hour, minute, second, millisecond])
+    |> IO.iodata_to_binary()
   end
 
   defp emit_preview(_label, _assignment, nil, _limit), do: :ok

@@ -1,7 +1,7 @@
 defmodule JidoHiveTermuiConsole.Nav do
   @moduledoc false
 
-  alias JidoHiveTermuiConsole.{Identity, Model}
+  alias JidoHiveTermuiConsole.{Identity, Model, Projection}
   alias JidoHiveTermuiConsole.Screens.Lobby
 
   @spec transition(Model.t(), :lobby | :room | :conflict | :publish | :wizard, keyword()) ::
@@ -22,7 +22,11 @@ defmodule JidoHiveTermuiConsole.Nav do
   def refresh_room_snapshot(%Model{embedded: nil} = state), do: state
 
   def refresh_room_snapshot(%Model{} = state) do
-    Model.apply_snapshot(state, state.embedded_module.snapshot(state.embedded))
+    snapshot = state.embedded_module.snapshot(state.embedded)
+
+    state
+    |> Model.apply_snapshot(snapshot)
+    |> sync_event_log_from_snapshot()
   rescue
     _error -> state
   end
@@ -80,6 +84,7 @@ defmodule JidoHiveTermuiConsole.Nav do
       status_line: room_fetch_status(room_id, fetch_error),
       status_severity: room_fetch_severity(fetch_error)
     })
+    |> sync_event_log_from_snapshot()
   end
 
   defp transition_to_conflict(%Model{} = state) do
@@ -225,21 +230,32 @@ defmodule JidoHiveTermuiConsole.Nav do
     end
   end
 
-  defp start_event_log_poller(%Model{} = state, room_id, app_pid) when is_pid(app_pid) do
-    {:ok, pid} =
-      state.event_log_poller_module.start_link(
-        room_id: room_id,
-        app_pid: app_pid,
-        api_base_url: state.api_base_url,
-        cursor: state.event_log_cursor,
-        operator_module: state.operator_module,
-        poll_interval_ms: state.poll_interval_ms
-      )
+  defp sync_event_log_from_snapshot(%Model{} = state) do
+    timeline = Map.get(state.snapshot, "timeline") || Map.get(state.snapshot, :timeline) || []
 
-    pid
+    lines =
+      timeline
+      |> Enum.map(&Projection.format_event_entry/1)
+      |> Enum.reverse()
+      |> Enum.take(200)
+
+    cursor =
+      Map.get(state.snapshot, "next_cursor") || Map.get(state.snapshot, :next_cursor) ||
+        timeline_cursor(timeline)
+
+    %{state | event_log_lines: lines, event_log_cursor: cursor}
   end
 
-  defp start_event_log_poller(_state, _room_id, _app_pid), do: nil
+  defp timeline_cursor([]), do: nil
+
+  defp timeline_cursor(timeline) do
+    timeline
+    |> List.last()
+    |> then(fn entry ->
+      Map.get(entry, "cursor") || Map.get(entry, :cursor) ||
+        Map.get(entry, "event_id") || Map.get(entry, :event_id)
+    end)
+  end
 
   defp identity(%Model{} = state) do
     %Identity{
@@ -396,15 +412,15 @@ defmodule JidoHiveTermuiConsole.Nav do
 
   defp room_processes_for_transition(state, room_id, app_pid, true, _opts)
        when state.room_id == room_id and not is_nil(state.embedded) do
-    poller_pid = state.event_log_poller_pid || start_event_log_poller(state, room_id, app_pid)
-    {state.embedded, poller_pid, embedded_metadata_snapshot(state.snapshot)}
+    _ = app_pid
+    {state.embedded, nil, embedded_metadata_snapshot(state.snapshot)}
   end
 
   defp room_processes_for_transition(state, room_id, app_pid, _preserve_existing, opts) do
     stop_room_processes(state)
     embedded = ensure_embedded(state, room_id, opts)
-    poller_pid = start_event_log_poller(state, room_id, app_pid)
-    {embedded, poller_pid, embedded_metadata_snapshot(state.snapshot)}
+    _ = app_pid
+    {embedded, nil, embedded_metadata_snapshot(state.snapshot)}
   end
 
   defp fetch_room_snapshot(state, room_id, embedded_snapshot) do

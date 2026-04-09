@@ -62,7 +62,7 @@ defmodule JidoHiveTermuiConsole.Model do
     sync_error: false,
     screen_width: 120,
     screen_height: 40,
-    poll_interval_ms: 500,
+    poll_interval_ms: 1_000,
     debug_visible: false,
     help_visible: false,
     help_seen: MapSet.new()
@@ -106,7 +106,7 @@ defmodule JidoHiveTermuiConsole.Model do
       room_id: Keyword.get(opts, :room_id),
       snapshot: snapshot,
       relation_mode: Keyword.get(opts, :relation_mode, :contextual),
-      poll_interval_ms: Keyword.get(opts, :poll_interval_ms, 500),
+      poll_interval_ms: Keyword.get(opts, :poll_interval_ms, 1_000),
       room_input_ref: Keyword.get(opts, :room_input_ref),
       conflict_input_ref: Keyword.get(opts, :conflict_input_ref),
       wizard_brief_input_ref: Keyword.get(opts, :wizard_brief_input_ref),

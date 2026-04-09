@@ -147,9 +147,9 @@ defmodule JidoHiveTermuiConsole.NavTest do
     assert next_state.active_screen == :room
     assert next_state.room_id == "room-1"
     assert is_pid(next_state.embedded)
-    assert is_pid(next_state.event_log_poller_pid)
+    assert next_state.event_log_poller_pid == nil
     assert_receive {:embedded_start, _opts}
-    assert_receive {:poller_start, _opts}
+    refute_receive {:poller_start, _opts}, 50
   end
 
   test "transition to room does not snapshot embedded process during initial open" do
@@ -249,6 +249,7 @@ defmodule JidoHiveTermuiConsole.NavTest do
 
     assert next_state.snapshot["status"] == "publication_ready"
     assert next_state.snapshot["timeline"] == [%{"body" => "embedded timeline"}]
+    assert next_state.event_log_lines == ["event"]
 
     assert next_state.snapshot["context_objects"] == [
              %{"context_id" => "ctx-1", "object_type" => "note", "title" => "embedded context"}

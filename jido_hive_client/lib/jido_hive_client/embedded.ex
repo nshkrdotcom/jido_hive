@@ -47,8 +47,10 @@ defmodule JidoHiveClient.Embedded do
     sync_task_ref: nil,
     sync_waiters: [],
     sync_record_event: false,
+    sync_force_full: false,
     sync_queued: false,
     sync_queued_record_event: false,
+    sync_queued_force_full: false,
     queued_sync_waiters: []
   ]
 
@@ -140,7 +142,7 @@ defmodule JidoHiveClient.Embedded do
   end
 
   def handle_call(:refresh, from, %__MODULE__{} = state) do
-    {:noreply, request_sync(state, true, [from])}
+    {:noreply, request_sync(state, true, [from], true)}
   end
 
   def handle_call({:submit_chat, attrs}, _from, %__MODULE__{} = state) do
@@ -251,14 +253,14 @@ defmodule JidoHiveClient.Embedded do
 
   @impl true
   def handle_info({:sync_room_async, record_event?}, %__MODULE__{} = state) do
-    {:noreply, request_sync(state, record_event?)}
+    {:noreply, request_sync(state, record_event?, [], false)}
   end
 
   def handle_info(:poll, %__MODULE__{} = state) do
     if terminal_poll_halted?(state) do
       {:noreply, state}
     else
-      next_state = request_sync(state, false)
+      next_state = request_sync(state, false, [], false)
 
       Process.send_after(self(), :poll, state.next_poll_delay_ms)
       {:noreply, next_state}
@@ -336,16 +338,17 @@ defmodule JidoHiveClient.Embedded do
     |> Map.put(:last_error, state.last_error)
   end
 
-  defp request_sync(%__MODULE__{} = state, record_event?, waiters \\ []) do
+  defp request_sync(%__MODULE__{} = state, record_event?, waiters, force_full?) do
     if sync_inflight?(state) do
       %{
         state
         | sync_queued: true,
           sync_queued_record_event: state.sync_queued_record_event || record_event?,
+          sync_queued_force_full: state.sync_queued_force_full || force_full?,
           queued_sync_waiters: state.queued_sync_waiters ++ waiters
       }
     else
-      start_sync_task(state, record_event?, waiters)
+      start_sync_task(state, record_event?, waiters, force_full?)
     end
   end
 
@@ -373,13 +376,13 @@ defmodule JidoHiveClient.Embedded do
     })
   end
 
-  defp start_sync_task(%__MODULE__{} = state, record_event?, waiters) do
+  defp start_sync_task(%__MODULE__{} = state, record_event?, waiters, force_full?) do
     parent = self()
     sync_state = state
 
     {pid, ref} =
       spawn_monitor(fn ->
-        send(parent, {:sync_result, self(), fetch_sync_result(sync_state)})
+        send(parent, {:sync_result, self(), fetch_sync_result(sync_state, force_full?)})
       end)
 
     %{
@@ -387,7 +390,8 @@ defmodule JidoHiveClient.Embedded do
       | sync_task_pid: pid,
         sync_task_ref: ref,
         sync_waiters: waiters,
-        sync_record_event: record_event?
+        sync_record_event: record_event?,
+        sync_force_full: force_full?
     }
   end
 
@@ -396,12 +400,14 @@ defmodule JidoHiveClient.Embedded do
   defp maybe_start_queued_sync(%__MODULE__{} = state) do
     waiters = state.queued_sync_waiters
     record_event? = state.sync_queued_record_event
+    force_full? = state.sync_queued_force_full
 
     state
     |> Map.put(:sync_queued, false)
     |> Map.put(:sync_queued_record_event, false)
+    |> Map.put(:sync_queued_force_full, false)
     |> Map.put(:queued_sync_waiters, [])
-    |> start_sync_task(record_event?, waiters)
+    |> start_sync_task(record_event?, waiters, force_full?)
   end
 
   defp clear_sync_task(%__MODULE__{} = state) do
@@ -410,7 +416,8 @@ defmodule JidoHiveClient.Embedded do
       | sync_task_pid: nil,
         sync_task_ref: nil,
         sync_waiters: [],
-        sync_record_event: false
+        sync_record_event: false,
+        sync_force_full: false
     }
   end
 
@@ -445,24 +452,47 @@ defmodule JidoHiveClient.Embedded do
     next_state
   end
 
-  defp fetch_sync_result(%__MODULE__{} = state) do
-    with {:ok, %{entries: entries, next_cursor: next_cursor}} <-
-           state.room_api.fetch_timeline(state.room_api_opts, state.room_id,
-             after: state.next_cursor
-           ),
-         {:ok, context_objects} <-
-           state.room_api.fetch_context_objects(state.room_api_opts, state.room_id) do
-      {:ok,
-       %{
-         room_snapshot: fetch_room_snapshot(state),
-         entries: entries,
-         next_cursor: next_cursor,
-         context_objects: context_objects
-       }}
-    else
-      {:error, reason} -> {:error, reason}
+  defp fetch_sync_result(%__MODULE__{} = state, force_full?) do
+    case state.room_api.fetch_timeline(state.room_api_opts, state.room_id,
+           after: state.next_cursor
+         ) do
+      {:ok, %{entries: entries, next_cursor: next_cursor}} ->
+        fetch_full_snapshot? =
+          force_full? or is_nil(state.last_sync_at) or entries != []
+
+        build_sync_result(state, entries, next_cursor, fetch_full_snapshot?)
+
+      {:error, reason} ->
+        {:error, reason}
     end
   end
+
+  defp build_sync_result(%__MODULE__{} = state, entries, next_cursor, fetch_full_snapshot?) do
+    case fetch_sync_context_objects(state, fetch_full_snapshot?) do
+      {:ok, context_objects} ->
+        {:ok,
+         %{
+           room_snapshot: maybe_fetch_room_snapshot(state, fetch_full_snapshot?),
+           entries: entries,
+           next_cursor: next_cursor,
+           context_objects: context_objects
+         }}
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  defp fetch_sync_context_objects(%__MODULE__{} = state, true) do
+    state.room_api.fetch_context_objects(state.room_api_opts, state.room_id)
+  end
+
+  defp fetch_sync_context_objects(%__MODULE__{} = state, false) do
+    {:ok, state.context_objects}
+  end
+
+  defp maybe_fetch_room_snapshot(%__MODULE__{} = state, true), do: fetch_room_snapshot(state)
+  defp maybe_fetch_room_snapshot(%__MODULE__{}, false), do: nil
 
   defp apply_sync_result(%__MODULE__{} = state, sync_result, record_event?) do
     timeline =

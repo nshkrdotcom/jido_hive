@@ -424,7 +424,8 @@ Current design:
 
 - the submit path runs through `JidoHiveClient.RoomSession`
 - the client acknowledges server success before any slower local refresh completes
-- polling and refresh then reconcile the latest snapshot
+- the room session drives timeline polling and only refetches room/context when
+  new timeline entries arrive or a full refresh is requested
 
 Debug it in this order:
 
@@ -505,7 +506,7 @@ High-value files:
 - `lib/jido_hive_termui_console/nav.ex`: navigation and route helpers
 - `lib/jido_hive_termui_console/model.ex`: console-local view/input state
 - `lib/jido_hive_termui_console/screen_ui.ex`: shared overlays and render helpers
-- `lib/jido_hive_termui_console/event_log_poller.ex`: timeline polling through `JidoHiveClient.Operator`
+- `lib/jido_hive_termui_console/screens/room.ex`: room screen rendering, including event projection from the room session snapshot
 - `lib/jido_hive_termui_console/screens/`: lobby, room, wizard, publish, conflict, and other screens
 
 ### Design rules

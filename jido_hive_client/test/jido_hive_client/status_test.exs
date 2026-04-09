@@ -24,6 +24,7 @@ defmodule JidoHiveClient.StatusTest do
     assert output =~ "relay=relay:workspace-prod"
     assert output =~ "workspace=workspace-prod"
     assert output =~ "url=wss://jido-hive-server-test.app.nsai.online/socket/websocket"
+    assert output =~ ~r/^\d{2}:\d{2}:\d{2}\.\d{3} \[jido_hive client\]/
   end
 
   test "relay_ready says the client is waiting for assignment relay work" do

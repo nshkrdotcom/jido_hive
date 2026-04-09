@@ -241,6 +241,14 @@ defmodule JidoHiveClient.EmbeddedTest do
 
   defp wait_until(_fun, 0), do: flunk("condition not met")
 
+  defp flush_mailbox do
+    receive do
+      _message -> flush_mailbox()
+    after
+      0 -> :ok
+    end
+  end
+
   setup do
     {:ok, server} = RoomApiStub.start_link()
 
@@ -260,6 +268,25 @@ defmodule JidoHiveClient.EmbeddedTest do
     assert {:ok, snapshot} = Embedded.refresh(embedded)
     assert snapshot["status"] == "running"
     assert snapshot["room_id"] == "room-1"
+  end
+
+  test "poll skips room and context fetches when no new timeline entries arrive", %{
+    embedded: embedded
+  } do
+    Process.sleep(20)
+    flush_mailbox()
+
+    assert {:ok, _snapshot} = Embedded.refresh(embedded)
+    assert_receive {:fetch_timeline, "room-1", [after: nil]}
+    assert_receive {:fetch_context_objects, "room-1"}
+    assert_receive {:fetch_room, "room-1"}
+
+    flush_mailbox()
+    send(embedded, :poll)
+
+    assert_receive {:fetch_timeline, "room-1", [after: _cursor]}
+    refute_receive {:fetch_context_objects, "room-1"}, 50
+    refute_receive {:fetch_room, "room-1"}, 50
   end
 
   test "starts with a room snapshot and allows subscription", %{embedded: embedded} do

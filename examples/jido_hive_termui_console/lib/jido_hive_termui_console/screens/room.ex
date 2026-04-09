@@ -139,7 +139,7 @@ defmodule JidoHiveTermuiConsole.Screens.Room do
 
   defp events_widget(state, area) do
     ScreenUI.pane(
-      "Events (polling)",
+      "Events",
       Projection.event_log_display(state.event_log_lines, max(area.height * 2, 8)),
       border_fg: :green,
       wrap: true

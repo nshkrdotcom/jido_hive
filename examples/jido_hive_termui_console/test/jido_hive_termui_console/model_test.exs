@@ -14,7 +14,7 @@ defmodule JidoHiveTermuiConsole.ModelTest do
     assert model.wizard_targets_state == :idle
     assert model.wizard_policies_state == :idle
     assert model.status_line == "Ready"
-    assert model.poll_interval_ms == 500
+    assert model.poll_interval_ms == 1_000
     assert model.help_visible == false
     assert model.help_seen == MapSet.new()
   end
