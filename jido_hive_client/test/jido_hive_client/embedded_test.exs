@@ -145,6 +145,37 @@ defmodule JidoHiveClient.EmbeddedTest do
     end
   end
 
+  defmodule MissingRoomApiStub do
+    @behaviour JidoHiveClient.Boundary.RoomApi
+
+    def start_link do
+      Agent.start_link(fn -> %{timeline_fetches: 0} end)
+    end
+
+    @impl true
+    def fetch_timeline(opts, room_id, query_opts) do
+      server = Keyword.fetch!(opts, :server)
+      test_pid = Keyword.fetch!(opts, :test_pid)
+
+      count =
+        Agent.get_and_update(server, fn state ->
+          next = state.timeline_fetches + 1
+          {next, %{state | timeline_fetches: next}}
+        end)
+
+      send(test_pid, {:missing_fetch_timeline, room_id, query_opts, count})
+      {:error, :room_not_found}
+    end
+
+    @impl true
+    def fetch_context_objects(_opts, _room_id) do
+      flunk("fetch_context_objects should not run after a room_not_found timeline response")
+    end
+
+    @impl true
+    def submit_contribution(_opts, _room_id, _payload), do: {:error, :room_not_found}
+  end
+
   defp wait_until(fun, attempts \\ 20)
 
   defp wait_until(fun, attempts) when attempts > 0 do
@@ -316,5 +347,27 @@ defmodule JidoHiveClient.EmbeddedTest do
     assert payload["summary"] == "Submit while sync is blocked"
 
     send(blocker, :release_fetch_timeline)
+  end
+
+  test "stops polling after repeated room_not_found failures" do
+    {:ok, server} = MissingRoomApiStub.start_link()
+
+    {:ok, embedded} =
+      Embedded.start_link(
+        room_id: "missing-room",
+        participant_id: "alice",
+        participant_role: "operator",
+        room_api: {MissingRoomApiStub, [server: server, test_pid: self()]},
+        poll_interval_ms: 10
+      )
+
+    assert_receive {:missing_fetch_timeline, "missing-room", _query_opts, 1}, 500
+    assert_receive {:missing_fetch_timeline, "missing-room", _query_opts, 2}, 500
+    assert_receive {:missing_fetch_timeline, "missing-room", _query_opts, 3}, 500
+
+    wait_until(fn -> Embedded.snapshot(embedded).last_error == :room_not_found end)
+    Process.sleep(80)
+
+    assert Agent.get(server, & &1.timeline_fetches) == 3
   end
 end

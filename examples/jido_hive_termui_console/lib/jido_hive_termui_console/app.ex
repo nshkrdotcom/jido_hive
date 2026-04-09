@@ -788,6 +788,15 @@ defmodule JidoHiveTermuiConsole.App do
     {%{state | event_log_lines: lines, event_log_cursor: cursor}, []}
   end
 
+  def handle_message({:event_log_warning, reason}, state)
+      when reason in [:not_found, :room_not_found] do
+    {Model.set_status(
+       state,
+       "Event log polling stopped: room was not found on this server",
+       :error
+     ), []}
+  end
+
   def handle_message({:event_log_warning, reason}, state) do
     {Model.set_status(state, "Event log warning: #{inspect(reason)}", :warn), []}
   end

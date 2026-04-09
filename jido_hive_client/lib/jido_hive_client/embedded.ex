@@ -8,6 +8,8 @@ defmodule JidoHiveClient.Embedded do
   alias JidoHiveClient.{ChatInput, DebugTrace, Interceptor, Runtime}
 
   @default_poll_interval_ms 1_000
+  @max_poll_backoff_ms 10_000
+  @room_not_found_retry_limit 3
   @timeline_limit 200
 
   @type snapshot :: %{
@@ -37,6 +39,9 @@ defmodule JidoHiveClient.Embedded do
     context_objects: [],
     next_cursor: nil,
     poll_interval_ms: @default_poll_interval_ms,
+    next_poll_delay_ms: @default_poll_interval_ms,
+    poll_failure_count: 0,
+    polling_halted_reason: nil,
     sync_task_pid: nil,
     sync_task_ref: nil,
     sync_waiters: [],
@@ -105,7 +110,8 @@ defmodule JidoHiveClient.Embedded do
       agent_backend_opts: agent_backend_opts,
       room_id: Keyword.fetch!(opts, :room_id),
       participant: participant,
-      poll_interval_ms: Keyword.get(opts, :poll_interval_ms, @default_poll_interval_ms)
+      poll_interval_ms: Keyword.get(opts, :poll_interval_ms, @default_poll_interval_ms),
+      next_poll_delay_ms: Keyword.get(opts, :poll_interval_ms, @default_poll_interval_ms)
     }
 
     :ok = Runtime.connect(runtime, %{"mode" => "embedded", "room_id" => state.room_id})
@@ -248,10 +254,14 @@ defmodule JidoHiveClient.Embedded do
   end
 
   def handle_info(:poll, %__MODULE__{} = state) do
-    next_state = request_sync(state, false)
+    if terminal_poll_halted?(state) do
+      {:noreply, state}
+    else
+      next_state = request_sync(state, false)
 
-    Process.send_after(self(), :poll, next_state.poll_interval_ms)
-    {:noreply, next_state}
+      Process.send_after(self(), :poll, state.next_poll_delay_ms)
+      {:noreply, next_state}
+    end
   end
 
   def handle_info(
@@ -307,6 +317,11 @@ defmodule JidoHiveClient.Embedded do
     if owned_runtime? and is_pid(runtime), do: GenServer.stop(runtime)
     :ok
   end
+
+  defp terminal_poll_halted?(%__MODULE__{polling_halted_reason: reason}) when not is_nil(reason),
+    do: true
+
+  defp terminal_poll_halted?(%__MODULE__{}), do: false
 
   defp current_snapshot(%__MODULE__{} = state) do
     %{
@@ -401,6 +416,7 @@ defmodule JidoHiveClient.Embedded do
 
   defp complete_sync(%__MODULE__{} = state, {:ok, sync_result}, record_event?, waiters) do
     {next_state, _changed?} = apply_sync_result(state, sync_result, record_event?)
+    maybe_resume_polling(state, next_state)
     reply_sync_waiters(waiters, {:ok, current_snapshot(next_state)})
     next_state
   end
@@ -415,7 +431,16 @@ defmodule JidoHiveClient.Embedded do
         })
     end
 
-    next_state = %{state | last_error: reason}
+    next_state =
+      state
+      |> Map.put(:last_error, reason)
+      |> Map.put(:poll_failure_count, state.poll_failure_count + 1)
+      |> Map.put(
+        :next_poll_delay_ms,
+        backoff_delay(state.poll_interval_ms, state.poll_failure_count + 1)
+      )
+      |> maybe_halt_polling(reason)
+
     reply_sync_waiters(waiters, {:error, reason})
     next_state
   end
@@ -452,7 +477,10 @@ defmodule JidoHiveClient.Embedded do
         context_objects: sync_result.context_objects,
         next_cursor: sync_result.next_cursor || state.next_cursor,
         last_sync_at: DateTime.utc_now(),
-        last_error: nil
+        last_error: nil,
+        poll_failure_count: 0,
+        next_poll_delay_ms: state.poll_interval_ms,
+        polling_halted_reason: nil
     }
 
     if changed? and record_event? do
@@ -509,6 +537,30 @@ defmodule JidoHiveClient.Embedded do
 
   defp sync_inflight?(%__MODULE__{sync_task_pid: pid, sync_task_ref: ref}) do
     is_pid(pid) and is_reference(ref)
+  end
+
+  defp maybe_halt_polling(%__MODULE__{} = state, reason) do
+    if room_not_found?(reason) and state.poll_failure_count >= @room_not_found_retry_limit do
+      %{state | polling_halted_reason: reason}
+    else
+      state
+    end
+  end
+
+  defp maybe_resume_polling(%__MODULE__{polling_halted_reason: nil}, _next_state), do: :ok
+
+  defp maybe_resume_polling(%__MODULE__{}, %__MODULE__{} = next_state) do
+    Process.send_after(self(), :poll, next_state.next_poll_delay_ms)
+    :ok
+  end
+
+  defp room_not_found?(:room_not_found), do: true
+  defp room_not_found?(:not_found), do: true
+  defp room_not_found?(_reason), do: false
+
+  defp backoff_delay(base_interval_ms, failures) do
+    multiplier = Integer.pow(2, min(failures - 1, 4))
+    min(base_interval_ms * multiplier, @max_poll_backoff_ms)
   end
 
   defp acceptance_contribution(context_object, attrs, %__MODULE__{} = state) do

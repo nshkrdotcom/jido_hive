@@ -92,4 +92,28 @@ defmodule JidoHiveTermuiConsole.EventLogPollerTest do
     assert_receive {:event_log_update, [%{"cursor" => "c3"}], "c3"}, 1_000
     Process.exit(pid, :shutdown)
   end
+
+  test "poller stops after repeated not_found responses" do
+    {:ok, server} =
+      TestHTTPServer.start_link(fn _request ->
+        {404, %{}, ~s({"error":"room_not_found"})}
+      end)
+
+    on_exit(fn ->
+      TestHTTPServer.stop(server)
+    end)
+
+    {:ok, pid} =
+      EventLogPoller.start_link(
+        room_id: "missing-room",
+        app_pid: self(),
+        api_base_url: TestHTTPServer.base_url(server),
+        poll_interval_ms: 10
+      )
+
+    ref = Process.monitor(pid)
+
+    assert_receive {:event_log_warning, :not_found}, 500
+    assert_receive {:DOWN, ^ref, :process, ^pid, :normal}, 500
+  end
 end

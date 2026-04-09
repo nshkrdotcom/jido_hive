@@ -239,7 +239,8 @@ defmodule JidoHiveTermuiConsole.Nav do
         app_pid: app_pid,
         api_base_url: state.api_base_url,
         cursor: state.event_log_cursor,
-        operator_module: state.operator_module
+        operator_module: state.operator_module,
+        poll_interval_ms: state.poll_interval_ms
       )
 
     pid
