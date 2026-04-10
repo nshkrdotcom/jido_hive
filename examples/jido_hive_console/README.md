@@ -94,6 +94,13 @@ The preferred room workflow is now:
 3. keep using the room while run state is tracked separately
 4. submit human chat and watch the operation id in the status/debug surface
 
+Current console implementation notes:
+
+- the console does not poll room-run status directly anymore
+- room-family screens consume `room_session_snapshot` updates from `JidoHiveClient.RoomSession`
+- submit/run status is derived from `JidoHiveClient.RoomFlow`
+- the underlying room session polls the consolidated `/rooms/:id/sync` endpoint
+
 ### First production validation
 
 Use this order if you are onboarding from zero:
@@ -170,6 +177,11 @@ Use this order every time. It is how you separate UI bugs from client bugs.
 3. Only if it works headlessly and fails here should you debug the ExRatatui app.
 4. If a console action has no headless equivalent, add the headless path before doing more UI work.
 5. Use local `iex` for server/client internals; do not assume a production remote-shell workflow exists yet.
+
+For workflow-level regression outside the TUI, prefer the shared client harness over ad hoc console debugging:
+
+- `JidoHiveClient.Scenario.RoomWorkflow`
+- `bin/hive-room-smoke`
 
 When debugging a console submit/run problem, collect these together:
 

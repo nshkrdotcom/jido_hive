@@ -314,7 +314,9 @@ defmodule JidoHiveConsole.AppTest do
     assert %{room_id: "room-1", text: "plain update", operation_id: operation_id} =
              pending_state.pending_room_submit
 
-    assert pending_state.status_line =~ "Submitting chat message... op="
+    assert pending_state.status_line =~
+             "Chat submit accepted; waiting for server confirmation. op="
+
     assert_receive {:embedded_submit_chat, attrs}
     assert_receive {:room_submit_accepted, "room-1", "plain update", ^operation_id, {:ok, _}}
 
@@ -509,7 +511,7 @@ defmodule JidoHiveConsole.AppTest do
              operation_id: "room_submit-123"
            }
 
-    assert syncing_state.status_line =~ "syncing room transcript"
+    assert syncing_state.status_line =~ "waiting for server confirmation"
 
     next_state =
       App.handle_info(
@@ -694,7 +696,7 @@ defmodule JidoHiveConsole.AppTest do
     assert next_state.event_log_lines == ["contribution.recorded"]
   end
 
-  test "event log updates refresh the room snapshot for room screens", %{
+  test "event log updates append formatted lines without forcing a room snapshot refresh", %{
     embedded: embedded,
     model: model
   } do
@@ -732,20 +734,13 @@ defmodule JidoHiveConsole.AppTest do
       |> noreply_state()
 
     assert next_state.event_log_cursor == "c1"
+    assert next_state.event_log_lines != []
 
-    assert get_in(next_state.snapshot, ["contributions"]) == [
-             %{
-               "participant_id" => "alice",
-               "contribution_type" => "chat",
-               "summary" => "hello from timeline refresh"
-             }
-           ]
+    assert get_in(next_state.snapshot, ["contributions"]) ==
+             get_in(model.snapshot, ["contributions"])
 
-    assert get_in(next_state.snapshot, ["context_objects"])
-           |> Enum.any?(fn object ->
-             object["object_type"] == "message" and
-               object["body"] == "hello from timeline refresh"
-           end)
+    assert get_in(next_state.snapshot, ["context_objects"]) ==
+             get_in(model.snapshot, ["context_objects"])
   end
 
   test "room-session snapshot clears stale pending chat submission when the room snapshot already contains it",

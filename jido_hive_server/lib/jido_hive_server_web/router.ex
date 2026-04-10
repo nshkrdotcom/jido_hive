@@ -22,6 +22,7 @@ defmodule JidoHiveServerWeb.Router do
     get "/policies/*id", PoliciesController, :show
     post "/rooms", RoomController, :create
     get "/rooms/:id", RoomController, :show
+    get "/rooms/:id/sync", RoomController, :sync
     get "/rooms/:id/events", RoomEventsController, :index
     get "/rooms/:id/timeline", RoomTimelineController, :index
     get "/rooms/:id/context_objects", RoomContextController, :index

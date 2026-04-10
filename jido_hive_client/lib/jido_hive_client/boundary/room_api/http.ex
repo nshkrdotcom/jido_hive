@@ -16,6 +16,43 @@ defmodule JidoHiveClient.Boundary.RoomApi.Http do
   end
 
   @impl true
+  def fetch_sync(opts, room_id, query_opts \\ []) do
+    query =
+      %{}
+      |> maybe_put_query("after", Keyword.get(query_opts, :after))
+      |> URI.encode_query()
+
+    path =
+      case query do
+        "" -> "/rooms/#{URI.encode_www_form(room_id)}/sync"
+        encoded -> "/rooms/#{URI.encode_www_form(room_id)}/sync?#{encoded}"
+      end
+
+    with {:ok,
+          %{
+            "data" => %{
+              "room" => room_snapshot,
+              "timeline" => entries,
+              "next_cursor" => next_cursor,
+              "context_objects" => context_objects,
+              "operations" => operations
+            }
+          }}
+         when is_map(room_snapshot) and is_list(entries) and is_list(context_objects) and
+                is_list(operations) <-
+           request(:get, opts, path, nil) do
+      {:ok,
+       %{
+         room_snapshot: room_snapshot,
+         entries: entries,
+         next_cursor: next_cursor,
+         context_objects: context_objects,
+         operations: operations
+       }}
+    end
+  end
+
+  @impl true
   def fetch_timeline(opts, room_id, query_opts \\ []) do
     query =
       %{}
@@ -71,7 +108,8 @@ defmodule JidoHiveClient.Boundary.RoomApi.Http do
   end
 
   defp default_lane(:get, path) do
-    if String.contains?(path, "/timeline") or String.contains?(path, "/context_objects") do
+    if String.contains?(path, "/sync") or String.contains?(path, "/timeline") or
+         String.contains?(path, "/context_objects") do
       :room_sync
     else
       :room_hydrate

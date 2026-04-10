@@ -28,6 +28,11 @@ defmodule JidoHiveServer.RunOperations do
     GenServer.call(__MODULE__, {:fetch, room_id, operation_id})
   end
 
+  @spec list(String.t()) :: {:ok, [operation()]} | {:error, term()}
+  def list(room_id) when is_binary(room_id) do
+    GenServer.call(__MODULE__, {:list, room_id})
+  end
+
   @impl true
   def init(%__MODULE__{} = state), do: {:ok, state}
 
@@ -42,6 +47,8 @@ defmodule JidoHiveServer.RunOperations do
           operation_id: operation_id,
           client_operation_id: Keyword.get(run_opts, :client_operation_id),
           room_id: room_id,
+          kind: "room_run",
+          lane: "room_run",
           status: "accepted",
           phase: "accepted",
           assignment_timeout_ms: Keyword.get(run_opts, :assignment_timeout_ms),
@@ -78,6 +85,16 @@ defmodule JidoHiveServer.RunOperations do
       %{room_id: ^room_id} = operation -> {:reply, {:ok, operation}, state}
       _other -> {:reply, {:error, :operation_not_found}, state}
     end
+  end
+
+  def handle_call({:list, room_id}, _from, %__MODULE__{} = state) do
+    operations =
+      state.operations
+      |> Map.values()
+      |> Enum.filter(&(&1.room_id == room_id))
+      |> Enum.sort_by(&operation_sort_key/1, {:desc, String})
+
+    {:reply, {:ok, operations}, state}
   end
 
   @impl true
@@ -187,6 +204,10 @@ defmodule JidoHiveServer.RunOperations do
       |> Base.encode16(case: :lower)
 
     "#{prefix}-#{suffix}"
+  end
+
+  defp operation_sort_key(operation) do
+    operation.updated_at || operation.accepted_at || operation.operation_id
   end
 
   defp now_iso8601 do

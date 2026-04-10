@@ -138,10 +138,7 @@ defmodule JidoHiveConsole.App do
     {next_state, extra_effects} =
       cond do
         state.active_screen in [:room, :conflict, :publish] ->
-          {state
-           |> poll_pending_room_run()
-           |> maybe_refresh_room_state_for_pending_submit()
-           |> reconcile_pending_room_submit(), []}
+          {state, []}
 
         state.active_screen == :wizard and state.wizard_step == 3 ->
           {state, [{:timer, 0, :fetch_wizard_targets}]}
@@ -243,7 +240,6 @@ defmodule JidoHiveConsole.App do
         {:ok, snapshot} ->
           state
           |> Nav.apply_room_snapshot(snapshot)
-          |> reconcile_pending_room_submit()
           |> Model.set_status("Refreshed", :info)
 
         {:error, reason} ->
@@ -649,9 +645,7 @@ defmodule JidoHiveConsole.App do
       if stale_placeholder_room_snapshot?(state.snapshot, snapshot) do
         state
       else
-        state
-        |> Nav.apply_room_snapshot(snapshot)
-        |> reconcile_pending_room_submit()
+        Nav.apply_room_snapshot(state, snapshot)
       end
 
     {next_state, []}
@@ -666,11 +660,11 @@ defmodule JidoHiveConsole.App do
     next_state =
       case state.pending_room_submit do
         %{room_id: ^room_id, text: ^text, operation_id: ^operation_id} ->
-          Model.set_status(
-            state,
-            "Chat submit accepted; waiting for server confirmation. op=#{operation_id}",
-            :info
-          )
+          Model.track_room_submit(state, %{
+            "operation_id" => operation_id,
+            "status" => "accepted",
+            "text" => text
+          })
 
         _other ->
           state
@@ -755,14 +749,8 @@ defmodule JidoHiveConsole.App do
   def update({:room_submit_result, room_id, text, {:ok, _contribution}}, state) do
     next_state =
       case state.pending_room_submit do
-        %{room_id: ^room_id, text: ^text, operation_id: operation_id} ->
+        %{room_id: ^room_id, text: ^text} ->
           state
-          |> Model.set_status(
-            "Chat submitted; syncing room transcript... op=#{operation_id}",
-            :info
-          )
-          |> refresh_room_state()
-          |> reconcile_pending_room_submit()
 
         _other ->
           state
@@ -822,16 +810,12 @@ defmodule JidoHiveConsole.App do
 
     next_state =
       if state.room_id == room_id do
-        state
-        |> Map.put(:pending_room_run, %{
-          room_id: room_id,
-          operation_id: server_operation_id,
-          client_operation_id: resolved_client_operation_id
+        Model.track_room_run(state, %{
+          "operation_id" => server_operation_id,
+          "client_operation_id" => resolved_client_operation_id,
+          "status" => "accepted",
+          "kind" => "room_run"
         })
-        |> Model.set_status(
-          "Room run accepted; #{run_operation_label(server_operation_id, resolved_client_operation_id)}",
-          :info
-        )
       else
         state
       end
@@ -1172,10 +1156,13 @@ defmodule JidoHiveConsole.App do
 
     next_state =
       state
-      |> Map.put(:pending_room_submit, %{room_id: room_id, text: text, operation_id: operation_id})
-      |> Map.put(:status_animation_tick, 0)
       |> Model.clear_input()
-      |> Model.set_status("Submitting chat message... op=#{operation_id}", :info)
+      |> Map.put(:status_animation_tick, 0)
+      |> Model.track_room_submit(%{
+        "operation_id" => operation_id,
+        "status" => "accepted",
+        "text" => text
+      })
 
     {next_state,
      [
@@ -1184,198 +1171,22 @@ defmodule JidoHiveConsole.App do
      ]}
   end
 
-  defp reconcile_pending_room_submit(%Model{pending_room_submit: nil} = state), do: state
-
-  defp reconcile_pending_room_submit(%Model{} = state) do
-    %{operation_id: operation_id, text: text} = state.pending_room_submit
-
-    case submit_reconciliation_outcome(state.snapshot, state.participant_id, operation_id, text) do
-      :completed ->
-        state
-        |> Map.put(:pending_room_submit, nil)
-        |> Map.put(:status_animation_tick, 0)
-        |> Model.set_status("Submitted chat message", :info)
-
-      {:failed, error} ->
-        state
-        |> Map.put(:pending_room_submit, nil)
-        |> Map.put(:status_animation_tick, 0)
-        |> set_room_input(text)
-        |> Model.set_status("Submit failed: #{error}", :error)
-
-      :pending ->
-        state
-    end
-  end
-
-  defp submit_reconciliation_outcome(snapshot, participant_id, operation_id, text) do
-    if submit_visible_in_snapshot?(snapshot, participant_id, text) do
-      :completed
-    else
-      case submit_operation_from_snapshot(snapshot, operation_id) do
-        %{"status" => "failed", "error" => error} ->
-          {:failed, error}
-
-        _other ->
-          :pending
-      end
-    end
-  end
-
   defp reconcile_room_submit_failure(%Model{} = state, _room_id, text, reason) do
-    refreshed_state =
-      state
-      |> Map.put(:pending_room_submit, nil)
-      |> Map.put(:status_animation_tick, 0)
-      |> refresh_room_state()
-
-    if submit_visible_in_snapshot?(refreshed_state.snapshot, state.participant_id, text) do
-      Model.set_status(
-        refreshed_state,
-        "Chat message submitted; local acknowledgement failed, room refreshed",
-        :warn
-      )
-    else
-      refreshed_state
-      |> set_room_input(text)
-      |> Model.set_status("Submit failed: #{inspect(reason)}", :error)
-    end
-  end
-
-  defp refresh_room_state(%Model{embedded: nil} = state), do: state
-
-  defp refresh_room_state(%Model{} = state) do
-    case state.embedded_module.refresh(state.embedded) do
-      {:ok, snapshot} -> Nav.apply_room_snapshot(state, snapshot)
-      {:error, _reason} -> state
-    end
-  rescue
-    _error -> state
-  catch
-    :exit, _reason -> state
-  end
-
-  defp maybe_refresh_room_state_for_pending_submit(%Model{pending_room_submit: nil} = state) do
     state
-  end
-
-  defp maybe_refresh_room_state_for_pending_submit(%Model{} = state) do
-    refresh_room_state(state)
+    |> Map.put(:status_animation_tick, 0)
+    |> set_room_input(text)
+    |> Model.fail_room_submit(inspect(reason))
   end
 
   defp maybe_refresh_room_state_from_event_log(%Model{} = state, []) do
     state
   end
 
-  defp maybe_refresh_room_state_from_event_log(%Model{active_screen: :room} = state, _entries) do
-    refresh_room_state(state)
-  end
+  defp maybe_refresh_room_state_from_event_log(%Model{active_screen: :room} = state, _entries),
+    do: state
 
   defp maybe_refresh_room_state_from_event_log(%Model{} = state, _entries) do
     state
-  end
-
-  defp poll_pending_room_run(%Model{pending_room_run: nil} = state), do: state
-
-  defp poll_pending_room_run(%Model{} = state) do
-    case state.pending_room_run do
-      %{room_id: room_id, operation_id: server_operation_id} = pending_room_run ->
-        client_operation_id = Map.get(pending_room_run, :client_operation_id)
-
-        case state.operator_module.fetch_room_run_operation(
-               state.api_base_url,
-               room_id,
-               server_operation_id,
-               operation_id: server_operation_id
-             ) do
-          {:ok, %{"status" => "completed"}} ->
-            state
-            |> Map.put(:pending_room_run, nil)
-            |> Model.set_status(
-              "Room run completed; #{run_operation_label(server_operation_id, client_operation_id)}",
-              :info
-            )
-
-          {:ok, %{"status" => "failed", "error" => error}} ->
-            state
-            |> Map.put(:pending_room_run, nil)
-            |> Model.set_status(
-              "Room run failed: #{error} #{run_operation_label(server_operation_id, client_operation_id)}",
-              :error
-            )
-
-          {:ok, %{"status" => status}} when status in ["accepted", "running"] ->
-            Model.set_status(
-              state,
-              "Room run #{status}; #{run_operation_label(server_operation_id, client_operation_id)}",
-              :info
-            )
-
-          {:error, :operation_not_found} ->
-            state
-            |> Map.put(:pending_room_run, nil)
-            |> Model.set_status(
-              "Room run operation was not found: #{run_operation_label(server_operation_id, client_operation_id)}",
-              :error
-            )
-
-          {:error, reason} ->
-            Model.set_status(
-              state,
-              "Room run status check failed: #{inspect(reason)} #{run_operation_label(server_operation_id, client_operation_id)}",
-              :warn
-            )
-        end
-    end
-  end
-
-  defp submit_operation_from_snapshot(snapshot, operation_id) when is_binary(operation_id) do
-    snapshot
-    |> Map.get("operations", [])
-    |> Enum.find(fn operation ->
-      Map.get(operation, "operation_id") == operation_id
-    end)
-  end
-
-  defp submit_visible_in_snapshot?(snapshot, participant_id, text) when is_binary(text) do
-    normalized_text = String.trim(text)
-
-    contribution_visible?(snapshot, participant_id, normalized_text) or
-      context_message_visible?(snapshot, participant_id, normalized_text)
-  end
-
-  defp contribution_visible?(snapshot, participant_id, normalized_text) do
-    snapshot
-    |> Map.get("contributions", [])
-    |> Enum.any?(fn contribution ->
-      contribution_participant_id(contribution) == participant_id and
-        String.trim(
-          to_string(Map.get(contribution, "summary") || Map.get(contribution, :summary) || "")
-        ) ==
-          normalized_text
-    end)
-  end
-
-  defp context_message_visible?(snapshot, participant_id, normalized_text) do
-    snapshot
-    |> Map.get("context_objects", [])
-    |> Enum.any?(fn object ->
-      object_type(object) == "message" and authored_by_participant_id(object) == participant_id and
-        String.trim(to_string(Map.get(object, "body") || Map.get(object, :body) || "")) ==
-          normalized_text
-    end)
-  end
-
-  defp contribution_participant_id(contribution) do
-    Map.get(contribution, "participant_id") ||
-      Map.get(contribution, :participant_id) ||
-      get_in(contribution, ["authored_by", "participant_id"]) ||
-      get_in(contribution, [:authored_by, :participant_id])
-  end
-
-  defp authored_by_participant_id(object) do
-    get_in(object, ["authored_by", "participant_id"]) ||
-      get_in(object, [:authored_by, :participant_id])
   end
 
   defp log_async_operation(operation_id, label, room_id, participant_id, {:ok, _result}) do
@@ -1404,17 +1215,6 @@ defmodule JidoHiveConsole.App do
     Logger.error(
       "room run start failed client_operation_id=#{client_operation_id} room_id=#{room_id} participant_id=#{participant_id} reason=#{inspect(reason)}"
     )
-  end
-
-  defp run_operation_label(server_operation_id, client_operation_id)
-       when is_binary(server_operation_id) and is_binary(client_operation_id) and
-              server_operation_id != client_operation_id do
-    "server_op=#{server_operation_id} client_op=#{client_operation_id}"
-  end
-
-  defp run_operation_label(server_operation_id, _client_operation_id)
-       when is_binary(server_operation_id) do
-    "op=#{server_operation_id}"
   end
 
   defp set_run_timeout_status(state, operation_id, metadata) do

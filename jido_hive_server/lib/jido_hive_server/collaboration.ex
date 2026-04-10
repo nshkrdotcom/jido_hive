@@ -4,6 +4,7 @@ defmodule JidoHiveServer.Collaboration do
   alias JidoHiveServer.Collaboration.ContextGraph
   alias JidoHiveServer.Collaboration.DispatchPolicy.Registry, as: PolicyRegistry
   alias JidoHiveServer.Collaboration.RoomServer
+  alias JidoHiveServer.Collaboration.RoomTimeline
   alias JidoHiveServer.Collaboration.Schema.{Assignment, Participant, RoomEvent}
   alias JidoHiveServer.Collaboration.SnapshotProjection
   alias JidoHiveServer.Persistence
@@ -136,6 +137,26 @@ defmodule JidoHiveServer.Collaboration do
     else
       nil -> {:error, :context_object_not_found}
       {:error, _} = error -> error
+    end
+  end
+
+  def room_sync(room_id, opts \\ []) when is_binary(room_id) and is_list(opts) do
+    after_cursor = Keyword.get(opts, :after)
+
+    with {:ok, snapshot} <- fetch_room(room_id) do
+      timeline =
+        room_id
+        |> Persistence.list_room_events()
+        |> RoomTimeline.project(after: after_cursor)
+
+      {:ok,
+       %{
+         room: snapshot,
+         timeline: timeline,
+         next_cursor: RoomTimeline.next_cursor(timeline),
+         context_objects:
+           Enum.map(snapshot.context_objects, &decorate_context_object(&1, snapshot))
+       }}
     end
   end
 

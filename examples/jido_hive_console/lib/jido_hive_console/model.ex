@@ -2,6 +2,7 @@
 defmodule JidoHiveConsole.Model do
   @moduledoc false
 
+  alias JidoHiveClient.RoomFlow
   alias JidoHiveConsole.Projection
 
   @default_snapshot %{
@@ -23,6 +24,7 @@ defmodule JidoHiveConsole.Model do
     :participant_role,
     :authority_level,
     :room_id,
+    :room_flow,
     :snapshot,
     :room_input_ref,
     :conflict_input_ref,
@@ -92,6 +94,9 @@ defmodule JidoHiveConsole.Model do
       |> Keyword.get(:snapshot, @default_snapshot)
       |> normalize_snapshot()
 
+    room_id = Keyword.get(opts, :room_id) || value(snapshot, "room_id")
+    room_flow = Keyword.get(opts, :room_flow) || maybe_room_flow(room_id)
+
     %__MODULE__{
       embedded: Keyword.get(opts, :embedded),
       embedded_module: Keyword.get(opts, :embedded_module, JidoHiveClient.RoomSession),
@@ -106,7 +111,8 @@ defmodule JidoHiveConsole.Model do
       participant_role: Keyword.get(opts, :participant_role, "coordinator"),
       authority_level: Keyword.get(opts, :authority_level, "binding"),
       active_screen: Keyword.get(opts, :active_screen, :lobby),
-      room_id: Keyword.get(opts, :room_id),
+      room_id: room_id,
+      room_flow: room_flow,
       snapshot: snapshot,
       relation_mode: Keyword.get(opts, :relation_mode, :contextual),
       poll_interval_ms: Keyword.get(opts, :poll_interval_ms, 1_000),
@@ -121,6 +127,11 @@ defmodule JidoHiveConsole.Model do
   @spec apply_snapshot(t(), map()) :: t()
   def apply_snapshot(%__MODULE__{} = state, snapshot) when is_map(snapshot) do
     normalized = normalize_snapshot(snapshot)
+    room_id = state.room_id || value(normalized, "room_id")
+    room_flow = ensure_room_flow(%{state | room_id: room_id})
+
+    room_flow =
+      if is_nil(room_flow), do: nil, else: RoomFlow.ingest_snapshot(room_flow, normalized)
 
     selected_index =
       normalized
@@ -130,9 +141,12 @@ defmodule JidoHiveConsole.Model do
     %{
       state
       | snapshot: normalized,
+        room_id: room_id,
+        room_flow: room_flow,
         selected_context_index: selected_index,
         sync_error: not is_nil(value(normalized, "last_error"))
     }
+    |> apply_room_flow()
   end
 
   @spec append_input(t(), String.t()) :: t()
@@ -225,6 +239,36 @@ defmodule JidoHiveConsole.Model do
     %{state | status_line: message, status_severity: severity}
   end
 
+  @spec track_room_submit(t(), map()) :: t()
+  def track_room_submit(%__MODULE__{} = state, operation) when is_map(operation) do
+    case ensure_room_flow(state) do
+      nil ->
+        state
+
+      room_flow ->
+        %{state | room_flow: RoomFlow.submit_accepted(room_flow, operation)}
+        |> apply_room_flow()
+    end
+  end
+
+  @spec fail_room_submit(t(), String.t()) :: t()
+  def fail_room_submit(%__MODULE__{} = state, reason) when is_binary(reason) do
+    next_state = %{state | pending_room_submit: nil, status_animation_tick: 0}
+    set_status(next_state, "Submit failed: #{reason}", :error)
+  end
+
+  @spec track_room_run(t(), map()) :: t()
+  def track_room_run(%__MODULE__{} = state, operation) when is_map(operation) do
+    case ensure_room_flow(state) do
+      nil ->
+        state
+
+      room_flow ->
+        %{state | room_flow: RoomFlow.run_accepted(room_flow, operation)}
+        |> apply_room_flow()
+    end
+  end
+
   @spec set_relation_mode(t(), atom()) :: t()
   def set_relation_mode(%__MODULE__{} = state, mode)
       when mode in [
@@ -244,6 +288,88 @@ defmodule JidoHiveConsole.Model do
   defp clamp_index(context_objects, selected_index) do
     max_index = max(length(context_objects) - 1, 0)
     min(max(selected_index, 0), max_index)
+  end
+
+  defp ensure_room_flow(%__MODULE__{} = state) do
+    (state.room_flow || maybe_room_flow(state.room_id))
+    |> maybe_seed_submit(state.pending_room_submit)
+    |> maybe_seed_run(state.pending_room_run)
+  end
+
+  defp maybe_room_flow(room_id) when is_binary(room_id), do: RoomFlow.new(room_id)
+  defp maybe_room_flow(_room_id), do: nil
+
+  defp maybe_seed_submit(nil, _pending_room_submit), do: nil
+
+  defp maybe_seed_submit(%RoomFlow{latest_submit: nil} = room_flow, %{
+         operation_id: operation_id,
+         text: text
+       }) do
+    RoomFlow.submit_accepted(room_flow, %{
+      "operation_id" => operation_id,
+      "status" => "accepted",
+      "text" => text
+    })
+  end
+
+  defp maybe_seed_submit(room_flow, _pending_room_submit), do: room_flow
+
+  defp maybe_seed_run(nil, _pending_room_run), do: nil
+
+  defp maybe_seed_run(
+         %RoomFlow{latest_run: nil} = room_flow,
+         %{
+           operation_id: operation_id
+         } = pending_room_run
+       ) do
+    RoomFlow.run_accepted(room_flow, %{
+      "operation_id" => operation_id,
+      "client_operation_id" => Map.get(pending_room_run, :client_operation_id),
+      "status" => "accepted",
+      "kind" => "room_run"
+    })
+  end
+
+  defp maybe_seed_run(room_flow, _pending_room_run), do: room_flow
+
+  defp apply_room_flow(%__MODULE__{room_flow: nil} = state), do: state
+
+  defp apply_room_flow(%__MODULE__{} = state) do
+    pending_room_submit =
+      case RoomFlow.pending_submit(state.room_flow) do
+        %{} = operation ->
+          %{
+            room_id: state.room_id,
+            text: value(operation, "text"),
+            operation_id: value(operation, "operation_id")
+          }
+
+        _other ->
+          nil
+      end
+
+    pending_room_run =
+      case RoomFlow.pending_run(state.room_flow) do
+        %{} = operation ->
+          %{
+            room_id: state.room_id,
+            operation_id: value(operation, "operation_id"),
+            client_operation_id: value(operation, "client_operation_id")
+          }
+
+        _other ->
+          nil
+      end
+
+    {status_severity, status_line} = RoomFlow.status(state.room_flow)
+
+    %{
+      state
+      | pending_room_submit: pending_room_submit,
+        pending_room_run: pending_room_run,
+        status_line: status_line,
+        status_severity: status_severity
+    }
   end
 
   defp normalize_snapshot(snapshot) do

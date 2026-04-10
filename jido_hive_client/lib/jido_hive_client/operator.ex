@@ -105,6 +105,23 @@ defmodule JidoHiveClient.Operator do
     unwrap_data(HTTP.get(api_base_url, "/rooms/#{room_id}", http_opts))
   end
 
+  @spec fetch_room_sync(String.t(), String.t(), keyword()) ::
+          {:ok,
+           %{
+             room_snapshot: map(),
+             entries: list(map()),
+             next_cursor: String.t() | nil,
+             context_objects: list(map()),
+             operations: list(map())
+           }}
+          | {:error, term()}
+  def fetch_room_sync(api_base_url, room_id, opts \\ [])
+      when is_binary(api_base_url) and is_binary(room_id) and is_list(opts) do
+    api_base_url
+    |> HTTP.get("/rooms/#{room_id}/sync#{after_query(opts)}", sync_http_opts(opts))
+    |> decode_room_sync_response()
+  end
+
   @spec fetch_publication_plan(String.t(), String.t()) :: {:ok, map()} | {:error, term()}
   def fetch_publication_plan(api_base_url, room_id)
       when is_binary(api_base_url) and is_binary(room_id) do
@@ -370,4 +387,46 @@ defmodule JidoHiveClient.Operator do
 
   defp maybe_put_option(opts, _key, nil), do: opts
   defp maybe_put_option(opts, key, value), do: Keyword.put(opts, key, value)
+
+  defp decode_room_sync_response({:ok, payload}), do: decode_room_sync_payload(payload)
+  defp decode_room_sync_response({:error, reason}), do: {:error, reason}
+
+  defp decode_room_sync_payload(%{
+         "data" => %{
+           "room" => room_snapshot,
+           "timeline" => entries,
+           "next_cursor" => next_cursor,
+           "context_objects" => context_objects,
+           "operations" => operations
+         }
+       })
+       when is_map(room_snapshot) and is_list(entries) and is_list(context_objects) and
+              is_list(operations) do
+    {:ok,
+     %{
+       room_snapshot: room_snapshot,
+       entries: entries,
+       next_cursor: next_cursor,
+       context_objects: context_objects,
+       operations: operations
+     }}
+  end
+
+  defp decode_room_sync_payload(payload), do: {:error, {:unexpected_payload, payload}}
+
+  defp sync_http_opts(opts) do
+    []
+    |> Keyword.put(:lane, Keyword.get(opts, :lane, :room_sync))
+    |> maybe_put_option(:operation_id, Keyword.get(opts, :operation_id))
+  end
+
+  defp after_query(opts) do
+    case Keyword.get(opts, :after) do
+      after_cursor when is_binary(after_cursor) and after_cursor != "" ->
+        "?after=#{URI.encode_www_form(after_cursor)}"
+
+      _other ->
+        ""
+    end
+  end
 end

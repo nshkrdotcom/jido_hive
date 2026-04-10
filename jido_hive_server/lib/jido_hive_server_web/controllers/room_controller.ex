@@ -29,6 +29,19 @@ defmodule JidoHiveServerWeb.RoomController do
     end
   end
 
+  def sync(conn, %{"id" => room_id} = params) do
+    with {:ok, sync_result} <- Collaboration.room_sync(room_id, after: params["after"]),
+         {:ok, operations} <- RunOperations.list(room_id) do
+      json(conn, %{data: normalize(Map.put(sync_result, :operations, operations))})
+    else
+      {:error, :room_not_found} ->
+        render_error(conn, :not_found, :room_not_found)
+
+      {:error, reason} ->
+        render_error(conn, :unprocessable_entity, reason)
+    end
+  end
+
   def run_first_slice(conn, %{"id" => room_id}) do
     case Collaboration.run_first_slice(room_id) do
       {:ok, snapshot} ->

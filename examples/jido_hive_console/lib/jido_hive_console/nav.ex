@@ -84,19 +84,25 @@ defmodule JidoHiveConsole.Nav do
         {embedded, poller_pid}
       end
 
-    state
-    |> build_state(%{
-      active_screen: :room,
-      room_id: room_id,
-      embedded: embedded,
-      event_log_poller_pid: poller_pid,
-      snapshot: room_snapshot,
-      sync_error: not is_nil(fetch_error),
-      help_visible: if(fetch_error, do: false, else: auto_open_help?(state, :room)),
-      status_line: room_fetch_status(room_id, fetch_error),
-      status_severity: room_fetch_severity(fetch_error)
-    })
-    |> apply_room_snapshot(room_snapshot)
+    next_state =
+      state
+      |> build_state(%{
+        active_screen: :room,
+        room_id: room_id,
+        embedded: embedded,
+        event_log_poller_pid: poller_pid,
+        snapshot: room_snapshot,
+        sync_error: not is_nil(fetch_error),
+        help_visible: if(fetch_error, do: false, else: auto_open_help?(state, :room)),
+        status_line: room_fetch_status(room_id, fetch_error),
+        status_severity: room_fetch_severity(fetch_error)
+      })
+
+    if fetch_error do
+      next_state
+    else
+      apply_room_snapshot(next_state, room_snapshot)
+    end
   end
 
   defp transition_to_conflict(%Model{} = state) do
@@ -190,10 +196,16 @@ defmodule JidoHiveConsole.Nav do
         embedded_module: state.embedded_module,
         event_log_poller_pid: state.event_log_poller_pid,
         room_id: state.room_id,
+        room_flow: state.room_flow,
         snapshot: state.snapshot,
         event_log_lines: state.event_log_lines,
         event_log_cursor: state.event_log_cursor,
-        sync_error: state.sync_error
+        sync_error: state.sync_error,
+        pending_room_submit: state.pending_room_submit,
+        pending_room_run: state.pending_room_run,
+        status_line: state.status_line,
+        status_severity: state.status_severity,
+        status_animation_tick: state.status_animation_tick
       }
 
     build_state(state, Map.merge(preserved, overrides))

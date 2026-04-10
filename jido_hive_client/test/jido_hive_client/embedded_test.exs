@@ -38,6 +38,36 @@ defmodule JidoHiveClient.EmbeddedTest do
     end
 
     @impl true
+    def fetch_sync(opts, room_id, query_opts) do
+      test_pid = Keyword.get(opts, :test_pid)
+      send(test_pid, {:fetch_sync, room_id, query_opts})
+
+      after_cursor = Keyword.get(query_opts, :after)
+
+      {:ok,
+       Agent.get(Keyword.fetch!(opts, :server), fn state ->
+         entries =
+           case after_cursor do
+             nil -> state.timeline
+             cursor -> drop_after(state.timeline, cursor)
+           end
+
+         %{
+           room_snapshot:
+             Map.merge(state.room_snapshot, %{
+               "timeline" => state.timeline,
+               "context_objects" => state.context_objects,
+               "operations" => []
+             }),
+           entries: entries,
+           next_cursor: next_cursor(state.timeline),
+           context_objects: state.context_objects,
+           operations: []
+         }
+       end)}
+    end
+
+    @impl true
     def fetch_timeline(opts, room_id, query_opts) do
       test_pid = Keyword.get(opts, :test_pid)
       send(test_pid, {:fetch_timeline, room_id, query_opts})
@@ -135,6 +165,12 @@ defmodule JidoHiveClient.EmbeddedTest do
     end
 
     @impl true
+    def fetch_sync(opts, room_id, query_opts) do
+      send(Keyword.fetch!(opts, :test_pid), {:sync_fail_fetch_sync, room_id, query_opts})
+      {:error, :sync_failed}
+    end
+
+    @impl true
     def fetch_timeline(opts, room_id, query_opts) do
       send(Keyword.fetch!(opts, :test_pid), {:sync_fail_fetch_timeline, room_id, query_opts})
       {:error, :sync_failed}
@@ -165,6 +201,46 @@ defmodule JidoHiveClient.EmbeddedTest do
          "dispatch_state" => %{},
          "participants" => []
        }}
+    end
+
+    @impl true
+    def fetch_sync(opts, room_id, query_opts) do
+      test_pid = Keyword.fetch!(opts, :test_pid)
+      send(test_pid, {:blocking_fetch_sync, self(), room_id, query_opts})
+
+      receive do
+        :release_fetch_sync ->
+          {:ok,
+           %{
+             room_snapshot: %{
+               "room_id" => room_id,
+               "status" => "running",
+               "dispatch_state" => %{},
+               "participants" => [],
+               "operations" => []
+             },
+             entries: [],
+             next_cursor: Keyword.get(query_opts, :after),
+             context_objects: [],
+             operations: []
+           }}
+      after
+        5_000 ->
+          {:ok,
+           %{
+             room_snapshot: %{
+               "room_id" => room_id,
+               "status" => "running",
+               "dispatch_state" => %{},
+               "participants" => [],
+               "operations" => []
+             },
+             entries: [],
+             next_cursor: Keyword.get(query_opts, :after),
+             context_objects: [],
+             operations: []
+           }}
+      end
     end
 
     @impl true
@@ -203,6 +279,21 @@ defmodule JidoHiveClient.EmbeddedTest do
 
     @impl true
     def fetch_room(_opts, _room_id), do: {:error, :room_not_found}
+
+    @impl true
+    def fetch_sync(opts, room_id, query_opts) do
+      server = Keyword.fetch!(opts, :server)
+      test_pid = Keyword.fetch!(opts, :test_pid)
+
+      count =
+        Agent.get_and_update(server, fn state ->
+          next = state.timeline_fetches + 1
+          {next, %{state | timeline_fetches: next}}
+        end)
+
+      send(test_pid, {:missing_fetch_sync, room_id, query_opts, count})
+      {:error, :room_not_found}
+    end
 
     @impl true
     def fetch_timeline(opts, room_id, query_opts) do
@@ -270,23 +361,19 @@ defmodule JidoHiveClient.EmbeddedTest do
     assert snapshot["room_id"] == "room-1"
   end
 
-  test "poll skips room and context fetches when no new timeline entries arrive", %{
+  test "poll uses the consolidated room sync fetch when no new timeline entries arrive", %{
     embedded: embedded
   } do
     Process.sleep(20)
     flush_mailbox()
 
     assert {:ok, _snapshot} = Embedded.refresh(embedded)
-    assert_receive {:fetch_timeline, "room-1", [after: nil]}
-    assert_receive {:fetch_context_objects, "room-1"}
-    assert_receive {:fetch_room, "room-1"}
+    assert_receive {:fetch_sync, "room-1", [after: nil]}
 
     flush_mailbox()
     send(embedded, :poll)
 
-    assert_receive {:fetch_timeline, "room-1", [after: _cursor]}
-    refute_receive {:fetch_context_objects, "room-1"}, 50
-    refute_receive {:fetch_room, "room-1"}, 50
+    assert_receive {:fetch_sync, "room-1", [after: _cursor]}
   end
 
   test "subscribe pushes the current snapshot after hydration", %{embedded: embedded} do
@@ -313,12 +400,12 @@ defmodule JidoHiveClient.EmbeddedTest do
         poll_interval_ms: 5_000
       )
 
-    assert_receive {:blocking_fetch_timeline, blocker, "room-1", [after: nil]}
+    assert_receive {:blocking_fetch_sync, blocker, "room-1", [after: nil]}
 
     assert :ok = Embedded.subscribe(embedded)
     refute_receive {:room_session_snapshot, "room-1", _snapshot}, 80
 
-    send(blocker, :release_fetch_timeline)
+    send(blocker, :release_fetch_sync)
 
     assert_receive {:room_session_snapshot, "room-1", hydrated_snapshot}
     assert hydrated_snapshot["status"] == "running"
@@ -446,7 +533,7 @@ defmodule JidoHiveClient.EmbeddedTest do
         poll_interval_ms: 60_000
       )
 
-    assert_receive {:blocking_fetch_timeline, blocker, "room-1", _query_opts}
+    assert_receive {:blocking_fetch_sync, blocker, "room-1", _query_opts}
 
     task =
       Task.async(fn ->
@@ -458,7 +545,7 @@ defmodule JidoHiveClient.EmbeddedTest do
     assert_receive {:submit_contribution, "room-1", payload}
     assert payload["summary"] == "Submit while sync is blocked"
 
-    send(blocker, :release_fetch_timeline)
+    send(blocker, :release_fetch_sync)
   end
 
   test "submit_chat_async broadcasts accepted and completed snapshots to subscribers", %{
@@ -551,9 +638,9 @@ defmodule JidoHiveClient.EmbeddedTest do
         poll_interval_ms: 10
       )
 
-    assert_receive {:missing_fetch_timeline, "missing-room", _query_opts, 1}, 500
-    assert_receive {:missing_fetch_timeline, "missing-room", _query_opts, 2}, 500
-    assert_receive {:missing_fetch_timeline, "missing-room", _query_opts, 3}, 500
+    assert_receive {:missing_fetch_sync, "missing-room", _query_opts, 1}, 500
+    assert_receive {:missing_fetch_sync, "missing-room", _query_opts, 2}, 500
+    assert_receive {:missing_fetch_sync, "missing-room", _query_opts, 3}, 500
 
     wait_until(fn -> Embedded.snapshot(embedded)["last_error"] == :room_not_found end)
     Process.sleep(80)

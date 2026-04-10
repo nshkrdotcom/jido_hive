@@ -149,6 +149,18 @@ flowchart LR
 - the console is a rendering shell plus input adapter over the client.
 - if a behavior cannot be reproduced from the headless client surface, the seam is still wrong.
 
+### Current room-sync contract
+
+- room polling is consolidated at `GET /api/rooms/:id/sync`
+- the sync payload returns:
+  - `room`
+  - `timeline`
+  - `next_cursor`
+  - `context_objects`
+  - `operations`
+- `JidoHiveClient.Embedded` now uses that single sync surface instead of separate room, timeline, and context fetch fan-out
+- the console derives submit/run status from `JidoHiveClient.RoomFlow`; it no longer polls run status separately
+
 ## Monorepo layout
 
 - [README.md](README.md): root onboarding and repo-wide workflow

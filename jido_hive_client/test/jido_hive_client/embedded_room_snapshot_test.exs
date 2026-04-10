@@ -20,6 +20,41 @@ defmodule JidoHiveClient.EmbeddedRoomSnapshotTest do
     end
 
     @impl true
+    def fetch_sync(_opts, room_id, _query_opts) do
+      {:ok,
+       %{
+         room_snapshot: %{
+           "data" => %{
+             "room_id" => room_id,
+             "status" => "running",
+             "dispatch_state" => %{"completed_slots" => 3, "total_slots" => 6},
+             "participants" => []
+           }
+         },
+         entries: [
+           %{
+             "entry_id" => "evt-1",
+             "cursor" => "evt-1",
+             "event_id" => "evt-1",
+             "kind" => "assignment.started",
+             "status" => "running",
+             "metadata" => %{"phase" => "analysis"}
+           }
+         ],
+         next_cursor: "evt-1",
+         context_objects: [
+           %{
+             "context_id" => "ctx-1",
+             "object_type" => "message",
+             "title" => "alice said",
+             "body" => "hello"
+           }
+         ],
+         operations: []
+       }}
+    end
+
+    @impl true
     def fetch_timeline(_opts, _room_id, _query_opts) do
       {:ok,
        %{

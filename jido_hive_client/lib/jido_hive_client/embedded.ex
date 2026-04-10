@@ -622,29 +622,26 @@ defmodule JidoHiveClient.Embedded do
   end
 
   defp fetch_sync_result(%__MODULE__{} = state, force_full?) do
-    case state.room_api.fetch_timeline(room_api_sync_opts(state), state.room_id,
+    _ = force_full?
+
+    case state.room_api.fetch_sync(room_api_sync_opts(state), state.room_id,
            after: state.next_cursor
          ) do
-      {:ok, %{entries: entries, next_cursor: next_cursor}} ->
-        fetch_full_snapshot? =
-          force_full? or is_nil(state.last_sync_at) or entries != []
-
-        build_sync_result(state, entries, next_cursor, fetch_full_snapshot?)
-
-      {:error, reason} ->
-        {:error, reason}
-    end
-  end
-
-  defp build_sync_result(%__MODULE__{} = state, entries, next_cursor, fetch_full_snapshot?) do
-    case fetch_sync_context_objects(state, fetch_full_snapshot?) do
-      {:ok, context_objects} ->
+      {:ok,
+       %{
+         room_snapshot: room_snapshot,
+         entries: entries,
+         next_cursor: next_cursor,
+         context_objects: context_objects,
+         operations: operations
+       }} ->
         {:ok,
          %{
-           room_snapshot: maybe_fetch_room_snapshot(state, fetch_full_snapshot?),
+           room_snapshot: normalize_room_snapshot(room_snapshot),
            entries: entries,
            next_cursor: next_cursor,
-           context_objects: context_objects
+           context_objects: context_objects,
+           operations: operations
          }}
 
       {:error, reason} ->
@@ -652,22 +649,16 @@ defmodule JidoHiveClient.Embedded do
     end
   end
 
-  defp fetch_sync_context_objects(%__MODULE__{} = state, true) do
-    state.room_api.fetch_context_objects(room_api_sync_opts(state), state.room_id)
-  end
-
-  defp fetch_sync_context_objects(%__MODULE__{} = state, false) do
-    {:ok, state.context_objects}
-  end
-
-  defp maybe_fetch_room_snapshot(%__MODULE__{} = state, true), do: fetch_room_snapshot(state)
-  defp maybe_fetch_room_snapshot(%__MODULE__{}, false), do: nil
-
   defp apply_sync_result(%__MODULE__{} = state, sync_result, record_event?) do
     room_snapshot =
       case sync_result.room_snapshot do
-        nil -> state.room_snapshot
-        snapshot -> normalize_room_snapshot(snapshot)
+        nil ->
+          state.room_snapshot
+
+        snapshot ->
+          snapshot
+          |> normalize_room_snapshot()
+          |> Map.put("operations", sync_result.operations || [])
       end
 
     timeline =
@@ -708,13 +699,6 @@ defmodule JidoHiveClient.Embedded do
     end
 
     {next_state, changed?}
-  end
-
-  defp fetch_room_snapshot(%__MODULE__{} = state) do
-    case state.room_api.fetch_room(room_api_sync_opts(state), state.room_id) do
-      {:ok, room_snapshot} when is_map(room_snapshot) -> normalize_room_snapshot(room_snapshot)
-      _other -> nil
-    end
   end
 
   defp normalize_room_snapshot(%{"data" => %{} = snapshot}), do: snapshot
@@ -1022,9 +1006,47 @@ defmodule JidoHiveClient.Embedded do
   end
 
   defp current_operations(%__MODULE__{} = state) do
-    Enum.map(state.submit_order, &Map.get(state.submit_operations, &1))
-    |> Enum.reject(&is_nil/1)
+    submit_operations =
+      Enum.map(state.submit_order, &Map.get(state.submit_operations, &1))
+      |> Enum.reject(&is_nil/1)
+
+    server_operations =
+      state.room_snapshot
+      |> value("operations")
+      |> case do
+        operations when is_list(operations) -> operations
+        _other -> []
+      end
+
+    merge_operations(submit_operations, server_operations)
   end
+
+  defp merge_operations(local_operations, server_operations) do
+    (local_operations ++ server_operations)
+    |> Enum.reduce({[], MapSet.new()}, &merge_operation/2)
+    |> elem(0)
+    |> Enum.reverse()
+  end
+
+  defp merge_operation(operation, {acc, seen}) do
+    operation_id = value(operation, "operation_id")
+
+    if duplicate_operation?(operation_id, seen) do
+      {acc, seen}
+    else
+      {[operation | acc], remember_operation(seen, operation_id)}
+    end
+  end
+
+  defp duplicate_operation?(operation_id, seen) when is_binary(operation_id),
+    do: MapSet.member?(seen, operation_id)
+
+  defp duplicate_operation?(_operation_id, _seen), do: false
+
+  defp remember_operation(seen, operation_id) when is_binary(operation_id),
+    do: MapSet.put(seen, operation_id)
+
+  defp remember_operation(seen, _operation_id), do: seen
 
   defp maybe_push_subscriber_snapshot(pid, %__MODULE__{} = state) do
     if subscriber_snapshot_ready?(state) do

@@ -138,6 +138,36 @@ defmodule JidoHiveClient.OperatorTest do
              Operator.fetch_room(TestHTTPServer.base_url(server), "room-1")
   end
 
+  test "fetch_room_sync returns the consolidated room sync payload" do
+    {:ok, server} =
+      TestHTTPServer.start_link(fn request ->
+        assert request.path == "/rooms/room-1/sync?after=evt-2"
+
+        {200, %{},
+         Jason.encode!(%{
+           "data" => %{
+             "room" => %{"room_id" => "room-1", "status" => "running"},
+             "timeline" => [%{"event_id" => "evt-3", "body" => "third"}],
+             "next_cursor" => "evt-3",
+             "context_objects" => [%{"context_id" => "ctx-1"}],
+             "operations" => [%{"operation_id" => "room_run-1", "status" => "running"}]
+           }
+         })}
+      end)
+
+    on_exit(fn -> TestHTTPServer.stop(server) end)
+
+    assert {:ok,
+            %{
+              room_snapshot: %{"room_id" => "room-1", "status" => "running"},
+              entries: [%{"event_id" => "evt-3", "body" => "third"}],
+              next_cursor: "evt-3",
+              context_objects: [%{"context_id" => "ctx-1"}],
+              operations: [%{"operation_id" => "room_run-1", "status" => "running"}]
+            }} =
+             Operator.fetch_room_sync(TestHTTPServer.base_url(server), "room-1", after: "evt-2")
+  end
+
   test "fetch_publication_plan and publish_room go through the shared operator API" do
     parent = self()
 

@@ -121,6 +121,13 @@ flowchart LR
 - `JidoHiveClient.Embedded` is the implementation behind `RoomSession`, not the surface new callers should reach for first.
 - worker runtime code remains separate from operator/session flows.
 
+### Current room-session architecture
+
+- `JidoHiveClient.Operator.fetch_room_sync/3` is the canonical consolidated inspection call for a room
+- `JidoHiveClient.Embedded` polls the server through that sync surface and exposes merged local submit operations plus server run operations in `snapshot["operations"]`
+- `JidoHiveClient.RoomFlow` is the shared pure state machine for room submit/run lifecycle derivation
+- `JidoHiveClient.Scenario.RoomWorkflow` is the non-TUI scenario harness for scripted create/submit/run/submit/wait/sync workflows
+
 ## Public surfaces
 
 ### `JidoHiveClient.Operator`
@@ -145,6 +152,7 @@ Representative functions:
 - `load_config/0`
 - `list_saved_rooms/1`
 - `fetch_room/2`
+- `fetch_room_sync/3`
 - `fetch_room_timeline/3`
 - `create_room/2`
 - `run_room/3`
@@ -168,6 +176,20 @@ Representative functions:
 - `accept_context/3`
 - `shutdown/1`
 - `sync_health/1`
+
+### `JidoHiveClient.Scenario.RoomWorkflow`
+
+Use this when you want an executable workflow regression outside the TUI.
+
+Current scripted path:
+
+1. create room
+2. refresh local room session
+3. submit human chat before a run
+4. start room run
+5. submit human chat during the run
+6. wait for run completion
+7. fetch consolidated final room sync
 
 ### `JidoHiveClient.CLI`
 
