@@ -38,7 +38,7 @@ defmodule JidoHiveConsole.Screens.Room do
     [header_area, workflow_area, main_area, input_area, footer_area, status_area] =
       Layout.split(area, :vertical, [
         {:length, 3},
-        {:length, 6},
+        {:length, 10},
         {:min, 10},
         {:length, 5},
         {:length, 2},
@@ -115,14 +115,20 @@ defmodule JidoHiveConsole.Screens.Room do
   defp workflow_widget(state) do
     summary = Projection.workflow_summary(state.snapshot)
 
-    lines = [
-      "Objective: #{summary.objective}",
-      "Stage: #{summary.stage}",
-      "Next action: #{summary.next_action}",
-      "Why: #{summary.reason}",
-      "Graph: #{summary.graph_counts}",
-      "Selected: #{selected_context_label(state)}  ·  Compose as: #{compose_mode_label(state.relation_mode)}  ·  Focus: #{state.pane_focus}"
-    ]
+    lines =
+      [
+        "Objective: #{summary.objective}",
+        "Stage: #{summary.stage}",
+        "Next action: #{summary.next_action}",
+        "Why: #{summary.reason}",
+        "Graph: #{summary.graph_counts}",
+        "Publish: #{summary.publish_state}",
+        "Focus queue"
+      ] ++
+        workflow_focus_lines(summary.focus_queue) ++
+        [
+          "Selected: #{selected_context_label(state)}  ·  Compose as: #{compose_mode_label(state.relation_mode)}  ·  Focus: #{state.pane_focus}"
+        ]
 
     ScreenUI.pane("Workflow", lines, border_fg: :cyan, wrap: true)
   end
@@ -220,10 +226,10 @@ defmodule JidoHiveConsole.Screens.Room do
   defp context_title(%{drill_context_id: drill_context_id}),
     do: "Shared Graph: PROVENANCE #{drill_context_id}"
 
-  defp detail_title(%{drill_context_id: nil}), do: "Selected Detail"
+  defp detail_title(%{drill_context_id: nil}), do: "Selected Review"
 
   defp detail_title(%{drill_context_id: drill_context_id}),
-    do: "Selected Detail: PROVENANCE #{drill_context_id}"
+    do: "Selected Review: PROVENANCE #{drill_context_id}"
 
   defp selected_context_label(state) do
     case Model.selected_context(state) do
@@ -253,6 +259,9 @@ defmodule JidoHiveConsole.Screens.Room do
   defp compose_mode_label(:contradicts), do: "contradiction"
   defp compose_mode_label(:resolves), do: "resolution"
   defp compose_mode_label(other), do: Atom.to_string(other)
+
+  defp workflow_focus_lines([]), do: ["- no immediate focus items"]
+  defp workflow_focus_lines(lines), do: Enum.map(lines, &("- " <> &1))
 
   defp ctrl_shortcut("q"), do: :quit
   defp ctrl_shortcut("a"), do: :accept_selected

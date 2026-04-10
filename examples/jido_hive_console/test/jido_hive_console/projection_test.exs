@@ -98,6 +98,12 @@ defmodule JidoHiveConsole.ProjectionTest do
     assert summary.graph_counts =~ "1 decision"
     assert summary.graph_counts =~ "2 contradictions"
     assert summary.graph_counts =~ "1 duplicate"
+    assert summary.publish_state == "Publish blocked: Open contradictions remain"
+
+    assert summary.focus_queue == [
+             "contradiction ctx-2: Open conflict resolution",
+             "duplicate cluster ctx-1: Review the canonical entry before accepting or publishing"
+           ]
   end
 
   test "renders selected context detail lines for the operator detail pane" do
@@ -111,6 +117,9 @@ defmodule JidoHiveConsole.ProjectionTest do
     assert lines |> Enum.join("\n") =~ "Context ID: ctx-2"
     assert lines |> Enum.join("\n") =~ "Type: contradiction"
     assert lines |> Enum.join("\n") =~ "Graph: 0 incoming · 1 outgoing"
+    assert lines |> Enum.join("\n") =~ "Recommended Actions"
+    assert lines |> Enum.join("\n") =~ "Open conflict resolution"
+    assert lines |> Enum.join("\n") =~ "Inspect provenance"
     assert lines |> Enum.join("\n") =~ "Body"
   end
 

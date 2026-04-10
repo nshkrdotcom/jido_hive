@@ -34,7 +34,7 @@ defmodule JidoHiveConsole.CursorRenderTest do
     assert TestSupport.textarea_values(rendered) == ["hello\nworld"]
   end
 
-  test "room view renders workflow and selected detail panes" do
+  test "room view renders workflow focus queue and selected review panes" do
     state =
       Model.new(
         room_id: "room-1",
@@ -95,10 +95,14 @@ defmodule JidoHiveConsole.CursorRenderTest do
     text = rendered |> TestSupport.collect_text() |> Enum.join("\n")
 
     assert text =~ "Workflow"
-    assert text =~ "Selected Detail"
+    assert text =~ "Selected Review"
     assert text =~ "Stage: Resolve contradictions"
     assert text =~ "Next action: Review ctx-4 and submit a binding resolution"
+    assert text =~ "Focus queue"
+    assert text =~ "contradiction ctx-4: Open conflict resolution"
+    assert text =~ "Publish blocked"
     assert text =~ "Redis timeout"
+    assert text =~ "Recommended Actions"
     assert text =~ "DUP:1"
   end
 

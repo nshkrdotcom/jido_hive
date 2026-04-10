@@ -102,6 +102,27 @@ defmodule JidoHiveConsole.ScreenUITest do
     state =
       Model.new([])
       |> Map.put(:debug_visible, true)
+      |> Map.put(:room_id, "room-1")
+      |> Map.put(:api_base_url, "https://example.com/api")
+      |> Map.put(:snapshot, %{
+        "status" => "running",
+        "workflow_summary" => %{
+          "objective" => "Stabilize the Redis auth path",
+          "stage" => "Resolve contradictions",
+          "next_action" => "Review ctx-4 and submit a binding resolution",
+          "publish_ready" => false,
+          "publish_blockers" => ["Open contradictions remain"],
+          "graph_counts" => %{"contradictions" => 1, "duplicates" => 1, "total" => 3},
+          "focus_candidates" => [%{"kind" => "contradiction", "context_id" => "ctx-4"}]
+        },
+        "context_objects" => [
+          %{
+            "context_id" => "ctx-4",
+            "object_type" => "contradiction",
+            "title" => "Redis is healthy"
+          }
+        ]
+      })
       |> Map.put(:runtime_snapshot, %{
         mode: :reducer,
         render_count: 7,
@@ -115,6 +136,14 @@ defmodule JidoHiveConsole.ScreenUITest do
     assert [
              {%Popup{content: %Paragraph{text: text}}, %Rect{width: 120, height: 24}}
            ] = ScreenUI.help_popup_widgets(%{width: 120, height: 24}, state, "Guide", [])
+
+    assert text =~ "Workflow truth"
+    assert text =~ "Stage: Resolve contradictions"
+    assert text =~ "Next: Review ctx-4 and submit a binding resolution"
+    assert text =~ "room workflow --api-base-url https://example.com/api --room-id room-1"
+
+    assert text =~
+             "room provenance --api-base-url https://example.com/api --room-id room-1 --context-id ctx-4"
 
     assert text =~ "Runtime: mode=reducer renders=7 async=1"
     assert text =~ "Runtime trace: enabled=true events=1"

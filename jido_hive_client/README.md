@@ -5,7 +5,7 @@
 It has three distinct roles:
 
 - run long-lived worker participants against the relay
-- provide a headless operator API and JSON CLI for scripts and debugging
+- provide a headless operator API and JSON CLI for scripts, debugging, and control-plane inspection
 - provide a room-scoped local session boundary for human-facing tools such as the ExRatatui console
 
 It does not own room truth.
@@ -41,7 +41,9 @@ mix escript.build
 ./jido_hive_client room list --api-base-url http://127.0.0.1:4000/api
 ./jido_hive_client room show --api-base-url http://127.0.0.1:4000/api --room-id <room-id>
 ./jido_hive_client room workflow --api-base-url http://127.0.0.1:4000/api --room-id <room-id>
+./jido_hive_client room focus --api-base-url http://127.0.0.1:4000/api --room-id <room-id>
 ./jido_hive_client room inspect --api-base-url http://127.0.0.1:4000/api --room-id <room-id>
+./jido_hive_client room provenance --api-base-url http://127.0.0.1:4000/api --room-id <room-id> --context-id <context-id>
 ./jido_hive_client room tail --api-base-url http://127.0.0.1:4000/api --room-id <room-id>
 ```
 
@@ -122,6 +124,7 @@ flowchart LR
 - `JidoHiveClient.RoomSession` owns room-scoped human participation semantics such as snapshot, refresh, submit-chat, and accept-context.
 - `JidoHiveClient.Embedded` is the implementation behind `RoomSession`, not the surface new callers should reach for first.
 - `JidoHiveClient.RoomWorkflow` is the shared decoder/normalizer for the server-owned workflow contract.
+- `JidoHiveClient.RoomInsight` is the shared operator-insight layer for control-plane digest, focus queue, and provenance tracing.
 - worker runtime code remains separate from operator/session flows.
 
 ### Current room-session architecture
@@ -166,6 +169,17 @@ Representative functions:
 - `complete_install/4`
 - `submit_contribution/3`
 
+### `JidoHiveClient.RoomInsight`
+
+Use this when you need reusable operator-facing derivations from room truth.
+
+Current responsibilities:
+
+- control-plane digest from the server workflow contract
+- focus queue normalization
+- provenance tracing for a selected context object
+- recommended operator actions for a selected object
+
 ### `JidoHiveClient.RoomSession`
 
 Use this for room-scoped local participation.
@@ -209,9 +223,18 @@ This is the escript entrypoint. It supports both:
 ./jido_hive_client room list --api-base-url https://jido-hive-server-test.app.nsai.online/api
 ./jido_hive_client room show --api-base-url https://jido-hive-server-test.app.nsai.online/api --room-id <room-id>
 ./jido_hive_client room workflow --api-base-url https://jido-hive-server-test.app.nsai.online/api --room-id <room-id>
+./jido_hive_client room focus --api-base-url https://jido-hive-server-test.app.nsai.online/api --room-id <room-id>
 ./jido_hive_client room inspect --api-base-url https://jido-hive-server-test.app.nsai.online/api --room-id <room-id>
+./jido_hive_client room provenance --api-base-url https://jido-hive-server-test.app.nsai.online/api --room-id <room-id> --context-id <context-id>
 ./jido_hive_client room tail --api-base-url https://jido-hive-server-test.app.nsai.online/api --room-id <room-id>
 ```
+
+Use these intentionally:
+
+- `room workflow`: server workflow summary, stage, blockers, readiness, and next action
+- `room focus`: distilled control-plane digest plus current focus queue
+- `room provenance`: explain why one context object exists and what action is available on it
+- `room inspect`: full sync payload for deeper debugging and scripted automation
 
 ### Room mutation
 

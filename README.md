@@ -19,6 +19,13 @@ This repo currently contains:
 - `examples/jido_hive_console`: the ExRatatui operator console built on top of `jido_hive_client`
 - the root workspace project: shared quality gates and monorepo tooling
 
+What makes Jido Hive different is not the relay or the chat transcript.
+It is the combination of:
+
+- server-owned workflow truth
+- structured shared context with provenance, contradiction, and canonicalization signals
+- operator surfaces that can inspect, steer, and publish against that same truth through API, CLI, and TUI
+
 If you are new here, read this file first, then the package READMEs.
 
 ## Table of contents
@@ -81,7 +88,9 @@ mix escript.build
 ./jido_hive_client room list --api-base-url http://127.0.0.1:4000/api
 ./jido_hive_client room show --api-base-url http://127.0.0.1:4000/api --room-id <room-id>
 ./jido_hive_client room workflow --api-base-url http://127.0.0.1:4000/api --room-id <room-id>
+./jido_hive_client room focus --api-base-url http://127.0.0.1:4000/api --room-id <room-id>
 ./jido_hive_client room inspect --api-base-url http://127.0.0.1:4000/api --room-id <room-id>
+./jido_hive_client room provenance --api-base-url http://127.0.0.1:4000/api --room-id <room-id> --context-id <context-id>
 ./jido_hive_client room submit --api-base-url http://127.0.0.1:4000/api --room-id <room-id> --participant-id alice --text "hello"
 ```
 
@@ -151,6 +160,13 @@ flowchart LR
 - the console is a rendering shell plus input adapter over the client.
 - if a behavior cannot be reproduced from the headless client surface, the seam is still wrong.
 
+### Product model
+
+- The workflow summary answers "what stage is this room in?" and "what should the operator do next?"
+- The focus queue answers "which object needs review right now?"
+- Provenance answers "why does this object exist?"
+- The publication plan answers "what becomes official output and why?"
+
 ### Current room-sync contract
 
 - room polling is consolidated at `GET /api/rooms/:id/sync`
@@ -203,7 +219,9 @@ Representative commands:
 ./jido_hive_client room list --api-base-url https://jido-hive-server-test.app.nsai.online/api
 ./jido_hive_client room show --api-base-url https://jido-hive-server-test.app.nsai.online/api --room-id <room-id>
 ./jido_hive_client room workflow --api-base-url https://jido-hive-server-test.app.nsai.online/api --room-id <room-id>
+./jido_hive_client room focus --api-base-url https://jido-hive-server-test.app.nsai.online/api --room-id <room-id>
 ./jido_hive_client room inspect --api-base-url https://jido-hive-server-test.app.nsai.online/api --room-id <room-id>
+./jido_hive_client room provenance --api-base-url https://jido-hive-server-test.app.nsai.online/api --room-id <room-id> --context-id <context-id>
 ./jido_hive_client room tail --api-base-url https://jido-hive-server-test.app.nsai.online/api --room-id <room-id>
 ./jido_hive_client room publish-plan --api-base-url https://jido-hive-server-test.app.nsai.online/api --room-id <room-id>
 ./jido_hive_client room submit --api-base-url https://jido-hive-server-test.app.nsai.online/api --room-id <room-id> --participant-id alice --text "hello"

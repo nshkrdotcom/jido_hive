@@ -56,7 +56,7 @@ defmodule JidoHiveConsole.HelpGuide do
     render_sections([
       {"What this screen does",
        [
-         "This is the operator workspace for one room: understand the workflow, inspect the shared graph, and steer the room with human input."
+         "This is the operator control plane for one room: understand workflow truth, review the focus queue, inspect the shared graph, and steer the room with human input."
        ]},
       {"Current state",
        [
@@ -73,11 +73,12 @@ defmodule JidoHiveConsole.HelpGuide do
          "Up/Down changes the selected context object. Tab cycles pane focus. Enter sends the draft or opens conflict resolution when the draft is empty and the selection is a contradiction.",
          "Ctrl+J inserts a newline without sending.",
          "Ctrl+N plain chat. Ctrl+T contextual. Ctrl+F references. Ctrl+D derives_from. Ctrl+S supports. Ctrl+X contradicts. Ctrl+V resolves.",
-         "Ctrl+E opens provenance. Ctrl+A accepts the selected object. Ctrl+R refreshes the room. Ctrl+P opens publish. Ctrl+B returns to the lobby."
+         "Ctrl+E traces why the selected object exists. Ctrl+A accepts the selected object. Ctrl+R refreshes the room. Ctrl+P opens publish. Ctrl+B returns to the lobby."
        ]},
       {"Workflow",
        [
-         "Read the Workflow and Shared Graph panes first, then choose a context object and relation mode before sending a steering message.",
+         "Read the Workflow pane first. It is the room's server-backed summary of stage, blockers, next action, and current focus queue.",
+         "Use the Shared Graph and Selected Review panes to inspect one item in detail before you accept it, resolve it, or steer around it.",
          "Use provenance when you need to understand why an object exists, and use publish only after the room reaches publication_ready."
        ]},
       {"Global", global_help_lines()}
@@ -88,7 +89,7 @@ defmodule JidoHiveConsole.HelpGuide do
     render_sections([
       {"What this screen does",
        [
-         "Resolve a contradiction between two context objects by choosing one side or writing a synthesis."
+         "Resolve a contradiction surfaced by the shared graph by choosing one side or writing a synthesis."
        ]},
       {"Current state",
        [
@@ -104,7 +105,8 @@ defmodule JidoHiveConsole.HelpGuide do
        ]},
       {"Workflow",
        [
-         "Accept one side when it is clearly correct. Use a synthesis only when both sides contain useful information that should be merged into a new resolving statement."
+         "Accept one side when it is clearly correct. Use a synthesis only when both sides contain useful information that should be merged into a new resolving statement.",
+         "If you need to understand where either side came from first, return to the room and inspect provenance before resolving."
        ]},
       {"Global", global_help_lines()}
     ])

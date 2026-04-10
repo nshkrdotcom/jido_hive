@@ -1,7 +1,7 @@
 defmodule JidoHiveConsole.Projection do
   @moduledoc false
 
-  alias JidoHiveClient.RoomWorkflow
+  alias JidoHiveClient.RoomInsight
   alias JidoHiveConsole.Model
 
   @ordered_types [
@@ -70,17 +70,21 @@ defmodule JidoHiveConsole.Projection do
           stage: String.t(),
           next_action: String.t(),
           reason: String.t(),
-          graph_counts: String.t()
+          graph_counts: String.t(),
+          focus_queue: [String.t()],
+          publish_state: String.t()
         }
   def workflow_summary(snapshot) do
-    summary = RoomWorkflow.summary(snapshot)
+    control_plane = RoomInsight.control_plane(snapshot)
 
     %{
-      objective: summary.objective,
-      stage: summary.stage,
-      next_action: summary.next_action,
-      reason: workflow_reason_line(summary),
-      graph_counts: graph_counts_line(summary.graph_counts)
+      objective: control_plane.objective,
+      stage: control_plane.stage,
+      next_action: control_plane.next_action,
+      reason: control_plane.reason,
+      graph_counts: graph_counts_line(control_plane.graph_counts),
+      focus_queue: Enum.map(control_plane.focus_queue, &format_focus_item/1),
+      publish_state: publish_state_line(control_plane)
     }
   end
 
@@ -89,6 +93,8 @@ defmodule JidoHiveConsole.Projection do
 
   def selected_context_detail_lines(object, scope) when is_map(object) do
     {incoming, outgoing} = graph_edges(object, scope)
+    snapshot = detail_scope(scope)
+    {:ok, trace} = RoomInsight.provenance_trace(snapshot, context_id(object))
 
     relation_lines =
       case relations(object) do
@@ -110,6 +116,7 @@ defmodule JidoHiveConsole.Projection do
       "Graph: #{length(incoming)} incoming · #{length(outgoing)} outgoing"
     ] ++
       duplicate_detail_lines(object) ++
+      recommended_action_lines(trace) ++
       [
         "",
         "Title",
@@ -127,12 +134,16 @@ defmodule JidoHiveConsole.Projection do
 
   @spec provenance_tree(map(), [map()]) :: [String.t()]
   def provenance_tree(root_object, all_objects) do
-    index =
-      Map.new(all_objects, fn object ->
-        {context_id(object), object}
-      end)
+    case RoomInsight.provenance_trace(
+           %{"context_objects" => all_objects},
+           context_id(root_object)
+         ) do
+      {:ok, trace} ->
+        Enum.map(trace.trace, &format_provenance_entry/1)
 
-    render_provenance(root_object, index, 0, %{})
+      {:error, :not_found} ->
+        []
+    end
   end
 
   @spec conflict_sides(map(), map()) :: {[String.t()], [String.t()]}
@@ -311,19 +322,6 @@ defmodule JidoHiveConsole.Projection do
     Enum.join([label | suffixes], " ")
   end
 
-  defp render_provenance(_object, _index, depth, _visited) when depth > 5, do: []
-
-  defp render_provenance(object, index, depth, visited) do
-    object_id = context_id(object)
-
-    if Map.has_key?(visited, object_id) do
-      [indent(depth) <> "[cycle — #{object_id}]"]
-    else
-      next_visited = Map.put(visited, object_id, true)
-      [provenance_header(object, depth) | provenance_children(object, index, depth, next_visited)]
-    end
-  end
-
   defp conflict_side_lines(object) do
     title = title(object) || "[untitled]"
     authority = provenance_authority(object) || "advisory"
@@ -412,37 +410,6 @@ defmodule JidoHiveConsole.Projection do
       end
 
     Map.get(map, key) || (atom_key && Map.get(map, atom_key))
-  end
-
-  defp provenance_header(object, depth) do
-    indent(depth) <>
-      type_prefix(object) <>
-      truncate(title(object) || body(object) || object_type(object), 60)
-  end
-
-  defp provenance_children(object, index, depth, visited) do
-    object
-    |> relations()
-    |> Enum.filter(&provenance_relation?/1)
-    |> Enum.flat_map(&provenance_relation_lines(&1, index, depth, visited))
-  end
-
-  defp provenance_relation?(relation) do
-    relation_value(relation) in ["derives_from", "references", :derives_from, :references]
-  end
-
-  defp provenance_relation_lines(relation, index, depth, visited) do
-    target_id = Map.get(relation, "target_id") || Map.get(relation, :target_id)
-    relation_name = relation_value(relation)
-
-    case Map.get(index, target_id) do
-      nil ->
-        [indent(depth + 1) <> "#{relation_name} -> #{target_id} [not in view]"]
-
-      child ->
-        [indent(depth + 1) <> "#{relation_name} ->"] ++
-          render_provenance(child, index, depth + 1, visited)
-    end
   end
 
   defp relation_value(relation) do
@@ -571,18 +538,56 @@ defmodule JidoHiveConsole.Projection do
     Map.get(@section_headings, type, type |> String.replace("_", " ") |> String.upcase())
   end
 
-  defp workflow_reason_line(%{publish_ready: true}),
-    do: "Server reports the room is ready to publish."
+  defp publish_state_line(%{publish_ready: true}), do: "Publish ready"
 
-  defp workflow_reason_line(%{publish_blockers: [first | _rest]}) when is_binary(first),
-    do: first
+  defp publish_state_line(%{publish_blockers: [first | _rest]}) when is_binary(first),
+    do: "Publish blocked: #{first}"
 
-  defp workflow_reason_line(%{blockers: blockers}) when is_list(blockers) and blockers != [] do
-    blockers
-    |> Enum.map_join(" · ", &format_blocker/1)
+  defp publish_state_line(_summary), do: "Publish blocked"
+
+  defp format_focus_item(focus_item) do
+    kind =
+      focus_item
+      |> Map.get(:kind, Map.get(focus_item, "kind", "focus"))
+      |> to_string()
+      |> String.replace("_", " ")
+
+    context_id =
+      Map.get(focus_item, :context_id) || Map.get(focus_item, "context_id") || "unknown"
+
+    action =
+      Map.get(focus_item, :action) || Map.get(focus_item, "action") || "Inspect selected detail"
+
+    "#{kind} #{context_id}: #{action}"
   end
 
-  defp workflow_reason_line(_summary), do: "No active blockers reported."
+  defp recommended_action_lines(%{recommended_actions: []}), do: []
+
+  defp recommended_action_lines(%{recommended_actions: actions}) do
+    ["", "Recommended Actions"] ++
+      Enum.map(actions, fn action ->
+        label = Map.get(action, :label) || Map.get(action, "label")
+        shortcut = Map.get(action, :shortcut) || Map.get(action, "shortcut")
+        "- #{label} (#{shortcut})"
+      end)
+  end
+
+  defp detail_scope(scope) when is_map(scope), do: scope
+  defp detail_scope(scope) when is_list(scope), do: %{"context_objects" => scope}
+  defp detail_scope(_scope), do: %{"context_objects" => []}
+
+  defp format_provenance_entry(%{depth: 0} = entry) do
+    "[#{entry.object_type |> to_string() |> String.upcase()}] #{truncate(entry.title, 60)}"
+  end
+
+  defp format_provenance_entry(%{cycle: true} = entry) do
+    indent(entry.depth) <> "#{entry.via} -> [cycle — #{entry.context_id}]"
+  end
+
+  defp format_provenance_entry(entry) do
+    indent(entry.depth) <>
+      "#{entry.via} -> [#{entry.object_type |> to_string() |> String.upcase()}] #{truncate(entry.title, 60)}"
+  end
 
   defp graph_counts_line(graph_counts) do
     [:decisions, :questions, :contradictions, :duplicates, :stale, :total]
@@ -597,12 +602,6 @@ defmodule JidoHiveConsole.Projection do
       "" -> "0 total"
       line -> line
     end
-  end
-
-  defp format_blocker(blocker) when is_map(blocker) do
-    kind = Map.get(blocker, :kind) || Map.get(blocker, "kind") || "blocker"
-    count = Map.get(blocker, :count) || Map.get(blocker, "count") || 1
-    "#{count} #{String.replace(to_string(kind), "_", " ")}"
   end
 
   defp humanize_count_key(key, value) do
@@ -642,8 +641,6 @@ defmodule JidoHiveConsole.Projection do
       "[in:#{length(incoming)} out:#{length(outgoing)}]"
     end
   end
-
-  defp type_prefix(object), do: "[#{String.upcase(object_type(object))}] "
 
   defp indent(depth), do: String.duplicate("  ", depth)
 

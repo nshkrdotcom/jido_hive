@@ -4,7 +4,7 @@ defmodule JidoHiveConsole.ScreenUI do
   alias ExRatatui.Layout.Rect
   alias ExRatatui.Style
   alias ExRatatui.Widgets.{Block, Paragraph, Popup}
-  alias JidoHiveConsole.Model
+  alias JidoHiveConsole.{Model, Projection}
 
   @help_footer "Enter or Esc closes this help. Ctrl+G or F1 opens it again. F2 shows debug."
   @help_scroll_banner "[More below. Up/Down or PageUp/PageDown scroll. Home/End jump.]"
@@ -312,6 +312,20 @@ defmodule JidoHiveConsole.ScreenUI do
       "Poll interval: #{state.poll_interval_ms}ms",
       latest_operation_line(state)
     ] ++
+      [
+        "",
+        "Workflow truth"
+      ] ++
+      debug_workflow_lines(state) ++
+      [
+        "",
+        "Headless reproduction"
+      ] ++
+      headless_reproduction_lines(state) ++
+      [
+        "",
+        "Runtime and transport"
+      ] ++
       runtime_debug_lines(state) ++
       transport_debug_lines(state) ++
       [
@@ -321,6 +335,51 @@ defmodule JidoHiveConsole.ScreenUI do
         "For file logging, rerun with --debug and inspect ~/.config/hive/hive_console.log.",
         "If the terminal is ever left dirty after a crash, run: reset"
       ]
+  end
+
+  defp debug_workflow_lines(state) do
+    summary = Projection.workflow_summary(state.snapshot)
+
+    [
+      "Objective: #{summary.objective}",
+      "Stage: #{summary.stage}",
+      "Next: #{summary.next_action}",
+      "Why: #{summary.reason}",
+      "Publish: #{summary.publish_state}"
+    ] ++
+      workflow_focus_debug_lines(summary.focus_queue)
+  end
+
+  defp workflow_focus_debug_lines([]), do: ["Focus: none"]
+  defp workflow_focus_debug_lines([first | _rest]), do: ["Focus: #{first}"]
+
+  defp headless_reproduction_lines(%{room_id: nil}),
+    do: ["Open a room to enable room-level reproduction commands."]
+
+  defp headless_reproduction_lines(state) do
+    base = state.api_base_url
+    room_id = state.room_id
+
+    [
+      "./jido_hive_client room workflow --api-base-url #{base} --room-id #{room_id}",
+      "./jido_hive_client room focus --api-base-url #{base} --room-id #{room_id}",
+      "./jido_hive_client room inspect --api-base-url #{base} --room-id #{room_id}",
+      "./jido_hive_client room publish-plan --api-base-url #{base} --room-id #{room_id}"
+    ] ++ provenance_reproduction_line(state)
+  end
+
+  defp provenance_reproduction_line(state) do
+    case Model.selected_context(state) do
+      nil ->
+        []
+
+      context ->
+        context_id = Map.get(context, "context_id") || Map.get(context, :context_id)
+
+        [
+          "./jido_hive_client room provenance --api-base-url #{state.api_base_url} --room-id #{state.room_id} --context-id #{context_id}"
+        ]
+    end
   end
 
   defp pending_room_create_line(state) do

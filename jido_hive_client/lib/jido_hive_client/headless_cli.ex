@@ -3,7 +3,7 @@ defmodule JidoHiveClient.HeadlessCLI do
   Headless operator and session commands for scripting `jido_hive_client`.
   """
 
-  alias JidoHiveClient.{Operation, Operator, RoomSession, RoomWorkflow}
+  alias JidoHiveClient.{Operation, Operator, RoomInsight, RoomSession, RoomWorkflow}
 
   @operator_switches [
     api_base_url: :string,
@@ -18,6 +18,7 @@ defmodule JidoHiveClient.HeadlessCLI do
     install_id: :string,
     operation_id: :string,
     access_token: :string,
+    context_id: :string,
     left: :string,
     right: :string,
     text: :string,
@@ -72,7 +73,11 @@ defmodule JidoHiveClient.HeadlessCLI do
   defp normalize_argv(["room", "show" | rest]), do: ["operator", "room", "get" | rest]
   defp normalize_argv(["room", "get" | rest]), do: ["operator", "room", "get" | rest]
   defp normalize_argv(["room", "workflow" | rest]), do: ["operator", "room", "workflow" | rest]
+  defp normalize_argv(["room", "focus" | rest]), do: ["operator", "room", "focus" | rest]
   defp normalize_argv(["room", "inspect" | rest]), do: ["operator", "room", "inspect" | rest]
+
+  defp normalize_argv(["room", "provenance" | rest]),
+    do: ["operator", "room", "provenance" | rest]
 
   defp normalize_argv(["room", "publish-plan" | rest]),
     do: ["operator", "room", "publish-plan" | rest]
@@ -137,11 +142,13 @@ defmodule JidoHiveClient.HeadlessCLI do
          {:ok, room_id} <- required_option(parsed, :room_id),
          {:ok, sync_result} <-
            operator_module.fetch_room_sync(api_base_url, room_id, after: parsed[:after]) do
+      snapshot = hydrate_sync_snapshot(sync_result)
+
       {:ok,
        normalize_output(%{
          room_id: room_id,
-         status: Map.get(sync_result.room_snapshot, "status"),
-         workflow_summary: RoomWorkflow.summary(sync_result.room_snapshot)
+         status: Map.get(snapshot, "status"),
+         workflow_summary: RoomWorkflow.summary(snapshot)
        })}
     end
   end
@@ -152,7 +159,51 @@ defmodule JidoHiveClient.HeadlessCLI do
          {:ok, room_id} <- required_option(parsed, :room_id),
          {:ok, sync_result} <-
            operator_module.fetch_room_sync(api_base_url, room_id, after: parsed[:after]) do
-      {:ok, normalize_output(RoomWorkflow.inspect_sync(sync_result))}
+      snapshot = hydrate_sync_snapshot(sync_result)
+
+      {:ok,
+       normalize_output(
+         Map.put(
+           RoomWorkflow.inspect_sync(%{sync_result | room_snapshot: snapshot}),
+           :control_plane,
+           RoomInsight.control_plane(snapshot)
+         )
+       )}
+    end
+  end
+
+  defp dispatch_operator(["room", "focus" | rest], config, operator_module) do
+    with {:ok, parsed} <- parse_command_opts(rest, @operator_switches),
+         api_base_url <- api_base_url(parsed, config),
+         {:ok, room_id} <- required_option(parsed, :room_id),
+         {:ok, sync_result} <-
+           operator_module.fetch_room_sync(api_base_url, room_id, after: parsed[:after]) do
+      snapshot = hydrate_sync_snapshot(sync_result)
+
+      {:ok,
+       normalize_output(%{
+         room_id: room_id,
+         status: Map.get(snapshot, "status"),
+         control_plane: RoomInsight.control_plane(snapshot)
+       })}
+    end
+  end
+
+  defp dispatch_operator(["room", "provenance" | rest], config, operator_module) do
+    with {:ok, parsed} <- parse_command_opts(rest, @operator_switches),
+         api_base_url <- api_base_url(parsed, config),
+         {:ok, room_id} <- required_option(parsed, :room_id),
+         {:ok, context_id} <- required_option(parsed, :context_id),
+         {:ok, sync_result} <-
+           operator_module.fetch_room_sync(api_base_url, room_id, after: parsed[:after]),
+         snapshot = hydrate_sync_snapshot(sync_result),
+         {:ok, provenance} <- RoomInsight.provenance_trace(snapshot, context_id) do
+      {:ok,
+       normalize_output(%{
+         room_id: room_id,
+         status: Map.get(snapshot, "status"),
+         provenance: provenance
+       })}
     end
   end
 
@@ -508,6 +559,15 @@ defmodule JidoHiveClient.HeadlessCLI do
     end
   end
 
+  defp hydrate_sync_snapshot(%{room_snapshot: room_snapshot} = sync_result)
+       when is_map(room_snapshot) do
+    room_snapshot
+    |> Map.put("context_objects", Map.get(sync_result, :context_objects, []))
+    |> Map.put("operations", Map.get(sync_result, :operations, []))
+  end
+
+  defp hydrate_sync_snapshot(_sync_result), do: %{}
+
   defp normalize_output(value) when is_map(value) do
     Map.new(value, fn {key, nested} ->
       {to_string(key), normalize_output(nested)}
@@ -515,6 +575,8 @@ defmodule JidoHiveClient.HeadlessCLI do
   end
 
   defp normalize_output(value) when is_list(value), do: Enum.map(value, &normalize_output/1)
+  defp normalize_output(nil), do: nil
+  defp normalize_output(value) when is_boolean(value), do: value
   defp normalize_output(value) when is_atom(value), do: Atom.to_string(value)
   defp normalize_output(value), do: value
 

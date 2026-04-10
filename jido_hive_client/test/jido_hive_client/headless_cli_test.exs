@@ -34,13 +34,47 @@ defmodule JidoHiveClient.HeadlessCLITest do
              "blockers" => [%{"kind" => "contradiction", "count" => 2}],
              "publish_ready" => false,
              "publish_blockers" => ["Open contradictions remain"],
-             "graph_counts" => %{"duplicates" => 1},
-             "focus_candidates" => [%{"kind" => "contradiction", "context_id" => "ctx-4"}]
+             "graph_counts" => %{
+               "duplicates" => 1,
+               "contradictions" => 1,
+               "decisions" => 1,
+               "stale" => 0,
+               "total" => 3
+             },
+             "focus_candidates" => [
+               %{"kind" => "contradiction", "context_id" => "ctx-4"},
+               %{"kind" => "duplicate_cluster", "context_id" => "ctx-1", "duplicate_count" => 1}
+             ]
            }
          },
          entries: [%{"event_id" => "evt-3"}],
          next_cursor: "evt-3",
-         context_objects: [%{"context_id" => "ctx-1"}],
+         context_objects: [
+           %{
+             "context_id" => "ctx-1",
+             "object_type" => "belief",
+             "title" => "Redis timeout",
+             "derived" => %{
+               "duplicate_status" => "canonical",
+               "duplicate_size" => 2,
+               "duplicate_context_ids" => ["ctx-1", "ctx-2"],
+               "canonical_context_id" => "ctx-1"
+             },
+             "relations" => [%{"relation" => "derives_from", "target_id" => "ctx-9"}]
+           },
+           %{
+             "context_id" => "ctx-4",
+             "object_type" => "contradiction",
+             "title" => "Redis is healthy",
+             "relations" => [%{"relation" => "references", "target_id" => "ctx-1"}]
+           },
+           %{
+             "context_id" => "ctx-9",
+             "object_type" => "evidence",
+             "title" => "Grafana latency chart",
+             "relations" => []
+           }
+         ],
          operations: [%{"operation_id" => "room_run-1", "status" => "running"}]
        }}
     end
@@ -206,11 +240,14 @@ defmodule JidoHiveClient.HeadlessCLITest do
             %{
               "room_id" => "room-1",
               "status" => "running",
+              "control_plane" => %{
+                "reason" => "Open contradictions remain"
+              },
               "workflow_summary" => %{
                 "stage" => "Resolve contradictions"
               },
               "entries" => [%{"event_id" => "evt-3"}],
-              "context_objects" => [%{"context_id" => "ctx-1"}],
+              "context_objects" => [%{"context_id" => "ctx-1"} | _rest],
               "operations" => [%{"operation_id" => "room_run-1", "status" => "running"}],
               "next_cursor" => "evt-3"
             }} =
@@ -229,6 +266,80 @@ defmodule JidoHiveClient.HeadlessCLITest do
              )
 
     assert_receive {:fetch_room_sync, "evt-2"}
+  end
+
+  test "operator room focus returns the shared control-plane digest" do
+    assert {:ok,
+            %{
+              "room_id" => "room-1",
+              "status" => "running",
+              "control_plane" => %{
+                "stage" => "Resolve contradictions",
+                "reason" => "Open contradictions remain",
+                "focus_queue" => [
+                  %{
+                    "kind" => "contradiction",
+                    "context_id" => "ctx-4",
+                    "action" => "Open conflict resolution"
+                  },
+                  %{
+                    "kind" => "duplicate_cluster",
+                    "context_id" => "ctx-1",
+                    "action" => "Review the canonical entry before accepting or publishing"
+                  }
+                ]
+              }
+            }} =
+             HeadlessCLI.dispatch(
+               [
+                 "room",
+                 "focus",
+                 "--api-base-url",
+                 "https://example.com/api",
+                 "--room-id",
+                 "room-1"
+               ],
+               operator_module: OperatorStub
+             )
+
+    assert_receive {:fetch_room_sync, nil}
+  end
+
+  test "operator room provenance returns the shared provenance trace for a context object" do
+    assert {:ok,
+            %{
+              "room_id" => "room-1",
+              "status" => "running",
+              "provenance" => %{
+                "context_id" => "ctx-4",
+                "title" => "Redis is healthy",
+                "recommended_actions" => [
+                  %{"label" => "Open conflict resolution", "shortcut" => "Enter"},
+                  %{"label" => "Inspect provenance", "shortcut" => "Ctrl+E"},
+                  %{"label" => "Accept selected object", "shortcut" => "Ctrl+A"}
+                ],
+                "trace" => [
+                  %{"context_id" => "ctx-4", "depth" => 0, "via" => nil},
+                  %{"context_id" => "ctx-1", "depth" => 1, "via" => "references"},
+                  %{"context_id" => "ctx-9", "depth" => 2, "via" => "derives_from"}
+                ]
+              }
+            }} =
+             HeadlessCLI.dispatch(
+               [
+                 "room",
+                 "provenance",
+                 "--api-base-url",
+                 "https://example.com/api",
+                 "--room-id",
+                 "room-1",
+                 "--context-id",
+                 "ctx-4"
+               ],
+               operator_module: OperatorStub
+             )
+
+    assert_receive {:fetch_room_sync, nil}
   end
 
   test "operator room publish-plan returns the canonical publication planning surface" do

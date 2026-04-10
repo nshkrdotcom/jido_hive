@@ -33,7 +33,7 @@ The console lets an operator:
 
 - browse saved rooms from the lobby
 - create new rooms from the wizard
-- inspect room context, events, and publication readiness
+- inspect workflow truth, focus queue, room context, events, and publication readiness
 - submit human chat into a room as tracked operations
 - inspect provenance and accept selected context
 - publish room output to GitHub and Notion through server-backed connections
@@ -44,6 +44,12 @@ What it does not do:
 - own connector truth
 - hide client transport semantics inside view code
 - remain the only executable path for operator actions
+
+The intended framing is:
+
+- this is an operator control plane over server-owned room truth
+- the room screen answers what stage the room is in, what needs review now, and what the operator should do next
+- provenance and telemetry are available on demand, but they are not the primary workflow surface
 
 ## Quick start
 
@@ -123,7 +129,7 @@ Use this order if you are onboarding from zero:
 ### Global
 
 - `Ctrl+Q`: quit the console
-- `Ctrl+C`: emergency quit path
+- `Ctrl+C`: clear the active draft when you are typing; otherwise quit
 - `Ctrl+G` or `F1`: open the current screen guide
 - `F2`: open the debug popup
 - `Enter` or `Esc` on guide dialogs: close the guide
@@ -140,10 +146,17 @@ Use this order if you are onboarding from zero:
 
 - type directly into the draft box
 - `Enter`: submit chat or open a selected conflict
-- `Ctrl+E`: open provenance / evidence details
+- `Ctrl+E`: trace why the selected object exists
 - `Ctrl+A`: accept the selected context object
 - `Ctrl+P`: open publish
 - `Ctrl+B`: back to lobby
+
+Room workflow is now intentionally layered:
+
+- the Workflow pane is the primary next-step guide
+- the Shared Graph pane is the shared reasoning artifact
+- the Selected Review pane explains one object and what action is available on it
+- `F2` is the secondary diagnostics surface for runtime and transport details
 
 Room submit and room run are now operation-based:
 
@@ -172,7 +185,9 @@ Use this order every time. It is how you separate UI bugs from client bugs.
    - `cd ../../jido_hive_client`
    - `./jido_hive_client room show --api-base-url https://jido-hive-server-test.app.nsai.online/api --room-id <room-id>`
    - `./jido_hive_client room workflow --api-base-url https://jido-hive-server-test.app.nsai.online/api --room-id <room-id>`
+   - `./jido_hive_client room focus --api-base-url https://jido-hive-server-test.app.nsai.online/api --room-id <room-id>`
    - `./jido_hive_client room inspect --api-base-url https://jido-hive-server-test.app.nsai.online/api --room-id <room-id>`
+   - `./jido_hive_client room provenance --api-base-url https://jido-hive-server-test.app.nsai.online/api --room-id <room-id> --context-id <context-id>`
    - `./jido_hive_client room tail --api-base-url https://jido-hive-server-test.app.nsai.online/api --room-id <room-id>`
    - `./jido_hive_client room publish-plan --api-base-url https://jido-hive-server-test.app.nsai.online/api --room-id <room-id>`
    - `./jido_hive_client room submit --api-base-url https://jido-hive-server-test.app.nsai.online/api --room-id <room-id> --participant-id alice --text "hello"`
@@ -375,10 +390,22 @@ mix escript.build
 ./jido_hive_client room workflow --api-base-url https://jido-hive-server-test.app.nsai.online/api --room-id <room-id>
 ```
 
+### Show the room control-plane digest and focus queue
+
+```bash
+./jido_hive_client room focus --api-base-url https://jido-hive-server-test.app.nsai.online/api --room-id <room-id>
+```
+
 ### Inspect the consolidated room sync surface
 
 ```bash
 ./jido_hive_client room inspect --api-base-url https://jido-hive-server-test.app.nsai.online/api --room-id <room-id>
+```
+
+### Trace provenance for one context object
+
+```bash
+./jido_hive_client room provenance --api-base-url https://jido-hive-server-test.app.nsai.online/api --room-id <room-id> --context-id <context-id>
 ```
 
 ### Tail room timeline
