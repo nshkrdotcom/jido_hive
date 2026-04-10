@@ -34,7 +34,11 @@ defmodule JidoHiveConsole.ScreenUITest do
     state =
       Model.new([])
       |> Map.put(:status_line, "Submitting chat message... op=room_submit-1")
-      |> Map.put(:pending_room_submit, %{room_id: "room-1", text: "hello", operation_id: "room_submit-1"})
+      |> Map.put(:pending_room_submit, %{
+        room_id: "room-1",
+        text: "hello",
+        operation_id: "room_submit-1"
+      })
 
     first = ScreenUI.status_text(state, 0)
     second = ScreenUI.status_text(state, 500)
@@ -50,17 +54,49 @@ defmodule JidoHiveConsole.ScreenUITest do
     first =
       Model.new([])
       |> Map.put(:status_line, "Submitting chat message... op=room_submit-1")
-      |> Map.put(:pending_room_submit, %{room_id: "room-1", text: "hello", operation_id: "room_submit-1"})
+      |> Map.put(:pending_room_submit, %{
+        room_id: "room-1",
+        text: "hello",
+        operation_id: "room_submit-1"
+      })
       |> Map.put(:status_animation_tick, 0)
       |> ScreenUI.status_text()
 
     second =
       Model.new([])
       |> Map.put(:status_line, "Submitting chat message... op=room_submit-1")
-      |> Map.put(:pending_room_submit, %{room_id: "room-1", text: "hello", operation_id: "room_submit-1"})
+      |> Map.put(:pending_room_submit, %{
+        room_id: "room-1",
+        text: "hello",
+        operation_id: "room_submit-1"
+      })
       |> Map.put(:status_animation_tick, 1)
       |> ScreenUI.status_text()
 
     refute first == second
+  end
+
+  test "debug popup includes runtime snapshot details when available" do
+    state =
+      Model.new([])
+      |> Map.put(:debug_visible, true)
+      |> Map.put(:runtime_snapshot, %{
+        mode: :reducer,
+        render_count: 7,
+        active_async_commands: 1,
+        trace_enabled?: true,
+        trace_events: [%{kind: :message, details: %{source: :info}}],
+        subscription_count: 1,
+        subscriptions: [%{id: :poll, kind: :interval, interval_ms: 1_000, active?: true}]
+      })
+
+    assert [
+             {%Popup{content: %Paragraph{text: text}}, %Rect{width: 120, height: 24}}
+           ] = ScreenUI.help_popup_widgets(%{width: 120, height: 24}, state, "Guide", [])
+
+    assert text =~ "Runtime: mode=reducer renders=7 async=1"
+    assert text =~ "Runtime trace: enabled=true events=1"
+    assert text =~ "sub poll: interval 1000ms active=true"
+    assert text =~ "trace message: source=info"
   end
 end

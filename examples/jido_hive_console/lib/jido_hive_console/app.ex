@@ -1,24 +1,23 @@
 defmodule JidoHiveConsole.App do
   @moduledoc false
 
-  use ExRatatui.App
+  use ExRatatui.App, runtime: :reducer
   require Logger
 
-  alias ExRatatui.{Event, Frame}
+  alias ExRatatui.{Command, Event, Frame, Runtime, Subscription}
   alias JidoHiveConsole.{Identity, Model, Nav, Projection}
   alias JidoHiveConsole.Screens.{Conflict, Lobby, Publish, Room, Wizard}
 
   @impl true
-  def mount(opts) do
-    {state, effects} = init(opts)
+  def init(opts) do
+    {state, effects} = initialize(opts)
     state = state |> ensure_input_refs() |> sync_input_widgets()
 
     Logger.info(
       "console mounted screen=#{state.active_screen} room_id=#{state.room_id || "none"} participant_id=#{state.participant_id} api_base_url=#{state.api_base_url}"
     )
 
-    :ok = schedule_effects(effects)
-    {:ok, state}
+    {:ok, state, commands: effect_commands(state, effects)}
   end
 
   @impl true
@@ -27,32 +26,17 @@ defmodule JidoHiveConsole.App do
   end
 
   @impl true
-  def handle_event(%Event.Resize{width: width, height: height}, state) do
-    dispatch_update({:resize, width, height}, state)
-  end
+  def subscriptions(state) do
+    poll = [Subscription.interval(:poll, state.poll_interval_ms, :poll)]
 
-  def handle_event(%Event.Key{kind: "press"} = event, state) do
-    case event_to_msg(event, state) do
-      :ignore -> {:noreply, state}
-      {:msg, msg} -> dispatch_update(msg, state)
-    end
-  end
+    animation =
+      if is_nil(state.pending_room_submit) do
+        []
+      else
+        [Subscription.interval(:status_animation_tick, 125, :status_animation_tick)]
+      end
 
-  def handle_event(_event, state), do: {:noreply, state}
-
-  @impl true
-  def handle_info(:poll, state) do
-    dispatch_update(:poll, state)
-  end
-
-  def handle_info(msg, state) do
-    {next_state, effects} = handle_message(msg, state)
-    next_state = sync_input_widgets(next_state)
-
-    case apply_effects(next_state, effects) do
-      {:stop, final_state} -> {:stop, final_state}
-      {:continue, final_state} -> {:noreply, final_state}
-    end
+    poll ++ animation
   end
 
   @impl true
@@ -61,8 +45,8 @@ defmodule JidoHiveConsole.App do
     :ok
   end
 
-  @spec init(keyword()) :: {Model.t(), [term()]}
-  def init(opts) do
+  @spec initialize(keyword()) :: {Model.t(), [term()]}
+  def initialize(opts) do
     route = Keyword.get(opts, :route, {:lobby, %{}})
     state = Model.new(opts) |> ensure_input_refs()
 
@@ -101,12 +85,33 @@ defmodule JidoHiveConsole.App do
 
   def event_to_msg(_event, _state), do: :ignore
 
-  @spec update(term(), Model.t()) :: {Model.t(), [term()]}
+  @impl true
+  def update({:event, %Event.Resize{width: width, height: height}}, state) do
+    runtime_reply(update({:resize, width, height}, state))
+  end
+
+  def update({:event, %Event.Key{kind: "press"} = event}, state) do
+    case event_to_msg(event, state) do
+      :ignore -> {:noreply, state}
+      {:msg, msg} -> runtime_reply(update(msg, state))
+    end
+  end
+
+  def update({:event, _event}, state), do: {:noreply, state}
+
+  def update({:info, msg}, state) do
+    runtime_reply(update(msg, state))
+  end
+
   def update(:quit, state), do: {state, [:quit]}
   def update(:show_help, state), do: {Model.show_help(state), []}
   def update(:dismiss_help, state), do: {Model.dismiss_help(state), []}
-  def update(:show_debug, state), do: {Model.show_debug(state), []}
-  def update(:dismiss_debug, state), do: {Model.dismiss_debug(state), []}
+
+  def update(:show_debug, state),
+    do: {Model.show_debug(state), [{:set_runtime_trace, true}, :refresh_runtime_snapshot]}
+
+  def update(:dismiss_debug, state),
+    do: {Model.dismiss_debug(state), [{:set_runtime_trace, false}]}
 
   def update(:toggle_help, state) do
     next_state =
@@ -116,10 +121,11 @@ defmodule JidoHiveConsole.App do
   end
 
   def update(:toggle_debug, state) do
-    next_state =
-      if(state.debug_visible, do: Model.dismiss_debug(state), else: Model.show_debug(state))
-
-    {next_state, []}
+    if state.debug_visible do
+      {Model.dismiss_debug(state), [{:set_runtime_trace, false}]}
+    else
+      {Model.show_debug(state), [{:set_runtime_trace, true}, :refresh_runtime_snapshot]}
+    end
   end
 
   def update({:resize, width, height}, state) do
@@ -127,6 +133,8 @@ defmodule JidoHiveConsole.App do
   end
 
   def update(:poll, state) do
+    debug_effects = if state.debug_visible, do: [:refresh_runtime_snapshot], else: []
+
     {next_state, extra_effects} =
       cond do
         state.active_screen in [:room, :conflict, :publish] ->
@@ -142,7 +150,7 @@ defmodule JidoHiveConsole.App do
           {state, []}
       end
 
-    {next_state, [{:timer, state.poll_interval_ms, :poll} | extra_effects]}
+    {next_state, [{:timer, state.poll_interval_ms, :poll} | extra_effects ++ debug_effects]}
   end
 
   def update(:status_animation_tick, %{pending_room_submit: nil} = state) do
@@ -153,6 +161,13 @@ defmodule JidoHiveConsole.App do
     next_state = %{state | status_animation_tick: state.status_animation_tick + 1}
     {next_state, [{:timer, 125, :status_animation_tick}]}
   end
+
+  def update({:runtime_snapshot, snapshot}, state) when is_map(snapshot) do
+    {%{state | runtime_snapshot: snapshot}, []}
+  end
+
+  def update({:runtime_trace_result, _enabled?, :ok}, state), do: {state, []}
+  def update({:runtime_trace_result, _enabled?, _result}, state), do: {state, []}
 
   def update(:lobby_prev, state), do: {Model.move_lobby_cursor(state, -1), []}
   def update(:lobby_next, state), do: {Model.move_lobby_cursor(state, 1), []}
@@ -587,27 +602,33 @@ defmodule JidoHiveConsole.App do
 
   def update(:wizard_enter, state) do
     case state.wizard_step do
-      0 -> wizard_submit_brief(state)
-      1 -> wizard_submit_policy(state)
+      0 ->
+        wizard_submit_brief(state)
+
+      1 ->
+        wizard_submit_policy(state)
+
       2 ->
         {%{state | wizard_step: 3, wizard_cursor: 0, wizard_targets_state: :loading},
          [{:timer, 0, :fetch_wizard_targets}]}
 
-      3 -> wizard_submit_workers(state)
-      4 -> wizard_create_room(state)
-      _other -> {state, []}
+      3 ->
+        wizard_submit_workers(state)
+
+      4 ->
+        wizard_create_room(state)
+
+      _other ->
+        {state, []}
     end
   end
 
-  def update(_message, state), do: {state, []}
-
-  @spec handle_message(term(), Model.t()) :: {Model.t(), [term()]}
-  def handle_message({:fetch_room, _room_id}, %{active_screen: screen} = state)
+  def update({:fetch_room, _room_id}, %{active_screen: screen} = state)
       when screen != :lobby do
     {state, []}
   end
 
-  def handle_message({:fetch_room, room_id}, state) do
+  def update({:fetch_room, room_id}, state) do
     next_state =
       case state.operator_module.fetch_room(state.api_base_url, room_id, lane: :lobby_hydrate) do
         {:ok, snapshot} ->
@@ -623,7 +644,7 @@ defmodule JidoHiveConsole.App do
     {next_state, []}
   end
 
-  def handle_message({:room_session_snapshot, room_id, snapshot}, %{room_id: room_id} = state) do
+  def update({:room_session_snapshot, room_id, snapshot}, %{room_id: room_id} = state) do
     next_state =
       if stale_placeholder_room_snapshot?(state.snapshot, snapshot) do
         state
@@ -636,9 +657,9 @@ defmodule JidoHiveConsole.App do
     {next_state, []}
   end
 
-  def handle_message({:room_session_snapshot, _room_id, _snapshot}, state), do: {state, []}
+  def update({:room_session_snapshot, _room_id, _snapshot}, state), do: {state, []}
 
-  def handle_message(
+  def update(
         {:room_submit_accepted, room_id, text, operation_id, {:ok, _operation}},
         state
       ) do
@@ -658,7 +679,7 @@ defmodule JidoHiveConsole.App do
     {next_state, []}
   end
 
-  def handle_message(
+  def update(
         {:room_submit_accepted, room_id, text, operation_id, {:error, reason}},
         state
       ) do
@@ -674,7 +695,7 @@ defmodule JidoHiveConsole.App do
     {next_state, []}
   end
 
-  def handle_message(:fetch_wizard_targets, state) do
+  def update(:fetch_wizard_targets, state) do
     next_state =
       case state.operator_module.list_targets(state.api_base_url) do
         {:ok, targets} ->
@@ -693,7 +714,7 @@ defmodule JidoHiveConsole.App do
     {next_state, []}
   end
 
-  def handle_message(:fetch_wizard_policies, state) do
+  def update(:fetch_wizard_policies, state) do
     next_state =
       case state.operator_module.list_policies(state.api_base_url) do
         {:ok, policies} ->
@@ -712,7 +733,7 @@ defmodule JidoHiveConsole.App do
     {next_state, []}
   end
 
-  def handle_message(:fetch_publication_plan, state) do
+  def update(:fetch_publication_plan, state) do
     next_state =
       case state.operator_module.fetch_publication_plan(state.api_base_url, state.room_id) do
         {:ok, plan} ->
@@ -725,18 +746,21 @@ defmodule JidoHiveConsole.App do
     {next_state, []}
   end
 
-  def handle_message(:refresh_auth_state, state) do
+  def update(:refresh_auth_state, state) do
     auth_state = state.operator_module.load_auth_state(state.api_base_url, state.participant_id)
 
     {%{state | publish_auth_state: auth_state}, []}
   end
 
-  def handle_message({:room_submit_result, room_id, text, {:ok, _contribution}}, state) do
+  def update({:room_submit_result, room_id, text, {:ok, _contribution}}, state) do
     next_state =
       case state.pending_room_submit do
         %{room_id: ^room_id, text: ^text, operation_id: operation_id} ->
           state
-          |> Model.set_status("Chat submitted; syncing room transcript... op=#{operation_id}", :info)
+          |> Model.set_status(
+            "Chat submitted; syncing room transcript... op=#{operation_id}",
+            :info
+          )
           |> refresh_room_state()
           |> reconcile_pending_room_submit()
 
@@ -747,7 +771,7 @@ defmodule JidoHiveConsole.App do
     {next_state, []}
   end
 
-  def handle_message({:room_submit_result, room_id, text, {:error, reason}}, state) do
+  def update({:room_submit_result, room_id, text, {:error, reason}}, state) do
     next_state =
       case state.pending_room_submit do
         %{room_id: ^room_id, text: ^text} ->
@@ -760,27 +784,30 @@ defmodule JidoHiveConsole.App do
     {next_state, []}
   end
 
-  def handle_message({:wizard_create_result, room_id, {:ok, _response}}, state) do
-    next_state =
+  def update({:wizard_create_result, room_id, {:ok, _response}}, state) do
+    {next_state, effects} =
       case state.pending_room_create do
         %{room_id: ^room_id} ->
-          state
-          |> Map.put(:pending_room_create, nil)
-          |> Nav.transition(:room, room_id: room_id, app_pid: self())
-          |> Model.set_status("Created room #{room_id}; run started in background", :info)
+          refreshed_state =
+            state
+            |> Map.put(:pending_room_create, nil)
+            |> Nav.transition(:room, room_id: room_id, app_pid: self())
+            |> Model.set_status("Created room #{room_id}; run started in background", :info)
+
+          if refreshed_state.room_id == room_id do
+            {refreshed_state, [{:start_room_run, room_id}]}
+          else
+            {refreshed_state, []}
+          end
 
         _other ->
-          state
+          {state, []}
       end
 
-    if next_state.room_id == room_id do
-      start_room_run_async(next_state, room_id)
-    end
-
-    {next_state, []}
+    {next_state, effects}
   end
 
-  def handle_message(
+  def update(
         {:room_run_operation_started, room_id, client_operation_id, {:ok, operation}},
         state
       ) do
@@ -812,7 +839,7 @@ defmodule JidoHiveConsole.App do
     {next_state, []}
   end
 
-  def handle_message(
+  def update(
         {:room_run_operation_started, room_id, client_operation_id, {:error, reason}},
         state
       ) do
@@ -830,7 +857,7 @@ defmodule JidoHiveConsole.App do
     {next_state, []}
   end
 
-  def handle_message({:wizard_create_result, room_id, {:error, reason}}, state) do
+  def update({:wizard_create_result, room_id, {:error, reason}}, state) do
     next_state =
       case state.pending_room_create do
         %{room_id: ^room_id} ->
@@ -845,7 +872,7 @@ defmodule JidoHiveConsole.App do
     {next_state, []}
   end
 
-  def handle_message({:run_room_result, room_id, _operation_id, {:ok, _snapshot}}, state) do
+  def update({:run_room_result, room_id, _operation_id, {:ok, _snapshot}}, state) do
     next_state =
       if state.room_id == room_id do
         state |> Nav.refresh_room_snapshot() |> Model.set_status("Room run completed", :info)
@@ -856,7 +883,7 @@ defmodule JidoHiveConsole.App do
     {next_state, []}
   end
 
-  def handle_message(
+  def update(
         {:run_room_result, room_id, operation_id, {:error, {:timeout, metadata}}},
         state
       ) do
@@ -872,7 +899,7 @@ defmodule JidoHiveConsole.App do
     {next_state, []}
   end
 
-  def handle_message({:run_room_result, room_id, _operation_id, {:error, reason}}, state) do
+  def update({:run_room_result, room_id, _operation_id, {:error, reason}}, state) do
     next_state =
       if state.room_id == room_id do
         Model.set_status(state, "Room run failed: #{inspect(reason)}", :error)
@@ -883,7 +910,7 @@ defmodule JidoHiveConsole.App do
     {next_state, []}
   end
 
-  def handle_message({:event_log_update, entries, cursor}, state) do
+  def update({:event_log_update, entries, cursor}, state) do
     next_state =
       state
       |> maybe_refresh_room_state_from_event_log(entries)
@@ -896,7 +923,7 @@ defmodule JidoHiveConsole.App do
     {next_state, []}
   end
 
-  def handle_message({:event_log_warning, reason}, state)
+  def update({:event_log_warning, reason}, state)
       when reason in [:not_found, :room_not_found] do
     {Model.set_status(
        state,
@@ -905,11 +932,11 @@ defmodule JidoHiveConsole.App do
      ), []}
   end
 
-  def handle_message({:event_log_warning, reason}, state) do
+  def update({:event_log_warning, reason}, state) do
     {Model.set_status(state, "Event log warning: #{inspect(reason)}", :warn), []}
   end
 
-  def handle_message({:EXIT, pid, reason}, state) do
+  def update({:EXIT, pid, reason}, state) do
     cond do
       pid == state.event_log_poller_pid and reason in [:normal, :shutdown] ->
         {%{state | event_log_poller_pid: nil}, []}
@@ -922,7 +949,7 @@ defmodule JidoHiveConsole.App do
     end
   end
 
-  def handle_message(_msg, state), do: {state, []}
+  def update(_msg, state), do: {state, []}
 
   defp stale_placeholder_room_snapshot?(current_snapshot, incoming_snapshot) do
     authoritative_room_snapshot?(current_snapshot) and
@@ -1126,78 +1153,6 @@ defmodule JidoHiveConsole.App do
     do: Model.set_status(state, "No policies available on this server", :warn)
 
   defp maybe_set_empty_policy_warning(state, _policies), do: state
-
-  defp start_room_run_async(state, room_id) do
-    caller = self()
-    operator_module = state.operator_module
-    api_base_url = state.api_base_url
-    client_operation_id = JidoHiveClient.Operation.new_id("room_run")
-
-    spawn(fn ->
-      result =
-        safe_async_result(fn ->
-          operator_module.start_room_run_operation(api_base_url, room_id,
-            assignment_timeout_ms: 180_000,
-            client_operation_id: client_operation_id,
-            operation_id: client_operation_id
-          )
-        end)
-
-      log_room_run_start(client_operation_id, room_id, state.participant_id, result)
-
-      send(caller, {:room_run_operation_started, room_id, client_operation_id, result})
-    end)
-
-    :ok
-  end
-
-  defp start_room_create_async(state, room_id, payload) do
-    caller = self()
-    operator_module = state.operator_module
-    api_base_url = state.api_base_url
-    operation_id = JidoHiveClient.Operation.new_id("room_create")
-
-    spawn(fn ->
-      result =
-        safe_async_result(fn ->
-          create_room_and_store_config(operator_module, api_base_url, room_id, payload)
-        end)
-
-      log_async_operation(operation_id, "room create", room_id, state.participant_id, result)
-
-      send(caller, {:wizard_create_result, room_id, result})
-    end)
-
-    :ok
-  end
-
-  defp start_room_submit_async(state, room_id, text, operation_id, submit_attrs) do
-    caller = self()
-    embedded_module = state.embedded_module
-    embedded = state.embedded
-
-    spawn(fn ->
-      result =
-        safe_async_result(fn ->
-          embedded_module.submit_chat_async(
-            embedded,
-            Map.put(submit_attrs, :operation_id, operation_id)
-          )
-        end)
-
-      log_async_operation(
-        operation_id,
-        "room chat submit accepted",
-        room_id,
-        state.participant_id,
-        result
-      )
-
-      send(caller, {:room_submit_accepted, room_id, text, operation_id, result})
-    end)
-
-    :ok
-  end
 
   defp create_room_and_store_config(operator_module, api_base_url, room_id, payload) do
     with {:ok, response} <- operator_module.create_room(api_base_url, payload),
@@ -1423,16 +1378,6 @@ defmodule JidoHiveConsole.App do
       get_in(object, [:authored_by, :participant_id])
   end
 
-  defp safe_async_result(fun) when is_function(fun, 0) do
-    fun.()
-  rescue
-    exception ->
-      {:error, {:exception, Exception.message(exception)}}
-  catch
-    :exit, reason -> {:error, {:exit, reason}}
-    kind, reason -> {:error, {kind, reason}}
-  end
-
   defp log_async_operation(operation_id, label, room_id, participant_id, {:ok, _result}) do
     Logger.info(
       "#{label} completed operation_id=#{operation_id} room_id=#{room_id} participant_id=#{participant_id}"
@@ -1538,47 +1483,141 @@ defmodule JidoHiveConsole.App do
     Map.update(bindings, channel, %{field => value}, &Map.put(&1, field, value))
   end
 
-  defp dispatch_update(msg, state) do
-    {next_state, effects} = update(msg, state)
+  defp runtime_reply({next_state, effects}) do
     next_state = sync_input_widgets(next_state)
+    {stop?, commands} = normalize_effects(next_state, effects)
 
-    case apply_effects(next_state, effects) do
-      {:stop, final_state} -> {:stop, final_state}
-      {:continue, final_state} -> {:noreply, final_state}
+    if stop? do
+      {:stop, next_state, commands: commands}
+    else
+      {:noreply, next_state, commands: commands}
     end
   end
 
-  defp apply_effects(state, effects) do
-    Enum.reduce_while(effects, {:continue, state}, fn effect, {:continue, current_state} ->
-      case effect do
-        {:timer, timeout_ms, message} ->
-          Process.send_after(self(), message, timeout_ms)
-          {:cont, {:continue, current_state}}
+  defp effect_commands(state, effects) do
+    {_stop?, commands} = normalize_effects(state, effects)
+    commands
+  end
 
-        {:wizard_create_room, room_id, payload} ->
-          start_room_create_async(current_state, room_id, payload)
-          {:cont, {:continue, current_state}}
-
-        {:submit_room_chat, room_id, text, operation_id, submit_attrs} ->
-          start_room_submit_async(current_state, room_id, text, operation_id, submit_attrs)
-          {:cont, {:continue, current_state}}
-
-        :quit ->
-          {:halt, {:stop, current_state}}
-
-        _other ->
-          {:cont, {:continue, current_state}}
-      end
+  defp normalize_effects(state, effects) do
+    Enum.reduce(effects, {false, []}, fn effect, {stop?, commands} ->
+      {effect_stop?, effect_commands} = effect_to_commands(effect, state, self())
+      {stop? or effect_stop?, commands ++ effect_commands}
     end)
   end
 
-  defp schedule_effects(effects) do
-    Enum.each(effects, fn
-      {:timer, timeout_ms, message} -> Process.send_after(self(), message, timeout_ms)
-      _other -> :ok
-    end)
+  defp effect_to_commands(:quit, _state, _app_pid), do: {true, []}
 
-    :ok
+  defp effect_to_commands({:timer, 0, message}, _state, _app_pid),
+    do: {false, [Command.message(message)]}
+
+  defp effect_to_commands({:timer, timeout_ms, :poll}, %{poll_interval_ms: timeout_ms}, _app_pid),
+    do: {false, []}
+
+  defp effect_to_commands({:timer, 125, :status_animation_tick}, _state, _app_pid),
+    do: {false, []}
+
+  defp effect_to_commands({:timer, timeout_ms, message}, _state, _app_pid),
+    do: {false, [Command.send_after(timeout_ms, message)]}
+
+  defp effect_to_commands({:wizard_create_room, room_id, payload}, state, _app_pid),
+    do: {false, [room_create_command(state, room_id, payload)]}
+
+  defp effect_to_commands(
+         {:submit_room_chat, room_id, text, operation_id, submit_attrs},
+         state,
+         _app_pid
+       ),
+       do: {false, [room_submit_command(state, room_id, text, operation_id, submit_attrs)]}
+
+  defp effect_to_commands({:start_room_run, room_id}, state, _app_pid),
+    do: {false, [room_run_command(state, room_id)]}
+
+  defp effect_to_commands(:refresh_runtime_snapshot, _state, app_pid),
+    do: {false, [runtime_snapshot_command(app_pid)]}
+
+  defp effect_to_commands({:set_runtime_trace, enabled?}, _state, app_pid),
+    do: {false, [runtime_trace_command(app_pid, enabled?)]}
+
+  defp effect_to_commands(_effect, _state, _app_pid), do: {false, []}
+
+  defp room_run_command(state, room_id) do
+    operator_module = state.operator_module
+    api_base_url = state.api_base_url
+    client_operation_id = JidoHiveClient.Operation.new_id("room_run")
+    participant_id = state.participant_id
+
+    Command.async(
+      fn ->
+        operator_module.start_room_run_operation(api_base_url, room_id,
+          assignment_timeout_ms: 180_000,
+          client_operation_id: client_operation_id,
+          operation_id: client_operation_id
+        )
+      end,
+      fn result ->
+        log_room_run_start(client_operation_id, room_id, participant_id, result)
+        {:room_run_operation_started, room_id, client_operation_id, result}
+      end
+    )
+  end
+
+  defp room_create_command(state, room_id, payload) do
+    operator_module = state.operator_module
+    api_base_url = state.api_base_url
+    operation_id = JidoHiveClient.Operation.new_id("room_create")
+    participant_id = state.participant_id
+
+    Command.async(
+      fn -> create_room_and_store_config(operator_module, api_base_url, room_id, payload) end,
+      fn result ->
+        log_async_operation(operation_id, "room create", room_id, participant_id, result)
+        {:wizard_create_result, room_id, result}
+      end
+    )
+  end
+
+  defp room_submit_command(state, room_id, text, operation_id, submit_attrs) do
+    embedded_module = state.embedded_module
+    embedded = state.embedded
+    participant_id = state.participant_id
+
+    Command.async(
+      fn ->
+        embedded_module.submit_chat_async(
+          embedded,
+          Map.put(submit_attrs, :operation_id, operation_id)
+        )
+      end,
+      fn result ->
+        log_async_operation(
+          operation_id,
+          "room chat submit accepted",
+          room_id,
+          participant_id,
+          result
+        )
+
+        {:room_submit_accepted, room_id, text, operation_id, result}
+      end
+    )
+  end
+
+  defp runtime_snapshot_command(app_pid) when is_pid(app_pid) do
+    Command.async(fn -> Runtime.snapshot(app_pid) end, &{:runtime_snapshot, &1})
+  end
+
+  defp runtime_trace_command(app_pid, enabled?) when is_pid(app_pid) and is_boolean(enabled?) do
+    Command.async(
+      fn ->
+        if enabled? do
+          Runtime.enable_trace(app_pid, limit: 200)
+        else
+          Runtime.disable_trace(app_pid)
+        end
+      end,
+      &{:runtime_trace_result, enabled?, &1}
+    )
   end
 
   defp ensure_input_refs(%Model{} = state) do

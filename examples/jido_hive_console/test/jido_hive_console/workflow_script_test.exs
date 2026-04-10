@@ -9,55 +9,7 @@ defmodule JidoHiveConsole.WorkflowScriptTest do
 
       Agent.get_and_update(server, fn state ->
         send(state.test_pid, {:dispatch, argv})
-
-        case argv do
-          ["room", "create" | _rest] ->
-            {{:ok, %{"operation_id" => "room_create-1", "result" => %{"room_id" => state.room_id}}},
-             state}
-
-          ["room", "show" | _rest] ->
-            room =
-              %{
-                "room_id" => state.room_id,
-                "contributions" =>
-                  Enum.map(state.submitted, fn text ->
-                    %{
-                      "participant_id" => "alice",
-                      "contribution_type" => "chat",
-                      "summary" => text
-                    }
-                  end)
-              }
-
-            {{:ok, room}, state}
-
-          ["room", "submit" | rest] ->
-            text = option_value(rest, "--text")
-
-            result = %{
-              "operation_id" => "room_submit-#{length(state.submitted) + 1}",
-              "result" => %{"summary" => text}
-            }
-
-            {{:ok, result}, %{state | submitted: state.submitted ++ [text]}}
-
-          ["room", "timeline" | _rest] ->
-            entries =
-              state.submitted
-              |> Enum.with_index(1)
-              |> Enum.map(fn {text, index} ->
-                %{
-                  "kind" => "contribution.recorded",
-                  "event_id" => "evt-#{index}",
-                  "body" => text
-                }
-              end)
-
-            {{:ok, %{"entries" => entries, "next_cursor" => List.last(entries)["event_id"]}}, state}
-
-          ["room", "run" | _rest] ->
-            {{:ok, %{"operation_id" => "room_run-1", "status" => "accepted"}}, state}
-        end
+        dispatch_result(argv, state)
       end)
     end
 
@@ -67,6 +19,57 @@ defmodule JidoHiveConsole.WorkflowScriptTest do
       |> Enum.find_value(fn
         [^flag, value] -> value
         _other -> nil
+      end)
+    end
+
+    defp dispatch_result(["room", "create" | _rest], state) do
+      {{:ok, %{"operation_id" => "room_create-1", "result" => %{"room_id" => state.room_id}}},
+       state}
+    end
+
+    defp dispatch_result(["room", "show" | _rest], state) do
+      {{:ok, %{"room_id" => state.room_id, "contributions" => contributions(state)}}, state}
+    end
+
+    defp dispatch_result(["room", "submit" | rest], state) do
+      text = option_value(rest, "--text")
+
+      result = %{
+        "operation_id" => "room_submit-#{length(state.submitted) + 1}",
+        "result" => %{"summary" => text}
+      }
+
+      {{:ok, result}, %{state | submitted: state.submitted ++ [text]}}
+    end
+
+    defp dispatch_result(["room", "timeline" | _rest], state) do
+      entries = timeline_entries(state)
+      {{:ok, %{"entries" => entries, "next_cursor" => List.last(entries)["event_id"]}}, state}
+    end
+
+    defp dispatch_result(["room", "run" | _rest], state) do
+      {{:ok, %{"operation_id" => "room_run-1", "status" => "accepted"}}, state}
+    end
+
+    defp contributions(state) do
+      Enum.map(state.submitted, fn text ->
+        %{
+          "participant_id" => "alice",
+          "contribution_type" => "chat",
+          "summary" => text
+        }
+      end)
+    end
+
+    defp timeline_entries(state) do
+      state.submitted
+      |> Enum.with_index(1)
+      |> Enum.map(fn {text, index} ->
+        %{
+          "kind" => "contribution.recorded",
+          "event_id" => "evt-#{index}",
+          "body" => text
+        }
       end)
     end
   end

@@ -1,8 +1,55 @@
 defmodule JidoHiveConsole.AppTest do
   use ExUnit.Case, async: false
 
-  alias ExRatatui.Event.Key
+  alias ExRatatui.{Command, Event.Key}
   alias JidoHiveConsole.{App, Model, TestSupport}
+
+  defp noreply_state({:noreply, state}), do: state
+  defp noreply_state({:noreply, state, commands: _commands}), do: state
+
+  defp noreply_state_and_commands({:noreply, state}), do: {state, []}
+  defp noreply_state_and_commands({:noreply, state, commands: commands}), do: {state, commands}
+
+  defp dispatch_runtime_commands(commands) do
+    commands
+    |> Command.normalize()
+    |> Enum.each(&dispatch_runtime_command/1)
+  end
+
+  defp dispatch_runtime_command(%Command{kind: :message, message: message}),
+    do: send(self(), message)
+
+  defp dispatch_runtime_command(%Command{kind: :after, delay_ms: 0, message: message}),
+    do: send(self(), message)
+
+  defp dispatch_runtime_command(%Command{kind: :after, delay_ms: delay_ms, message: message}) do
+    Process.send_after(self(), message, delay_ms)
+    :ok
+  end
+
+  defp dispatch_runtime_command(%Command{kind: :async, fun: fun, mapper: mapper}) do
+    parent = self()
+
+    Task.start(fn ->
+      result = safe_async_result(fun)
+      send(parent, mapper.(result))
+    end)
+
+    :ok
+  end
+
+  defp dispatch_runtime_command(%Command{kind: :batch, commands: commands}),
+    do: dispatch_runtime_commands(commands)
+
+  defp safe_async_result(fun) when is_function(fun, 0) do
+    fun.()
+  rescue
+    exception ->
+      {:error, {:exception, Exception.message(exception)}}
+  catch
+    :exit, reason -> {:error, {:exit, reason}}
+    kind, reason -> {:error, {kind, reason}}
+  end
 
   defmodule OperatorStub do
     def fetch_room(_base, _room_id, _opts \\ []) do
@@ -257,7 +304,10 @@ defmodule JidoHiveConsole.AppTest do
   } do
     state = %{model | input_buffer: "plain update", relation_mode: :none}
 
-    assert {:noreply, pending_state} = App.handle_event(%Key{code: "enter", kind: "press"}, state)
+    {pending_state, commands} =
+      App.handle_event(%Key{code: "enter", kind: "press"}, state) |> noreply_state_and_commands()
+
+    dispatch_runtime_commands(commands)
 
     assert pending_state.input_buffer == ""
 
@@ -278,41 +328,43 @@ defmodule JidoHiveConsole.AppTest do
 
     assert Agent.get(embedded, & &1.submitted) == attrs
 
-    assert {:noreply, accepted_state} =
-             App.handle_info(
-               {:room_submit_accepted, "room-1", "plain update", operation_id,
-                {:ok, %{"operation_id" => operation_id, "status" => "accepted"}}},
-               pending_state
-             )
+    accepted_state =
+      App.handle_info(
+        {:room_submit_accepted, "room-1", "plain update", operation_id,
+         {:ok, %{"operation_id" => operation_id, "status" => "accepted"}}},
+        pending_state
+      )
+      |> noreply_state()
 
-    assert {:noreply, next_state} =
-             App.handle_info(
-               {:room_session_snapshot, "room-1",
-                %{
-                  "room_id" => "room-1",
-                  "status" => "running",
-                  "dispatch_state" => %{"completed_slots" => 1, "total_slots" => 2},
-                  "participants" => [],
-                  "timeline" => [%{"kind" => "contribution.recorded", "cursor" => "evt-1"}],
-                  "context_objects" => [
-                    %{
-                      "context_id" => "ctx-message-1",
-                      "object_type" => "message",
-                      "title" => "alice said",
-                      "body" => "plain update",
-                      "authored_by" => %{"participant_id" => "alice"}
-                    }
-                  ],
-                  "operations" => [
-                    %{
-                      "operation_id" => operation_id,
-                      "status" => "completed",
-                      "type" => "room_submit"
-                    }
-                  ]
-                }},
-               accepted_state
-             )
+    next_state =
+      App.handle_info(
+        {:room_session_snapshot, "room-1",
+         %{
+           "room_id" => "room-1",
+           "status" => "running",
+           "dispatch_state" => %{"completed_slots" => 1, "total_slots" => 2},
+           "participants" => [],
+           "timeline" => [%{"kind" => "contribution.recorded", "cursor" => "evt-1"}],
+           "context_objects" => [
+             %{
+               "context_id" => "ctx-message-1",
+               "object_type" => "message",
+               "title" => "alice said",
+               "body" => "plain update",
+               "authored_by" => %{"participant_id" => "alice"}
+             }
+           ],
+           "operations" => [
+             %{
+               "operation_id" => operation_id,
+               "status" => "completed",
+               "type" => "room_submit"
+             }
+           ]
+         }},
+        accepted_state
+      )
+      |> noreply_state()
 
     assert next_state.pending_room_submit == nil
     assert next_state.status_line == "Submitted chat message"
@@ -324,7 +376,10 @@ defmodule JidoHiveConsole.AppTest do
   } do
     state = %{model | input_buffer: "I think auth is broken", relation_mode: :supports}
 
-    assert {:noreply, pending_state} = App.handle_event(%Key{code: "enter", kind: "press"}, state)
+    {pending_state, commands} =
+      App.handle_event(%Key{code: "enter", kind: "press"}, state) |> noreply_state_and_commands()
+
+    dispatch_runtime_commands(commands)
 
     assert pending_state.input_buffer == ""
 
@@ -349,41 +404,43 @@ defmodule JidoHiveConsole.AppTest do
 
     assert Agent.get(embedded, & &1.submitted) == attrs
 
-    assert {:noreply, accepted_state} =
-             App.handle_info(
-               {:room_submit_accepted, "room-1", "I think auth is broken", operation_id,
-                {:ok, %{"operation_id" => operation_id, "status" => "accepted"}}},
-               pending_state
-             )
+    accepted_state =
+      App.handle_info(
+        {:room_submit_accepted, "room-1", "I think auth is broken", operation_id,
+         {:ok, %{"operation_id" => operation_id, "status" => "accepted"}}},
+        pending_state
+      )
+      |> noreply_state()
 
-    assert {:noreply, next_state} =
-             App.handle_info(
-               {:room_session_snapshot, "room-1",
-                %{
-                  "room_id" => "room-1",
-                  "status" => "running",
-                  "dispatch_state" => %{"completed_slots" => 1, "total_slots" => 2},
-                  "participants" => [],
-                  "timeline" => [%{"kind" => "contribution.recorded", "cursor" => "evt-2"}],
-                  "context_objects" => [
-                    %{
-                      "context_id" => "ctx-message-2",
-                      "object_type" => "message",
-                      "title" => "alice said",
-                      "body" => "I think auth is broken",
-                      "authored_by" => %{"participant_id" => "alice"}
-                    }
-                  ],
-                  "operations" => [
-                    %{
-                      "operation_id" => operation_id,
-                      "status" => "completed",
-                      "type" => "room_submit"
-                    }
-                  ]
-                }},
-               accepted_state
-             )
+    next_state =
+      App.handle_info(
+        {:room_session_snapshot, "room-1",
+         %{
+           "room_id" => "room-1",
+           "status" => "running",
+           "dispatch_state" => %{"completed_slots" => 1, "total_slots" => 2},
+           "participants" => [],
+           "timeline" => [%{"kind" => "contribution.recorded", "cursor" => "evt-2"}],
+           "context_objects" => [
+             %{
+               "context_id" => "ctx-message-2",
+               "object_type" => "message",
+               "title" => "alice said",
+               "body" => "I think auth is broken",
+               "authored_by" => %{"participant_id" => "alice"}
+             }
+           ],
+           "operations" => [
+             %{
+               "operation_id" => operation_id,
+               "status" => "completed",
+               "type" => "room_submit"
+             }
+           ]
+         }},
+        accepted_state
+      )
+      |> noreply_state()
 
     assert next_state.pending_room_submit == nil
     assert next_state.status_line == "Submitted chat message"
@@ -400,8 +457,11 @@ defmodule JidoHiveConsole.AppTest do
           input_buffer: "retry me"
       }
 
-    assert {:noreply, pending_state} =
-             App.handle_event(%Key{code: "enter", kind: "press"}, failing_state)
+    {pending_state, commands} =
+      App.handle_event(%Key{code: "enter", kind: "press"}, failing_state)
+      |> noreply_state_and_commands()
+
+    dispatch_runtime_commands(commands)
 
     assert pending_state.input_buffer == ""
     assert_receive {:embedded_submit_chat, %{text: "retry me"}}
@@ -410,12 +470,12 @@ defmodule JidoHiveConsole.AppTest do
     assert_receive {:room_submit_accepted, "room-1", "retry me", ^operation_id,
                     {:error, :submit_failed}}
 
-    assert {:noreply, next_state} =
-             App.handle_info(
-               {:room_submit_accepted, "room-1", "retry me", operation_id,
-                {:error, :submit_failed}},
-               pending_state
-             )
+    next_state =
+      App.handle_info(
+        {:room_submit_accepted, "room-1", "retry me", operation_id, {:error, :submit_failed}},
+        pending_state
+      )
+      |> noreply_state()
 
     assert next_state.pending_room_submit == nil
     assert next_state.input_buffer == "retry me"
@@ -436,12 +496,12 @@ defmodule JidoHiveConsole.AppTest do
           status_line: "Chat submit accepted; waiting for server confirmation. op=room_submit-123"
       }
 
-    assert {:noreply, syncing_state} =
-             App.handle_info(
-               {:room_submit_result, "room-1", "plain update",
-                {:ok, %{"summary" => "plain update"}}},
-               state
-             )
+    syncing_state =
+      App.handle_info(
+        {:room_submit_result, "room-1", "plain update", {:ok, %{"summary" => "plain update"}}},
+        state
+      )
+      |> noreply_state()
 
     assert syncing_state.pending_room_submit == %{
              room_id: "room-1",
@@ -451,30 +511,50 @@ defmodule JidoHiveConsole.AppTest do
 
     assert syncing_state.status_line =~ "syncing room transcript"
 
-    assert {:noreply, next_state} =
-             App.handle_info(
-               {:room_session_snapshot, "room-1",
-                %{
-                  "room_id" => "room-1",
-                  "status" => "running",
-                  "dispatch_state" => %{"completed_slots" => 1, "total_slots" => 2},
-                  "participants" => [],
-                  "timeline" => [%{"kind" => "contribution.recorded", "cursor" => "evt-1"}],
-                  "context_objects" => [
-                    %{
-                      "context_id" => "ctx-message-1",
-                      "object_type" => "message",
-                      "title" => "alice said",
-                      "body" => "plain update",
-                      "authored_by" => %{"participant_id" => "alice"}
-                    }
-                  ]
-                }},
-               syncing_state
-             )
+    next_state =
+      App.handle_info(
+        {:room_session_snapshot, "room-1",
+         %{
+           "room_id" => "room-1",
+           "status" => "running",
+           "dispatch_state" => %{"completed_slots" => 1, "total_slots" => 2},
+           "participants" => [],
+           "timeline" => [%{"kind" => "contribution.recorded", "cursor" => "evt-1"}],
+           "context_objects" => [
+             %{
+               "context_id" => "ctx-message-1",
+               "object_type" => "message",
+               "title" => "alice said",
+               "body" => "plain update",
+               "authored_by" => %{"participant_id" => "alice"}
+             }
+           ]
+         }},
+        syncing_state
+      )
+      |> noreply_state()
 
     assert next_state.pending_room_submit == nil
     assert next_state.status_line == "Submitted chat message"
+  end
+
+  test "status animation tick advances while a room submit is pending", %{model: model} do
+    state =
+      %{
+        model
+        | pending_room_submit: %{
+            room_id: "room-1",
+            text: "plain update",
+            operation_id: "room_submit-123"
+          },
+          status_line:
+            "Chat submit accepted; waiting for server confirmation. op=room_submit-123",
+          status_animation_tick: 0
+      }
+
+    next_state = App.handle_info(:status_animation_tick, state) |> noreply_state()
+    assert next_state.status_animation_tick == 1
+    assert next_state.pending_room_submit.operation_id == "room_submit-123"
   end
 
   defmodule FailingEmbeddedStub do
@@ -582,18 +662,33 @@ defmodule JidoHiveConsole.AppTest do
              {:msg, :dismiss_debug}
   end
 
+  test "toggle_debug enables runtime tracing and snapshot refresh" do
+    state = Model.new([])
+
+    {debug_state, effects} = App.update(:toggle_debug, state)
+
+    assert debug_state.debug_visible
+    assert {:set_runtime_trace, true} in effects
+    assert :refresh_runtime_snapshot in effects
+
+    {closed_state, close_effects} = App.update(:toggle_debug, debug_state)
+
+    refute closed_state.debug_visible
+    assert close_effects == [{:set_runtime_trace, false}]
+  end
+
   test "Ctrl+D remains available for derives_from relation mode in the room", %{model: model} do
     assert App.event_to_msg(%Key{code: "d", kind: "press", modifiers: ["ctrl"]}, model) ==
              {:msg, {:set_relation_mode, :derives_from}}
   end
 
   test "event log updates append formatted lines", %{model: model} do
-    assert {:noreply, next_state} =
-             App.handle_info(
-               {:event_log_update, [%{"kind" => "contribution.recorded", "cursor" => "c1"}],
-                "c1"},
-               model
-             )
+    next_state =
+      App.handle_info(
+        {:event_log_update, [%{"kind" => "contribution.recorded", "cursor" => "c1"}], "c1"},
+        model
+      )
+      |> noreply_state()
 
     assert next_state.event_log_cursor == "c1"
     assert next_state.event_log_lines == ["contribution.recorded"]
@@ -629,12 +724,12 @@ defmodule JidoHiveConsole.AppTest do
       })
     end)
 
-    assert {:noreply, next_state} =
-             App.handle_info(
-               {:event_log_update, [%{"kind" => "contribution.recorded", "cursor" => "c1"}],
-                "c1"},
-               model
-             )
+    next_state =
+      App.handle_info(
+        {:event_log_update, [%{"kind" => "contribution.recorded", "cursor" => "c1"}], "c1"},
+        model
+      )
+      |> noreply_state()
 
     assert next_state.event_log_cursor == "c1"
 
@@ -646,8 +741,10 @@ defmodule JidoHiveConsole.AppTest do
              }
            ]
 
-    assert get_in(next_state.snapshot, ["context_objects"]) |> Enum.any?(fn object ->
-             object["object_type"] == "message" and object["body"] == "hello from timeline refresh"
+    assert get_in(next_state.snapshot, ["context_objects"])
+           |> Enum.any?(fn object ->
+             object["object_type"] == "message" and
+               object["body"] == "hello from timeline refresh"
            end)
   end
 
@@ -664,27 +761,28 @@ defmodule JidoHiveConsole.AppTest do
           status_line: "Submitting chat message... op=room_submit-stale"
       }
 
-    assert {:noreply, next_state} =
-             App.handle_info(
-               {:room_session_snapshot, "room-1",
-                %{
-                  "room_id" => "room-1",
-                  "status" => "running",
-                  "dispatch_state" => %{"completed_slots" => 1, "total_slots" => 2},
-                  "participants" => [],
-                  "context_objects" => [
-                    %{
-                      "context_id" => "ctx-message-1",
-                      "object_type" => "message",
-                      "title" => "alice said",
-                      "body" => "stale but accepted",
-                      "authored_by" => %{"participant_id" => "alice"}
-                    }
-                  ],
-                  "timeline" => []
-                }},
-               state
-             )
+    next_state =
+      App.handle_info(
+        {:room_session_snapshot, "room-1",
+         %{
+           "room_id" => "room-1",
+           "status" => "running",
+           "dispatch_state" => %{"completed_slots" => 1, "total_slots" => 2},
+           "participants" => [],
+           "context_objects" => [
+             %{
+               "context_id" => "ctx-message-1",
+               "object_type" => "message",
+               "title" => "alice said",
+               "body" => "stale but accepted",
+               "authored_by" => %{"participant_id" => "alice"}
+             }
+           ],
+           "timeline" => []
+         }},
+        state
+      )
+      |> noreply_state()
 
     assert next_state.pending_room_submit == nil
     assert next_state.status_line == "Submitted chat message"
@@ -715,26 +813,27 @@ defmodule JidoHiveConsole.AppTest do
           event_log_lines: []
       }
 
-    assert {:noreply, next_state} =
-             App.handle_info(
-               {:room_session_snapshot, "room-1",
-                %{
-                  "room_id" => "room-1",
-                  "status" => "running",
-                  "dispatch_state" => %{"completed_slots" => 3, "total_slots" => 6},
-                  "participants" => [],
-                  "timeline" => [%{"kind" => "contribution.recorded", "cursor" => "evt-32"}],
-                  "context_objects" => [
-                    %{
-                      "context_id" => "ctx-1",
-                      "object_type" => "message",
-                      "title" => "alice said",
-                      "body" => "test message for context"
-                    }
-                  ]
-                }},
-               state
-             )
+    next_state =
+      App.handle_info(
+        {:room_session_snapshot, "room-1",
+         %{
+           "room_id" => "room-1",
+           "status" => "running",
+           "dispatch_state" => %{"completed_slots" => 3, "total_slots" => 6},
+           "participants" => [],
+           "timeline" => [%{"kind" => "contribution.recorded", "cursor" => "evt-32"}],
+           "context_objects" => [
+             %{
+               "context_id" => "ctx-1",
+               "object_type" => "message",
+               "title" => "alice said",
+               "body" => "test message for context"
+             }
+           ]
+         }},
+        state
+      )
+      |> noreply_state()
 
     assert next_state.snapshot["dispatch_state"] == %{"completed_slots" => 3, "total_slots" => 6}
 
@@ -774,21 +873,22 @@ defmodule JidoHiveConsole.AppTest do
           }
       }
 
-    assert {:noreply, next_state} =
-             App.handle_info(
-               {:room_session_snapshot, "room-1",
-                %{
-                  "room_id" => "room-1",
-                  "status" => "idle",
-                  "dispatch_state" => %{"completed_slots" => 0, "total_slots" => 0},
-                  "participants" => [],
-                  "timeline" => [],
-                  "context_objects" => [],
-                  "last_sync_at" => nil,
-                  "last_error" => nil
-                }},
-               state
-             )
+    next_state =
+      App.handle_info(
+        {:room_session_snapshot, "room-1",
+         %{
+           "room_id" => "room-1",
+           "status" => "idle",
+           "dispatch_state" => %{"completed_slots" => 0, "total_slots" => 0},
+           "participants" => [],
+           "timeline" => [],
+           "context_objects" => [],
+           "last_sync_at" => nil,
+           "last_error" => nil
+         }},
+        state
+      )
+      |> noreply_state()
 
     assert next_state.snapshot["status"] == "running"
     assert next_state.snapshot["dispatch_state"] == %{"completed_slots" => 3, "total_slots" => 6}
@@ -818,19 +918,23 @@ defmodule JidoHiveConsole.AppTest do
           input_buffer: "retry me"
       }
 
-    assert {:noreply, pending_state} = App.handle_event(%Key{code: "enter", kind: "press"}, state)
+    {pending_state, commands} =
+      App.handle_event(%Key{code: "enter", kind: "press"}, state) |> noreply_state_and_commands()
+
+    dispatch_runtime_commands(commands)
 
     assert %{operation_id: operation_id} = pending_state.pending_room_submit
 
     assert_receive {:room_submit_accepted, "room-1", "retry me", ^operation_id,
                     {:error, {:exit, :submit_timeout}}}
 
-    assert {:noreply, next_state} =
-             App.handle_info(
-               {:room_submit_accepted, "room-1", "retry me", operation_id,
-                {:error, {:exit, :submit_timeout}}},
-               pending_state
-             )
+    next_state =
+      App.handle_info(
+        {:room_submit_accepted, "room-1", "retry me", operation_id,
+         {:error, {:exit, :submit_timeout}}},
+        pending_state
+      )
+      |> noreply_state()
 
     assert next_state.pending_room_submit == nil
     assert next_state.input_buffer == "retry me"
@@ -984,8 +1088,10 @@ defmodule JidoHiveConsole.AppTest do
         ]
       })
 
-    assert {:noreply, pending_state} =
-             App.handle_event(%Key{code: "enter", kind: "press"}, model)
+    {pending_state, commands} =
+      App.handle_event(%Key{code: "enter", kind: "press"}, model) |> noreply_state_and_commands()
+
+    dispatch_runtime_commands(commands)
 
     assert pending_state.active_screen == :wizard
     assert pending_state.pending_room_create
@@ -999,11 +1105,14 @@ defmodule JidoHiveConsole.AppTest do
 
     assert_receive {:wizard_create_result, ^room_id, {:ok, _response}}
 
-    {:noreply, next_state} =
+    {next_state, commands} =
       App.handle_info(
         {:wizard_create_result, room_id, {:ok, %{"room_id" => room_id}}},
         pending_state
       )
+      |> noreply_state_and_commands()
+
+    dispatch_runtime_commands(commands)
 
     assert next_state.active_screen == :room
     assert next_state.pending_room_create == nil
@@ -1024,7 +1133,7 @@ defmodule JidoHiveConsole.AppTest do
                        "status" => "accepted"
                      }}}
 
-    {:noreply, run_started_state} =
+    run_started_state =
       App.handle_info(
         {:room_run_operation_started, room_id, client_operation_id,
          {:ok,
@@ -1035,6 +1144,7 @@ defmodule JidoHiveConsole.AppTest do
           }}},
         next_state
       )
+      |> noreply_state()
 
     assert run_started_state.pending_room_run == %{
              room_id: room_id,
@@ -1055,20 +1165,21 @@ defmodule JidoHiveConsole.AppTest do
           event_log_lines: ["assignment.started  running  phase=analysis"]
       }
 
-    assert {:noreply, next_state} =
-             App.handle_info(
-               {:run_room_result, "room-1", "room_run-abc123",
-                {:error,
-                 {:timeout,
-                  %{
-                    method: "POST",
-                    path: "/rooms/room-1/run",
-                    request_timeout_ms: 210_000,
-                    elapsed_ms: 210_005,
-                    operation_id: "room_run-abc123"
-                  }}}},
-               state
-             )
+    next_state =
+      App.handle_info(
+        {:run_room_result, "room-1", "room_run-abc123",
+         {:error,
+          {:timeout,
+           %{
+             method: "POST",
+             path: "/rooms/room-1/run",
+             request_timeout_ms: 210_000,
+             elapsed_ms: 210_005,
+             operation_id: "room_run-abc123"
+           }}}},
+        state
+      )
+      |> noreply_state()
 
     assert next_state.status_severity == :warn
     assert next_state.status_line =~ "server activity is visible"
@@ -1098,7 +1209,7 @@ defmodule JidoHiveConsole.AppTest do
       )
       |> Map.put(:active_screen, :publish)
 
-    {next_state, []} = App.handle_message(:refresh_auth_state, state)
+    {next_state, []} = App.update(:refresh_auth_state, state)
 
     assert next_state.publish_auth_state == %{
              "github" => %{

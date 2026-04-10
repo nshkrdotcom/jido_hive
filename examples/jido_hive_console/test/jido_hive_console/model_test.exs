@@ -44,7 +44,9 @@ defmodule JidoHiveConsole.ModelTest do
         }
       )
 
-    assert get_in(model.snapshot, ["contributions"]) == [%{"participant_id" => "alice", "summary" => "hello"}]
+    assert get_in(model.snapshot, ["contributions"]) == [
+             %{"participant_id" => "alice", "summary" => "hello"}
+           ]
 
     assert get_in(model.snapshot, ["operations"]) == [
              %{"operation_id" => "room_submit-1", "status" => "completed"}

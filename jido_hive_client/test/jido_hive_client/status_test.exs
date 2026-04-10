@@ -86,9 +86,11 @@ defmodule JidoHiveClient.StatusTest do
              "executing room=room-1 phase=analysis provider=codex assigned_role=analyst model=gpt-5.4"
 
     assert output =~ "system prompt preview room=room-1 phase=analysis"
-    assert output =~ "Return strict JSON only."
+    assert output =~ ~s(preview="Return strict JSON only.")
     assert output =~ "user prompt preview room=room-1 phase=analysis"
-    assert output =~ "{\"room_id\":\"room-1\"}"
+
+    assert output =~
+             ~s(preview="Execute the current assignment. {\\\"room_id\\\":\\\"room-1\\\"}")
   end
 
   test "execution_finished prints a response preview before the summary" do
@@ -111,7 +113,7 @@ defmodule JidoHiveClient.StatusTest do
       end)
 
     assert output =~ "response preview room=room-1 phase=analysis"
-    assert output =~ "\"summary\":\"bad json path\""
+    assert output =~ ~s(preview="{\\\"summary\\\":\\\"bad json path\\\")
     assert output =~ "completed room=room-1 phase=analysis status=failed contribution=none"
   end
 end

@@ -256,6 +256,12 @@ Recommended debug tail:
 tail -f ~/.config/hive/hive_console.log
 ```
 
+Implementation note:
+
+- the console now runs on `ExRatatui.App`'s reducer runtime
+- `F2` surfaces both room/client diagnostics and `ExRatatui.Runtime` inspection data
+- local development currently uses the sibling `../../../ex_ratatui` path dependency from `examples/jido_hive_console`
+
 ## Production connector setup
 
 This is the current validated manual-install path.

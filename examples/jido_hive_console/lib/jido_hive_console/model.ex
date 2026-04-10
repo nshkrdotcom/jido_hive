@@ -59,6 +59,7 @@ defmodule JidoHiveConsole.Model do
     wizard_policies_state: :idle,
     pending_room_create: nil,
     status_animation_tick: 0,
+    runtime_snapshot: nil,
     status_line: "Ready",
     status_severity: :info,
     sync_error: false,

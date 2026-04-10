@@ -161,29 +161,7 @@ defmodule JidoHiveConsole.Projection do
     contribution_type = map_value(entry, "contribution_type")
     body = conversation_body(entry)
     pending? = map_value(entry, "local_status") == "pending"
-
-    prefix =
-      cond do
-        is_binary(participant) and participant != "" and pending? ->
-          "#{participant} (sending)"
-
-        is_binary(participant) and participant != "" and contribution_type in [nil, "", "chat"] ->
-          participant
-
-        is_binary(participant) and participant != "" ->
-          "#{participant} [#{contribution_type}]"
-
-        pending? ->
-          "pending"
-
-        is_binary(contribution_type) and contribution_type != "" ->
-          contribution_type
-
-        true ->
-          "system"
-      end
-
-    "#{prefix}: #{body}"
+    "#{conversation_prefix(participant, contribution_type, pending?)}: #{body}"
   end
 
   @spec format_event_entry(map()) :: String.t()
@@ -654,6 +632,33 @@ defmodule JidoHiveConsole.Projection do
         nil
     end
   end
+
+  defp conversation_prefix(participant, contribution_type, pending?) do
+    if present_participant?(participant) do
+      participant_prefix(participant, contribution_type, pending?)
+    else
+      fallback_conversation_prefix(contribution_type, pending?)
+    end
+  end
+
+  defp present_participant?(participant), do: is_binary(participant) and participant != ""
+
+  defp participant_prefix(participant, _contribution_type, true), do: "#{participant} (sending)"
+
+  defp participant_prefix(participant, contribution_type, false)
+       when contribution_type in [nil, "", "chat"],
+       do: participant
+
+  defp participant_prefix(participant, contribution_type, false),
+    do: "#{participant} [#{contribution_type}]"
+
+  defp fallback_conversation_prefix(_contribution_type, true), do: "pending"
+
+  defp fallback_conversation_prefix(contribution_type, false)
+       when is_binary(contribution_type) and contribution_type != "",
+       do: contribution_type
+
+  defp fallback_conversation_prefix(_contribution_type, false), do: "system"
 
   defp default_line([], line), do: [line]
   defp default_line(lines, _line), do: lines

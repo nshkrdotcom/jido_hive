@@ -38,7 +38,7 @@ defmodule JidoHiveConsole.MixProject do
 
   defp deps do
     [
-      {:ex_ratatui, "~> 0.5"},
+      {:ex_ratatui, path: "../../../ex_ratatui"},
       {:jason, "~> 1.4"},
       {:jido_hive_client, path: "../../jido_hive_client"},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},

@@ -47,9 +47,9 @@ config :jido_hive_server, JidoHiveServer.Repo,
 # Enable dev routes for dashboard and mailbox
 config :jido_hive_server, dev_routes: true
 
-# Do not include metadata nor timestamps in development logs
+# Keep development logs compact, but include timestamps for operator debugging.
 config :logger, level: :info
-config :logger, :default_formatter, format: "[$level] $message\n", truncate: 2048
+config :logger, :default_formatter, format: "$time [$level] $message\n", truncate: 2048
 
 # Set a higher stacktrace during development. Avoid configuring such
 # in production as building large stacktraces may be expensive.

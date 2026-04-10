@@ -543,16 +543,43 @@ The console should not own:
 - sync recovery policy that belongs in the client session
 - business logic that must also work headlessly
 
+### Runtime architecture
+
+The console now runs on `use ExRatatui.App, runtime: :reducer`.
+
+That means:
+
+- all terminal input and mailbox messages flow through one reducer path in `App.update/2`
+- one-shot side effects are returned as `ExRatatui.Command` values
+- repeating timers are declared in `subscriptions/1`, not ad hoc `Process.send_after` calls
+- `F2` can render `ExRatatui.Runtime` inspection data such as active subscriptions, async command count, and recent trace events
+
+This is the key seam:
+
+- `app.ex` owns reducer transitions and command/subscription wiring
+- `nav.ex` owns navigation and session attachment
+- `model.ex` owns console-local state only
+- `screen_ui.ex` renders shared overlays from state, including runtime debug data
+- `jido_hive_client` still owns room session behavior and headless operator workflows
+
 ### Code map
 
 High-value files:
 
-- `lib/jido_hive_console/app.ex`: top-level app update loop and async effect dispatch
+- `lib/jido_hive_console/app.ex`: reducer entrypoint, command wiring, and subscriptions
 - `lib/jido_hive_console/nav.ex`: navigation and route helpers
 - `lib/jido_hive_console/model.ex`: console-local view/input state
 - `lib/jido_hive_console/screen_ui.ex`: shared overlays and render helpers
 - `lib/jido_hive_console/screens/room.ex`: room screen rendering, including event projection from the room session snapshot
 - `lib/jido_hive_console/screens/`: lobby, room, wizard, publish, conflict, and other screens
+
+### Local dependency note
+
+During active runtime work, this app currently points at the sibling checkout:
+
+- `mix.exs` uses `{:ex_ratatui, path: "../../../ex_ratatui"}`
+
+That keeps console and library work synchronized while the reducer/runtime API is being hardened.
 
 ### Design rules
 
@@ -560,7 +587,9 @@ High-value files:
 - call `JidoHiveClient.Operator` for headless operator workflows
 - call `JidoHiveClient.RoomSession` for room-scoped human participation flows
 - if a room action cannot be reproduced headlessly, the seam is still wrong
-- keep render code dumb and state transitions explicit
+- keep render code dumb and reducer transitions explicit
+- keep timer-driven behavior in `subscriptions/1`
+- keep async work in `ExRatatui.Command.async/2`, not inline process plumbing
 - use local `iex` for server/client modules first; the TUI is a worse live-REPL target than the headless client
 
 ### Quality loop

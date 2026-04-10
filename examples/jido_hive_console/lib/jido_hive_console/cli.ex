@@ -31,7 +31,8 @@ defmodule JidoHiveConsole.CLI do
     result =
       with :ok <- LoggerSetup.configure(opts),
            :ok <- EscriptBootstrap.start_console_dependencies(),
-           {:ok, output} <- WorkflowScript.run(rest, api_base_url: Keyword.get(opts, :api_base_url)) do
+           {:ok, output} <-
+             WorkflowScript.run(rest, api_base_url: Keyword.get(opts, :api_base_url)) do
         IO.puts(Jason.encode!(output, pretty: true))
         :ok
       else

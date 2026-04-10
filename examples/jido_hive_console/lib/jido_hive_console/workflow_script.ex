@@ -26,7 +26,10 @@ defmodule JidoHiveConsole.WorkflowScript do
     headless_module = Keyword.get(opts, :headless_module, HeadlessCLI)
 
     with {:ok, parsed} <- parse_args(argv) do
-      api_base_url = Keyword.get(parsed, :api_base_url) || Keyword.get(opts, :api_base_url) || @default_api_base_url
+      api_base_url =
+        Keyword.get(parsed, :api_base_url) || Keyword.get(opts, :api_base_url) ||
+          @default_api_base_url
+
       room_id = Keyword.get(parsed, :room_id) || generated_room_id()
       brief = Keyword.get(parsed, :brief, @default_brief)
       participant_id = Keyword.get(parsed, :participant_id, "alice")
@@ -52,7 +55,8 @@ defmodule JidoHiveConsole.WorkflowScript do
                  texts,
                  opts
                ),
-             {:ok, run_result} <- maybe_run_room(headless_module, api_base_url, room_id, parsed, opts),
+             {:ok, run_result} <-
+               maybe_run_room(headless_module, api_base_url, room_id, parsed, opts),
              {:ok, final_room} <-
                dispatch(headless_module, room_show_args(api_base_url, room_id), opts),
              {:ok, timeline} <-

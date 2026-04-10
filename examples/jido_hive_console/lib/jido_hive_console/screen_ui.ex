@@ -118,6 +118,7 @@ defmodule JidoHiveConsole.ScreenUI do
   @spec status_style(Model.t()) :: Style.t()
   def status_style(%{status_severity: :error}), do: %Style{fg: :red, modifiers: [:bold]}
   def status_style(%{status_severity: :warn}), do: %Style{fg: :yellow}
+
   def status_style(%{pending_room_submit: pending}) when not is_nil(pending),
     do: %Style{fg: :cyan, modifiers: [:bold]}
 
@@ -127,7 +128,8 @@ defmodule JidoHiveConsole.ScreenUI do
   def status_text(%Model{} = state), do: status_text(state, animation_time_ms(state))
 
   @spec status_text(Model.t(), integer() | nil) :: String.t()
-  def status_text(%Model{pending_room_submit: pending} = state, now_ms) when not is_nil(pending) do
+  def status_text(%Model{pending_room_submit: pending} = state, now_ms)
+      when not is_nil(pending) do
     "#{state.status_line}  #{pending_indicator(now_ms)}"
   end
 
@@ -157,7 +159,8 @@ defmodule JidoHiveConsole.ScreenUI do
     "[" <> bar <> "]"
   end
 
-  defp animation_time_ms(%Model{status_animation_tick: tick}) when is_integer(tick) and tick >= 0 do
+  defp animation_time_ms(%Model{status_animation_tick: tick})
+       when is_integer(tick) and tick >= 0 do
     tick * @pending_indicator_tick_ms
   end
 
@@ -196,6 +199,7 @@ defmodule JidoHiveConsole.ScreenUI do
       "Poll interval: #{state.poll_interval_ms}ms",
       latest_operation_line(state)
     ] ++
+      runtime_debug_lines(state) ++
       transport_debug_lines(state) ++
       [
         "",
@@ -239,6 +243,75 @@ defmodule JidoHiveConsole.ScreenUI do
         "Latest operation: none"
     end
   end
+
+  defp runtime_debug_lines(%{runtime_snapshot: nil}) do
+    ["Runtime: pending snapshot"]
+  end
+
+  defp runtime_debug_lines(%{runtime_snapshot: snapshot}) when is_map(snapshot) do
+    [
+      "Runtime: mode=#{runtime_snapshot_value(snapshot, :mode)} renders=#{runtime_snapshot_value(snapshot, :render_count)} async=#{runtime_snapshot_value(snapshot, :active_async_commands)}",
+      "Runtime trace: enabled=#{runtime_snapshot_value(snapshot, :trace_enabled?)} events=#{length(runtime_snapshot_value(snapshot, :trace_events, []))}",
+      "Runtime subscriptions: #{runtime_snapshot_value(snapshot, :subscription_count, 0)}"
+    ] ++
+      runtime_subscription_lines(snapshot) ++
+      runtime_trace_lines(snapshot)
+  end
+
+  defp runtime_debug_lines(_state), do: ["Runtime: unavailable"]
+
+  defp runtime_subscription_lines(snapshot) do
+    snapshot
+    |> runtime_snapshot_value(:subscriptions, [])
+    |> Enum.take(3)
+    |> Enum.map(fn subscription ->
+      id = runtime_snapshot_value(subscription, :id)
+      kind = runtime_snapshot_value(subscription, :kind)
+      interval_ms = runtime_snapshot_value(subscription, :interval_ms)
+      active? = runtime_snapshot_value(subscription, :active?)
+      "sub #{id}: #{kind} #{interval_ms}ms active=#{active?}"
+    end)
+  end
+
+  defp runtime_trace_lines(snapshot) do
+    snapshot
+    |> runtime_snapshot_value(:trace_events, [])
+    |> Enum.take(3)
+    |> Enum.map(fn event ->
+      kind = runtime_snapshot_value(event, :kind)
+      details = runtime_snapshot_value(event, :details, %{})
+      "trace #{kind}: #{runtime_trace_summary(details)}"
+    end)
+  end
+
+  defp runtime_trace_summary(details) when is_map(details) do
+    cond do
+      Map.has_key?(details, :id) or Map.has_key?(details, "id") ->
+        "id=#{runtime_snapshot_value(details, :id)}"
+
+      Map.has_key?(details, :kind) or Map.has_key?(details, "kind") ->
+        "kind=#{runtime_snapshot_value(details, :kind)}"
+
+      Map.has_key?(details, :source) or Map.has_key?(details, "source") ->
+        "source=#{runtime_snapshot_value(details, :source)}"
+
+      true ->
+        inspect(details)
+    end
+  end
+
+  defp runtime_trace_summary(other), do: inspect(other)
+
+  defp runtime_snapshot_value(map, key, default \\ nil)
+
+  defp runtime_snapshot_value(map, key, default) when is_map(map) do
+    case Map.fetch(map, key) do
+      {:ok, value} -> value
+      :error -> Map.get(map, to_string(key), default)
+    end
+  end
+
+  defp runtime_snapshot_value(_other, _key, default), do: default
 
   defp transport_debug_lines(state) do
     state.snapshot
