@@ -5,13 +5,13 @@ defmodule JidoHiveConsole.App do
   require Logger
 
   alias ExRatatui.{Command, Event, Frame, Runtime, Subscription}
-  alias JidoHiveConsole.{Identity, Model, Nav, Projection}
+  alias JidoHiveConsole.{Identity, Model, Nav, Projection, TextInputBridge}
   alias JidoHiveConsole.Screens.{Conflict, Lobby, Publish, Room, Wizard}
 
   @impl true
   def init(opts) do
     {state, effects} = initialize(opts)
-    state = state |> ensure_input_refs() |> sync_input_widgets()
+    state = state |> TextInputBridge.ensure_refs() |> TextInputBridge.sync()
 
     Logger.info(
       "console mounted screen=#{state.active_screen} room_id=#{state.room_id || "none"} participant_id=#{state.participant_id} api_base_url=#{state.api_base_url}"
@@ -48,7 +48,7 @@ defmodule JidoHiveConsole.App do
   @spec initialize(keyword()) :: {Model.t(), [term()]}
   def initialize(opts) do
     route = Keyword.get(opts, :route, {:lobby, %{}})
-    state = Model.new(opts) |> ensure_input_refs()
+    state = Model.new(opts) |> TextInputBridge.ensure_refs()
 
     next_state =
       case route do
@@ -212,7 +212,7 @@ defmodule JidoHiveConsole.App do
   end
 
   def update({:room_input_key, code}, %{active_screen: :room} = state) do
-    {handle_room_input_key(state, code), []}
+    {TextInputBridge.handle_room_key(state, code), []}
   end
 
   def update({:input_append, char}, %{active_screen: :room} = state) do
@@ -346,7 +346,7 @@ defmodule JidoHiveConsole.App do
   end
 
   def update({:conflict_input_key, code}, state) do
-    {handle_conflict_input_key(state, code), []}
+    {TextInputBridge.handle_conflict_key(state, code), []}
   end
 
   def update({:conflict_append, char}, state) do
@@ -471,7 +471,7 @@ defmodule JidoHiveConsole.App do
   end
 
   def update({:publish_input_key, code}, state) do
-    {handle_publish_input_key(state, code), []}
+    {TextInputBridge.handle_publish_key(state, code), []}
   end
 
   def update({:publish_append, char}, state) do
@@ -551,7 +551,7 @@ defmodule JidoHiveConsole.App do
   def update(:wizard_next_option, state), do: {Model.move_wizard_cursor(state, 1), []}
 
   def update({:wizard_input_key, code}, %{wizard_step: 0} = state) do
-    {handle_wizard_input_key(state, code), []}
+    {TextInputBridge.handle_wizard_key(state, code), []}
   end
 
   def update({:wizard_append, char}, %{wizard_step: 0} = state) do
@@ -1284,7 +1284,7 @@ defmodule JidoHiveConsole.App do
   end
 
   defp runtime_reply({next_state, effects}) do
-    next_state = sync_input_widgets(next_state)
+    next_state = TextInputBridge.sync(next_state)
     {stop?, commands} = normalize_effects(next_state, effects)
 
     if stop? do
@@ -1420,139 +1420,7 @@ defmodule JidoHiveConsole.App do
     )
   end
 
-  defp ensure_input_refs(%Model{} = state) do
-    %{
-      state
-      | room_input_ref: state.room_input_ref || ExRatatui.text_input_new(),
-        conflict_input_ref: state.conflict_input_ref || ExRatatui.text_input_new(),
-        wizard_brief_input_ref: state.wizard_brief_input_ref || ExRatatui.text_input_new(),
-        publish_input_ref: state.publish_input_ref || ExRatatui.text_input_new()
-    }
-  end
-
-  defp sync_input_widgets(state) do
-    state
-    |> sync_room_input()
-    |> sync_conflict_input()
-    |> sync_wizard_input()
-    |> sync_publish_input()
-  end
-
-  defp sync_room_input(%Model{room_input_ref: ref} = state) when is_reference(ref) do
-    current = ExRatatui.text_input_get_value(ref)
-    if current != state.input_buffer, do: ExRatatui.text_input_set_value(ref, state.input_buffer)
-    state
-  end
-
-  defp sync_room_input(state), do: state
-
-  defp sync_conflict_input(%Model{conflict_input_ref: ref} = state) when is_reference(ref) do
-    current = ExRatatui.text_input_get_value(ref)
-
-    if current != state.conflict_input_buf,
-      do: ExRatatui.text_input_set_value(ref, state.conflict_input_buf)
-
-    state
-  end
-
-  defp sync_conflict_input(state), do: state
-
-  defp sync_wizard_input(%Model{wizard_brief_input_ref: ref} = state) when is_reference(ref) do
-    desired = Map.get(state.wizard_fields, "brief", "")
-    current = ExRatatui.text_input_get_value(ref)
-    if current != desired, do: ExRatatui.text_input_set_value(ref, desired)
-    state
-  end
-
-  defp sync_wizard_input(state), do: state
-
-  defp sync_publish_input(%Model{publish_input_ref: ref} = state) when is_reference(ref) do
-    desired =
-      case Publish.current_focus(state) do
-        %{type: :binding, channel: channel, field: field} ->
-          get_in(state.publish_bindings, [channel, field]) || ""
-
-        _other ->
-          ""
-      end
-
-    current = ExRatatui.text_input_get_value(ref)
-    if current != desired, do: ExRatatui.text_input_set_value(ref, desired)
-    state
-  end
-
-  defp sync_publish_input(state), do: state
-
-  defp handle_room_input_key(state, code) do
-    case state.room_input_ref do
-      ref when is_reference(ref) ->
-        ExRatatui.text_input_handle_key(ref, code)
-        %{state | input_buffer: ExRatatui.text_input_get_value(ref)}
-
-      _other ->
-        %{state | input_buffer: fallback_edit(state.input_buffer, code)}
-    end
-  end
-
-  defp handle_conflict_input_key(state, code) do
-    case state.conflict_input_ref do
-      ref when is_reference(ref) ->
-        ExRatatui.text_input_handle_key(ref, code)
-        %{state | conflict_input_buf: ExRatatui.text_input_get_value(ref)}
-
-      _other ->
-        %{state | conflict_input_buf: fallback_edit(state.conflict_input_buf, code)}
-    end
-  end
-
-  defp handle_wizard_input_key(state, code) do
-    case state.wizard_brief_input_ref do
-      ref when is_reference(ref) ->
-        ExRatatui.text_input_handle_key(ref, code)
-
-        %{
-          state
-          | wizard_fields:
-              Map.put(state.wizard_fields, "brief", ExRatatui.text_input_get_value(ref))
-        }
-
-      _other ->
-        brief = fallback_edit(Map.get(state.wizard_fields, "brief", ""), code)
-        %{state | wizard_fields: Map.put(state.wizard_fields, "brief", brief)}
-    end
-  end
-
-  defp handle_publish_input_key(state, code) do
-    case Publish.current_focus(state) do
-      %{type: :binding, channel: channel, field: field} ->
-        value =
-          case state.publish_input_ref do
-            ref when is_reference(ref) ->
-              ExRatatui.text_input_handle_key(ref, code)
-              ExRatatui.text_input_get_value(ref)
-
-            _other ->
-              fallback_edit(get_in(state.publish_bindings, [channel, field]) || "", code)
-          end
-
-        %{
-          state
-          | publish_bindings: put_nested_binding(state.publish_bindings, channel, field, value)
-        }
-
-      _other ->
-        state
-    end
-  end
-
   defp set_room_input(state, value), do: %{state | input_buffer: value}
-
-  defp fallback_edit(value, "backspace"), do: drop_last_grapheme(value)
-
-  defp fallback_edit(value, code) when code in ["delete", "left", "right", "home", "end"],
-    do: value
-
-  defp fallback_edit(value, code) when is_binary(code), do: value <> code
 
   defp drop_last_grapheme(value) do
     value |> String.graphemes() |> Enum.drop(-1) |> Enum.join()
