@@ -21,7 +21,7 @@ defmodule JidoHiveConsole.HelpGuide do
 
   def lines(%Model{}) do
     render_sections([
-      {"Global", ["Ctrl+G or F1 opens help. F2 opens debug. Ctrl+C or Ctrl+Q quits."]}
+      {"Global", global_help_lines()}
     ])
   end
 
@@ -29,7 +29,7 @@ defmodule JidoHiveConsole.HelpGuide do
     render_sections([
       {"What this screen does",
        [
-         "Launch a saved room or start the new-room wizard.",
+         "Continue an existing room or start a new guided room.",
          "Saved room ids come from ~/.config/hive/rooms.json for the current server."
        ]},
       {"Current state",
@@ -45,10 +45,10 @@ defmodule JidoHiveConsole.HelpGuide do
        ]},
       {"Workflow",
        [
-         "Open a saved room when you want to inspect or steer an existing room.",
+         "Open a saved room when you want to inspect shared graph progress, steer the room, or publish a ready result.",
          "If a row shows a fetch error, remove it locally with d and recreate it from the server later if needed."
        ]},
-      {"Global", ["Ctrl+G or F1 opens help. F2 opens debug. Ctrl+C or Ctrl+Q quits."]}
+      {"Global", global_help_lines()}
     ])
   end
 
@@ -56,11 +56,12 @@ defmodule JidoHiveConsole.HelpGuide do
     render_sections([
       {"What this screen does",
        [
-         "This is the operator workspace for one room: read conversation, inspect structured context, and steer the graph with human input."
+         "This is the operator workspace for one room: understand the workflow, inspect the shared graph, and steer the room with human input."
        ]},
       {"Current state",
        [
          "Room: #{state.room_id || "none"}.",
+         "Workflow stage: #{room_stage_label(state)}.",
          "Selected context: #{selected_context_label(state)}.",
          "Relation mode: #{Atom.to_string(state.relation_mode)}. Focused pane: #{state.pane_focus}.",
          "Draft: #{draft_summary(state)}.",
@@ -68,17 +69,18 @@ defmodule JidoHiveConsole.HelpGuide do
        ]},
       {"Keys for this screen",
        [
-         "Type to edit the draft. Plain letters never quit the console.",
+         "Type to edit the composer. Plain letters never quit the console.",
          "Up/Down changes the selected context object. Tab cycles pane focus. Enter sends the draft or opens conflict resolution when the draft is empty and the selection is a contradiction.",
+         "Ctrl+J inserts a newline without sending.",
          "Ctrl+N plain chat. Ctrl+T contextual. Ctrl+F references. Ctrl+D derives_from. Ctrl+S supports. Ctrl+X contradicts. Ctrl+V resolves.",
          "Ctrl+E opens provenance. Ctrl+A accepts the selected object. Ctrl+R refreshes the room. Ctrl+P opens publish. Ctrl+B returns to the lobby."
        ]},
       {"Workflow",
        [
-         "Read the Context and Events panes first, then choose a context object and relation mode before sending a steering message.",
+         "Read the Workflow and Shared Graph panes first, then choose a context object and relation mode before sending a steering message.",
          "Use provenance when you need to understand why an object exists, and use publish only after the room reaches publication_ready."
        ]},
-      {"Global", ["Ctrl+G or F1 opens help. F2 opens debug. Ctrl+C or Ctrl+Q quits."]}
+      {"Global", global_help_lines()}
     ])
   end
 
@@ -104,7 +106,7 @@ defmodule JidoHiveConsole.HelpGuide do
        [
          "Accept one side when it is clearly correct. Use a synthesis only when both sides contain useful information that should be merged into a new resolving statement."
        ]},
-      {"Global", ["Ctrl+G or F1 opens help. F2 opens debug. Ctrl+C or Ctrl+Q quits."]}
+      {"Global", global_help_lines()}
     ])
   end
 
@@ -116,6 +118,7 @@ defmodule JidoHiveConsole.HelpGuide do
        ]},
       {"Current state",
        [
+         "Room ready: #{publish_ready_label(state)}.",
          "Selected channels: #{selected_channels(state)}.",
          "Focused item: #{publish_focus_label(state)}.",
          "Auth summary: #{publish_auth_summary(state)}."
@@ -129,10 +132,10 @@ defmodule JidoHiveConsole.HelpGuide do
        ]},
       {"Workflow",
        [
-         "Select the channels you want, fill every required binding, confirm auth shows connected, then press Enter.",
+         "Use the readiness pane to clear blockers first, then select channels, fill every required binding, confirm auth shows connected, and press Enter.",
          "If auth is missing, complete connector setup outside the TUI, return here, and refresh auth before publishing."
        ]},
-      {"Global", ["Ctrl+G or F1 opens help. F2 opens debug. Ctrl+C or Ctrl+Q quits."]}
+      {"Global", global_help_lines()}
     ])
   end
 
@@ -152,10 +155,10 @@ defmodule JidoHiveConsole.HelpGuide do
       {"Keys for this step", wizard_step_keys(state)},
       {"Workflow",
        [
-         "Step 0 writes the brief. Step 1 chooses the dispatch policy. Step 2 reviews phases. Step 3 selects workers. Step 4 creates and runs the room.",
+         "Step 0 defines the room objective. Step 1 chooses the dispatch policy. Step 2 reviews phases. Step 3 selects workers. Step 4 creates and runs the room.",
          "If worker or policy lists are empty, fix the server or local worker registration first; the wizard cannot create a useful room without them."
        ]},
-      {"Global", ["Ctrl+G or F1 opens help. F2 opens debug. Ctrl+C or Ctrl+Q quits."]}
+      {"Global", global_help_lines()}
     ])
   end
 
@@ -166,6 +169,12 @@ defmodule JidoHiveConsole.HelpGuide do
     end)
     |> Enum.intersperse([""])
     |> List.flatten()
+  end
+
+  defp global_help_lines do
+    [
+      "Ctrl+G or F1 opens help. F2 opens debug. Ctrl+C clears the active draft when you are typing; with no active draft it exits. Ctrl+Q always quits."
+    ]
   end
 
   defp highlighted_room_label(state) do
@@ -181,6 +190,12 @@ defmodule JidoHiveConsole.HelpGuide do
       nil -> "none"
       object -> context_id(object)
     end
+  end
+
+  defp room_stage_label(state) do
+    state.snapshot
+    |> Projection.workflow_summary()
+    |> Map.fetch!(:stage)
   end
 
   defp draft_summary(%{pending_room_submit: %{text: text}}) when is_binary(text) do
@@ -258,6 +273,11 @@ defmodule JidoHiveConsole.HelpGuide do
           "#{channel}=#{publish_auth_status(state, channel)}"
         end)
     end
+  end
+
+  defp publish_ready_label(state) do
+    status = Map.get(state.snapshot, "status") || Map.get(state.snapshot, :status)
+    if status == "publication_ready", do: "yes", else: "no"
   end
 
   defp publish_auth_status(state, channel) do

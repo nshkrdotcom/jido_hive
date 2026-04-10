@@ -40,6 +40,8 @@ mix escript.build
 ```bash
 ./jido_hive_client room list --api-base-url http://127.0.0.1:4000/api
 ./jido_hive_client room show --api-base-url http://127.0.0.1:4000/api --room-id <room-id>
+./jido_hive_client room workflow --api-base-url http://127.0.0.1:4000/api --room-id <room-id>
+./jido_hive_client room inspect --api-base-url http://127.0.0.1:4000/api --room-id <room-id>
 ./jido_hive_client room tail --api-base-url http://127.0.0.1:4000/api --room-id <room-id>
 ```
 
@@ -119,6 +121,7 @@ flowchart LR
 - `JidoHiveClient.Operator` owns server-facing operator workflows such as room inspection, publication planning, connector auth state, and room creation.
 - `JidoHiveClient.RoomSession` owns room-scoped human participation semantics such as snapshot, refresh, submit-chat, and accept-context.
 - `JidoHiveClient.Embedded` is the implementation behind `RoomSession`, not the surface new callers should reach for first.
+- `JidoHiveClient.RoomWorkflow` is the shared decoder/normalizer for the server-owned workflow contract.
 - worker runtime code remains separate from operator/session flows.
 
 ### Current room-session architecture
@@ -139,7 +142,7 @@ Current responsibilities:
 - config/bootstrap under `~/.config/hive`
 - saved-room registry scoped by API base URL
 - connector auth-state loading
-- room fetch and timeline fetch
+- room fetch, workflow inspection, and timeline fetch
 - target/policy listing
 - room creation and run
 - publication plan fetch and publish submit
@@ -205,6 +208,8 @@ This is the escript entrypoint. It supports both:
 ```bash
 ./jido_hive_client room list --api-base-url https://jido-hive-server-test.app.nsai.online/api
 ./jido_hive_client room show --api-base-url https://jido-hive-server-test.app.nsai.online/api --room-id <room-id>
+./jido_hive_client room workflow --api-base-url https://jido-hive-server-test.app.nsai.online/api --room-id <room-id>
+./jido_hive_client room inspect --api-base-url https://jido-hive-server-test.app.nsai.online/api --room-id <room-id>
 ./jido_hive_client room tail --api-base-url https://jido-hive-server-test.app.nsai.online/api --room-id <room-id>
 ```
 
@@ -214,6 +219,7 @@ This is the escript entrypoint. It supports both:
 ./jido_hive_client room create --api-base-url https://jido-hive-server-test.app.nsai.online/api --payload-file room.json
 ./jido_hive_client room run --api-base-url https://jido-hive-server-test.app.nsai.online/api --room-id <room-id> --max-assignments 1 --assignment-timeout-ms 60000
 ./jido_hive_client room run-status --api-base-url https://jido-hive-server-test.app.nsai.online/api --room-id <room-id> --operation-id <operation-id>
+./jido_hive_client room publish-plan --api-base-url https://jido-hive-server-test.app.nsai.online/api --room-id <room-id>
 ./jido_hive_client room publish --api-base-url https://jido-hive-server-test.app.nsai.online/api --room-id <room-id> --payload-file publish.json
 ./jido_hive_client room submit --api-base-url https://jido-hive-server-test.app.nsai.online/api --room-id <room-id> --participant-id alice --text "hello"
 ./jido_hive_client room accept --api-base-url https://jido-hive-server-test.app.nsai.online/api --room-id <room-id> --participant-id alice --context-id <context-id>

@@ -171,7 +171,10 @@ Use this order every time. It is how you separate UI bugs from client bugs.
    - `bin/hive-room-smoke --brief "debug smoke room" --text "hello" --text "second message"`
    - `cd ../../jido_hive_client`
    - `./jido_hive_client room show --api-base-url https://jido-hive-server-test.app.nsai.online/api --room-id <room-id>`
+   - `./jido_hive_client room workflow --api-base-url https://jido-hive-server-test.app.nsai.online/api --room-id <room-id>`
+   - `./jido_hive_client room inspect --api-base-url https://jido-hive-server-test.app.nsai.online/api --room-id <room-id>`
    - `./jido_hive_client room tail --api-base-url https://jido-hive-server-test.app.nsai.online/api --room-id <room-id>`
+   - `./jido_hive_client room publish-plan --api-base-url https://jido-hive-server-test.app.nsai.online/api --room-id <room-id>`
    - `./jido_hive_client room submit --api-base-url https://jido-hive-server-test.app.nsai.online/api --room-id <room-id> --participant-id alice --text "hello"`
    - `JIDO_HIVE_CLIENT_LOG_LEVEL=debug ./jido_hive_client room show --api-base-url https://jido-hive-server-test.app.nsai.online/api --room-id <room-id> > room.json 2> trace.ndjson`
 3. Only if it works headlessly and fails here should you debug the ExRatatui app.
@@ -366,6 +369,18 @@ mix escript.build
 ./jido_hive_client room show --api-base-url https://jido-hive-server-test.app.nsai.online/api --room-id <room-id>
 ```
 
+### Show room workflow summary
+
+```bash
+./jido_hive_client room workflow --api-base-url https://jido-hive-server-test.app.nsai.online/api --room-id <room-id>
+```
+
+### Inspect the consolidated room sync surface
+
+```bash
+./jido_hive_client room inspect --api-base-url https://jido-hive-server-test.app.nsai.online/api --room-id <room-id>
+```
+
 ### Tail room timeline
 
 ```bash
@@ -393,6 +408,7 @@ mix escript.build
 ### Publish headlessly
 
 ```bash
+./jido_hive_client room publish-plan --api-base-url https://jido-hive-server-test.app.nsai.online/api --room-id <room-id>
 ./jido_hive_client room publish --api-base-url https://jido-hive-server-test.app.nsai.online/api --room-id <room-id> --payload-file publish.json
 ```
 

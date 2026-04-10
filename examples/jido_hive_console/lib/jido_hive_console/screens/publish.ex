@@ -103,7 +103,7 @@ defmodule JidoHiveConsole.Screens.Publish do
 
   defp header_widget(state) do
     %Paragraph{
-      text: "Publish  ·  Room #{state.room_id}",
+      text: "Publish Room Result  ·  Room #{state.room_id}",
       wrap: false,
       style: ScreenUI.header_style(),
       block: %ExRatatui.Widgets.Block{
@@ -117,7 +117,7 @@ defmodule JidoHiveConsole.Screens.Publish do
 
   defp meta_widget(state) do
     ScreenUI.text_widget(
-      "Selected channels: #{Enum.join(state.publish_selected, ", ") |> blank_to("none")}",
+      "Ready: #{publish_ready_label(state)}  ·  Selected channels: #{Enum.join(state.publish_selected, ", ") |> blank_to("none")}",
       style: ScreenUI.meta_style(),
       wrap: true
     )
@@ -127,7 +127,7 @@ defmodule JidoHiveConsole.Screens.Publish do
     items = publication_items(state)
 
     if items == [] do
-      ScreenUI.pane("Channels and Bindings", ["Loading publication plan..."], border_fg: :cyan)
+      ScreenUI.pane("Publish Checklist", ["Loading publication plan..."], border_fg: :cyan)
     else
       %List{
         items: items,
@@ -136,7 +136,7 @@ defmodule JidoHiveConsole.Screens.Publish do
         style: %Style{fg: :white},
         highlight_style: %Style{fg: :yellow, modifiers: [:bold]},
         block: %ExRatatui.Widgets.Block{
-          title: "Channels and Bindings",
+          title: "Publish Checklist",
           borders: [:all],
           border_type: :rounded,
           border_style: %Style{fg: :cyan},
@@ -148,7 +148,7 @@ defmodule JidoHiveConsole.Screens.Publish do
 
   defp preview_widget(state) do
     ScreenUI.pane(
-      "Preview (#{current_channel(state) || "none"})",
+      "Channel Preview (#{current_channel(state) || "none"})",
       preview_lines(state, current_channel(state), max(state.screen_width - 10, 48)),
       border_fg: :green,
       wrap: true
@@ -175,8 +175,8 @@ defmodule JidoHiveConsole.Screens.Publish do
 
       _other ->
         ScreenUI.pane(
-          "Editor",
-          [auth_summary(state)],
+          "Publish Readiness",
+          publish_readiness_lines(state),
           border_fg: :yellow,
           wrap: true
         )
@@ -184,12 +184,15 @@ defmodule JidoHiveConsole.Screens.Publish do
   end
 
   defp editor_widget(%Model{} = state) do
-    ScreenUI.pane("Editor", [auth_summary(state)], border_fg: :yellow, wrap: true)
+    ScreenUI.pane("Publish Readiness", publish_readiness_lines(state),
+      border_fg: :yellow,
+      wrap: true
+    )
   end
 
   defp footer_widget do
     ScreenUI.text_widget(
-      "Tab focus  ·  Space toggle channel  ·  Type binding  ·  r refresh auth on channel rows  ·  Enter publish  ·  Esc back  ·  Ctrl+G help  ·  F2 debug  ·  Ctrl+Q quit",
+      "Tab move  ·  Space select channel  ·  Type binding  ·  r refresh auth on channel rows  ·  Enter publish  ·  Esc back  ·  Ctrl+G help  ·  F2 debug  ·  Ctrl+Q quit",
       style: ScreenUI.meta_style(),
       wrap: true
     )
@@ -254,6 +257,29 @@ defmodule JidoHiveConsole.Screens.Publish do
       end
     end)
     |> blank_to("Select a binding field to edit, or toggle a channel to include it.")
+  end
+
+  defp publish_readiness_lines(state) do
+    [
+      "Room ready: #{publish_ready_label(state)}",
+      "Selected channels: #{Enum.join(state.publish_selected, ", ") |> blank_to("none")}",
+      "Blockers: #{publish_blockers(state)}",
+      "",
+      "Auth",
+      auth_summary(state)
+    ]
+  end
+
+  defp publish_ready_label(state) do
+    status = Map.get(state.snapshot, "status") || Map.get(state.snapshot, :status)
+    if status == "publication_ready", do: "yes", else: "no"
+  end
+
+  defp publish_blockers(state) do
+    case validate_submission(state) do
+      :ok -> "none"
+      {:error, message} -> message
+    end
   end
 
   defp publication_item_lines(publication, state, focus) do

@@ -647,7 +647,82 @@ defmodule JidoHiveConsole.AppTest do
              {:msg, :toggle_debug}
   end
 
-  test "global Ctrl+C quits and F2 toggles debug mode", %{model: model} do
+  test "room guide uses navigation keys to scroll the overlay", %{model: model} do
+    state = %{model | help_visible: true, screen_width: 72, screen_height: 16}
+
+    assert App.event_to_msg(%Key{code: "down", kind: "press"}, state) ==
+             {:msg, {:scroll_help, 1}}
+
+    assert App.event_to_msg(%Key{code: "page_down", kind: "press"}, state) ==
+             {:msg, {:scroll_help, 8}}
+
+    assert App.event_to_msg(%Key{code: "home", kind: "press"}, state) ==
+             {:msg, :help_scroll_top}
+
+    assert App.event_to_msg(%Key{code: "end", kind: "press"}, state) ==
+             {:msg, :help_scroll_bottom}
+
+    {bottom_state, []} = App.update(:help_scroll_bottom, state)
+    assert bottom_state.help_scroll > 0
+  end
+
+  test "help scroll clamps at the popup boundary instead of accumulating phantom downward offset",
+       %{
+         model: model
+       } do
+    state = %{model | help_visible: true, screen_width: 72, screen_height: 16}
+
+    {bottom_state, []} = App.update(:help_scroll_bottom, state)
+    {same_state, []} = App.update({:scroll_help, 20}, bottom_state)
+    {up_state, []} = App.update({:scroll_help, -1}, same_state)
+
+    assert same_state.help_scroll == bottom_state.help_scroll
+    assert up_state.help_scroll == bottom_state.help_scroll - 1
+  end
+
+  test "Ctrl+C clears the active draft before falling back to quit", %{model: model} do
+    room_state = %{model | input_buffer: "draft"}
+
+    assert App.event_to_msg(%Key{code: "c", kind: "press", modifiers: ["ctrl"]}, room_state) ==
+             {:msg, :clear_active_input}
+
+    {cleared_room_state, []} = App.update(:clear_active_input, room_state)
+    assert cleared_room_state.input_buffer == ""
+
+    conflict_state =
+      model
+      |> Map.put(:active_screen, :conflict)
+      |> Map.put(:conflict_input_buf, "merge both")
+
+    {cleared_conflict_state, []} = App.update(:clear_active_input, conflict_state)
+    assert cleared_conflict_state.conflict_input_buf == ""
+
+    wizard_state =
+      model
+      |> Map.put(:active_screen, :wizard)
+      |> Map.put(:wizard_step, 0)
+      |> Map.put(:wizard_fields, %{"brief" => "build a room"})
+
+    {cleared_wizard_state, []} = App.update(:clear_active_input, wizard_state)
+    assert Map.get(cleared_wizard_state.wizard_fields, "brief") == ""
+
+    publish_state =
+      model
+      |> Map.put(:active_screen, :publish)
+      |> Map.put(:publish_plan, %{
+        "publications" => [
+          %{
+            "channel" => "github",
+            "required_bindings" => [%{"field" => "repo", "description" => "Owner/repo"}]
+          }
+        ]
+      })
+      |> Map.put(:publish_cursor, 1)
+      |> Map.put(:publish_bindings, %{"github" => %{"repo" => "owner/repo"}})
+
+    {cleared_publish_state, []} = App.update(:clear_active_input, publish_state)
+    assert get_in(cleared_publish_state.publish_bindings, ["github", "repo"]) == ""
+
     assert App.event_to_msg(%Key{code: "c", kind: "press", modifiers: ["ctrl"]}, model) ==
              {:msg, :quit}
 
@@ -958,7 +1033,7 @@ defmodule JidoHiveConsole.AppTest do
       |> TestSupport.collect_text()
       |> Enum.join("\n")
 
-    assert render_text =~ "Phases from selected policy:"
+    assert render_text =~ "The selected dispatch policy will drive the room through these phases:"
     assert render_text =~ "analysis"
     assert render_text =~ "Analyze the brief and add room-scoped context."
   end

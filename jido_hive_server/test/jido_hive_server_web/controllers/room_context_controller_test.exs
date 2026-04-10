@@ -200,6 +200,75 @@ defmodule JidoHiveServerWeb.RoomContextControllerTest do
            } = json_response(show_conn, 200)
   end
 
+  test "surfaces duplicate annotations on decorated context objects", %{conn: conn} do
+    create_room(conn, "room-context-duplicates-1")
+
+    first_contribution =
+      post(recycle(conn), ~p"/api/rooms/room-context-duplicates-1/contributions", %{
+        "participant_id" => "human-1",
+        "participant_role" => "reviewer",
+        "participant_kind" => "human",
+        "contribution_type" => "perspective",
+        "authority_level" => "binding",
+        "summary" => "Add the first belief.",
+        "context_objects" => [
+          %{
+            "object_type" => "belief",
+            "title" => "Shared state",
+            "body" => "The server owns room truth."
+          }
+        ]
+      })
+
+    assert %{
+             "data" => %{"context_objects" => [%{"context_id" => "ctx-1"}]}
+           } = json_response(first_contribution, 201)
+
+    duplicate_contribution =
+      post(recycle(first_contribution), ~p"/api/rooms/room-context-duplicates-1/contributions", %{
+        "participant_id" => "human-2",
+        "participant_role" => "reviewer",
+        "participant_kind" => "human",
+        "contribution_type" => "perspective",
+        "authority_level" => "binding",
+        "summary" => "Repeat the same belief.",
+        "context_objects" => [
+          %{
+            "object_type" => "belief",
+            "title" => "Shared state",
+            "body" => "The server owns room truth."
+          }
+        ]
+      })
+
+    assert %{
+             "data" => %{"context_objects" => context_objects}
+           } = json_response(duplicate_contribution, 201)
+
+    assert Enum.any?(context_objects, &(&1["context_id"] == "ctx-2"))
+
+    index_conn = get(recycle(conn), ~p"/api/rooms/room-context-duplicates-1/context_objects")
+
+    assert %{
+             "data" => [
+               %{
+                 "context_id" => "ctx-1",
+                 "derived" => %{
+                   "duplicate_status" => "canonical",
+                   "duplicate_context_ids" => ["ctx-1", "ctx-2"]
+                 }
+               },
+               %{
+                 "context_id" => "ctx-2",
+                 "derived" => %{
+                   "duplicate_status" => "duplicate",
+                   "canonical_context_id" => "ctx-1"
+                 }
+               }
+             ]
+           } = json_response(index_conn, 200)
+  end
+
   defp create_room(conn, room_id) do
     create_conn =
       post(conn, ~p"/api/rooms", %{

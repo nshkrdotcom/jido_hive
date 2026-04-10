@@ -1,7 +1,12 @@
 defmodule JidoHiveServer.Collaboration.SnapshotProjection do
   @moduledoc false
 
-  alias JidoHiveServer.Collaboration.{ContextGraph, ContextManager}
+  alias JidoHiveServer.Collaboration.{
+    ContextDeduper,
+    ContextGraph,
+    ContextManager,
+    WorkflowSummary
+  }
 
   @spec project(map()) :: map()
   def project(snapshot) when is_map(snapshot) do
@@ -9,14 +14,23 @@ defmodule JidoHiveServer.Collaboration.SnapshotProjection do
     |> ensure_context_defaults()
     |> ContextGraph.attach()
     |> then(fn projected ->
-      Map.put(projected, :context_annotations, ContextManager.rebuild_annotations(projected))
+      annotations =
+        projected
+        |> rebuild_annotations()
+
+      projected =
+        projected
+        |> Map.put(:context_annotations, annotations)
+
+      projected
+      |> Map.put(:workflow_summary, WorkflowSummary.build(projected))
     end)
   end
 
   @spec strip_derived(map()) :: map()
   def strip_derived(snapshot) when is_map(snapshot) do
     snapshot
-    |> Map.drop([:context_graph, :context_annotations])
+    |> Map.drop([:context_graph, :context_annotations, :workflow_summary])
     |> Map.put(:context_config, normalize_context_config(Map.get(snapshot, :context_config, %{})))
   end
 
@@ -24,6 +38,18 @@ defmodule JidoHiveServer.Collaboration.SnapshotProjection do
     snapshot
     |> Map.put_new(:context_config, %{participant_scopes: %{}})
     |> Map.put_new(:context_annotations, %{})
+  end
+
+  defp rebuild_annotations(projected) do
+    projected
+    |> ContextManager.rebuild_annotations()
+    |> merge_annotations(ContextDeduper.rebuild_annotations(projected))
+  end
+
+  defp merge_annotations(left, right) do
+    Map.merge(left, right, fn _context_id, left_annotation, right_annotation ->
+      Map.merge(left_annotation, right_annotation)
+    end)
   end
 
   defp normalize_context_config(%{} = context_config) do

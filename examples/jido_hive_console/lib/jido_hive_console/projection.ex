@@ -1,6 +1,7 @@
 defmodule JidoHiveConsole.Projection do
   @moduledoc false
 
+  alias JidoHiveClient.RoomWorkflow
   alias JidoHiveConsole.Model
 
   @ordered_types [
@@ -15,6 +16,19 @@ defmodule JidoHiveConsole.Projection do
     "note",
     "message"
   ]
+
+  @section_headings %{
+    "belief" => "WORKING BELIEFS",
+    "contradiction" => "CONFLICTS",
+    "decision" => "DECISIONS",
+    "decision_candidate" => "DECISION CANDIDATES",
+    "evidence" => "EVIDENCE",
+    "fact" => "FACTS",
+    "hypothesis" => "WORKING HYPOTHESES",
+    "message" => "MESSAGES",
+    "note" => "NOTES",
+    "question" => "OPEN QUESTIONS"
+  }
 
   @spec conversation_lines(map(), keyword()) :: [String.t()]
   def conversation_lines(snapshot, opts \\ []) do
@@ -33,6 +47,7 @@ defmodule JidoHiveConsole.Projection do
   def display_context_objects(snapshot) do
     snapshot
     |> context_objects()
+    |> Enum.reject(&duplicate_hidden?/1)
     |> Enum.sort_by(fn object ->
       {type_rank(object_type(object)), String.downcase(title(object) || body(object) || "")}
     end)
@@ -48,6 +63,66 @@ defmodule JidoHiveConsole.Projection do
     |> Enum.take(limit)
     |> build_context_lines(selected_index, width, objects)
     |> default_line("No structured context yet.")
+  end
+
+  @spec workflow_summary(map()) :: %{
+          objective: String.t(),
+          stage: String.t(),
+          next_action: String.t(),
+          reason: String.t(),
+          graph_counts: String.t()
+        }
+  def workflow_summary(snapshot) do
+    summary = RoomWorkflow.summary(snapshot)
+
+    %{
+      objective: summary.objective,
+      stage: summary.stage,
+      next_action: summary.next_action,
+      reason: workflow_reason_line(summary),
+      graph_counts: graph_counts_line(summary.graph_counts)
+    }
+  end
+
+  @spec selected_context_detail_lines(map() | nil, map() | [map()] | nil) :: [String.t()]
+  def selected_context_detail_lines(nil, _scope), do: ["No context selected."]
+
+  def selected_context_detail_lines(object, scope) when is_map(object) do
+    {incoming, outgoing} = graph_edges(object, scope)
+
+    relation_lines =
+      case relations(object) do
+        [] ->
+          ["Relations: none"]
+
+        relation_entries ->
+          ["Relations"] ++
+            Enum.map(relation_entries, fn relation ->
+              "- #{relation_value(relation)} #{relation_target_id(relation)}"
+            end)
+      end
+
+    [
+      "Context ID: #{context_id(object)}",
+      "Type: #{object_type(object)}",
+      "Authority: #{provenance_authority(object) || "advisory"}",
+      "Confidence: #{confidence(object)}",
+      "Graph: #{length(incoming)} incoming · #{length(outgoing)} outgoing"
+    ] ++
+      duplicate_detail_lines(object) ++
+      [
+        "",
+        "Title",
+        title(object) || "[untitled]",
+        "",
+        "Body",
+        body(object) || "[no body]"
+      ] ++
+      if relation_lines == ["Relations: none"] do
+        ["", "Relations: none"]
+      else
+        [""] ++ relation_lines
+      end
   end
 
   @spec provenance_tree(map(), [map()]) :: [String.t()]
@@ -193,6 +268,8 @@ defmodule JidoHiveConsole.Projection do
   end
 
   defp build_context_lines(objects, selected_index, width, all_objects) do
+    duplicates = duplicate_label_counts(objects)
+
     {lines, _last_type, _object_index} =
       Enum.reduce(objects, {[], nil, 0}, fn object, {lines, last_type, object_index} ->
         current_type = object_type(object)
@@ -205,7 +282,7 @@ defmodule JidoHiveConsole.Projection do
           end
 
         prefix = if object_index == selected_index, do: ">", else: " "
-        label = title(object) || body(object) || current_type
+        label = display_label(object, duplicates)
 
         content =
           object
@@ -223,7 +300,8 @@ defmodule JidoHiveConsole.Projection do
 
     suffixes =
       [
-        "[in:#{length(incoming)} out:#{length(outgoing)}]",
+        edge_counts_suffix(incoming, outgoing),
+        duplicate_suffix(object),
         if(stale?(object), do: "[STALE]"),
         if(conflict?(object, scope), do: "[CONFLICT]"),
         if(binding?(object), do: "[BINDING]")
@@ -419,6 +497,55 @@ defmodule JidoHiveConsole.Projection do
     Map.get(derived, "stale_ancestor") || Map.get(derived, :stale_ancestor) || false
   end
 
+  defp duplicate_hidden?(object), do: duplicate_status(object) == "duplicate"
+
+  defp duplicate_suffix(object) do
+    case duplicate_hidden_count(object) do
+      count when count > 0 -> "[DUP:#{count}]"
+      _other -> nil
+    end
+  end
+
+  defp duplicate_detail_lines(object) do
+    case duplicate_size(object) do
+      size when size > 1 ->
+        [
+          "Duplicates: #{size - 1} collapsed under #{duplicate_canonical_context_id(object) || context_id(object)}",
+          "Group: #{Enum.join(duplicate_context_ids(object), ", ")}"
+        ]
+
+      _other ->
+        []
+    end
+  end
+
+  defp duplicate_hidden_count(object) do
+    case duplicate_size(object) do
+      size when size > 1 -> size - 1
+      _other -> 0
+    end
+  end
+
+  defp duplicate_size(object) do
+    derived = Map.get(object, "derived") || Map.get(object, :derived) || %{}
+    Map.get(derived, "duplicate_size") || Map.get(derived, :duplicate_size) || 0
+  end
+
+  defp duplicate_status(object) do
+    derived = Map.get(object, "derived") || Map.get(object, :derived) || %{}
+    Map.get(derived, "duplicate_status") || Map.get(derived, :duplicate_status)
+  end
+
+  defp duplicate_context_ids(object) do
+    derived = Map.get(object, "derived") || Map.get(object, :derived) || %{}
+    Map.get(derived, "duplicate_context_ids") || Map.get(derived, :duplicate_context_ids) || []
+  end
+
+  defp duplicate_canonical_context_id(object) do
+    derived = Map.get(object, "derived") || Map.get(object, :derived) || %{}
+    Map.get(derived, "canonical_context_id") || Map.get(derived, :canonical_context_id)
+  end
+
   defp binding?(object), do: provenance_authority(object) == "binding"
 
   defp room_flag(%{fetch_error: true}), do: "✗"
@@ -441,9 +568,79 @@ defmodule JidoHiveConsole.Projection do
   end
 
   defp section_heading(type) do
-    type
+    Map.get(@section_headings, type, type |> String.replace("_", " ") |> String.upcase())
+  end
+
+  defp workflow_reason_line(%{publish_ready: true}),
+    do: "Server reports the room is ready to publish."
+
+  defp workflow_reason_line(%{publish_blockers: [first | _rest]}) when is_binary(first),
+    do: first
+
+  defp workflow_reason_line(%{blockers: blockers}) when is_list(blockers) and blockers != [] do
+    blockers
+    |> Enum.map_join(" · ", &format_blocker/1)
+  end
+
+  defp workflow_reason_line(_summary), do: "No active blockers reported."
+
+  defp graph_counts_line(graph_counts) do
+    [:decisions, :questions, :contradictions, :duplicates, :stale, :total]
+    |> Enum.map(fn key ->
+      {key, Map.get(graph_counts, key) || Map.get(graph_counts, Atom.to_string(key))}
+    end)
+    |> Enum.reject(fn {_key, value} -> is_nil(value) or value == 0 end)
+    |> Enum.map_join("  |  ", fn {key, value} ->
+      "#{value} #{humanize_count_key(key, value)}"
+    end)
+    |> case do
+      "" -> "0 total"
+      line -> line
+    end
+  end
+
+  defp format_blocker(blocker) when is_map(blocker) do
+    kind = Map.get(blocker, :kind) || Map.get(blocker, "kind") || "blocker"
+    count = Map.get(blocker, :count) || Map.get(blocker, "count") || 1
+    "#{count} #{String.replace(to_string(kind), "_", " ")}"
+  end
+
+  defp humanize_count_key(key, value) do
+    key
+    |> to_string()
     |> String.replace("_", " ")
-    |> String.upcase()
+    |> then(fn label ->
+      if value == 1 and String.ends_with?(label, "s") do
+        String.trim_trailing(label, "s")
+      else
+        label
+      end
+    end)
+  end
+
+  defp duplicate_label_counts(objects) do
+    objects
+    |> Enum.map(&(title(&1) || body(&1) || object_type(&1)))
+    |> Enum.frequencies()
+  end
+
+  defp display_label(object, duplicates) do
+    label = title(object) || body(object) || object_type(object)
+
+    if (Map.get(duplicates, label, 0) > 1 or duplicate_hidden_count(object) > 0) and
+         is_binary(context_id(object)) do
+      "#{label} · #{context_id(object)}"
+    else
+      label
+    end
+  end
+
+  defp edge_counts_suffix(incoming, outgoing) do
+    if incoming == [] and outgoing == [] do
+      nil
+    else
+      "[in:#{length(incoming)} out:#{length(outgoing)}]"
+    end
   end
 
   defp type_prefix(object), do: "[#{String.upcase(object_type(object))}] "

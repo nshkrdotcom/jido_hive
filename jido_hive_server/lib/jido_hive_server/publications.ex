@@ -2,6 +2,7 @@ defmodule JidoHiveServer.Publications do
   @moduledoc false
 
   alias Jido.Integration.V2
+  alias JidoHiveServer.Collaboration.ContextDeduper
   alias JidoHiveServer.Persistence
 
   defmodule Gateway do
@@ -54,7 +55,8 @@ defmodule JidoHiveServer.Publications do
     %{
       room_id: snapshot.room_id,
       requested: summary.publish_requests != [],
-      source_entries: Enum.map(snapshot.context_objects, & &1.context_id),
+      duplicate_policy: "canonical_only",
+      source_entries: Enum.map(summary.source_context_objects, & &1.context_id),
       publications: Enum.map(@publication_specs, &publication_plan(&1, snapshot, summary))
     }
   end
@@ -233,10 +235,13 @@ defmodule JidoHiveServer.Publications do
   defp build_input(_channel, plan, _bindings), do: plan.draft
 
   defp summarize_room(snapshot) do
+    source_context_objects = ContextDeduper.canonical_context_objects(snapshot)
+
     %{
-      claims: objects_by_type(snapshot.context_objects, ["belief", "claim", "decision"]),
-      evidence: objects_by_type(snapshot.context_objects, ["evidence", "artifact"]),
-      objections: objects_by_type(snapshot.context_objects, ["question", "constraint"]),
+      source_context_objects: source_context_objects,
+      claims: objects_by_type(source_context_objects, ["belief", "claim", "decision"]),
+      evidence: objects_by_type(source_context_objects, ["evidence", "artifact"]),
+      objections: objects_by_type(source_context_objects, ["question", "constraint"]),
       publish_requests: publish_requests(snapshot)
     }
   end

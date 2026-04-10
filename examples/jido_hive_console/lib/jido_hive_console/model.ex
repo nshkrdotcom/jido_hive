@@ -70,6 +70,7 @@ defmodule JidoHiveConsole.Model do
     poll_interval_ms: 1_000,
     debug_visible: false,
     help_visible: false,
+    help_scroll: 0,
     help_seen: MapSet.new()
   ]
 
@@ -203,11 +204,38 @@ defmodule JidoHiveConsole.Model do
   end
 
   @spec show_help(t()) :: t()
-  def show_help(%__MODULE__{} = state), do: %{state | help_visible: true}
+  def show_help(%__MODULE__{} = state), do: %{state | help_visible: true, help_scroll: 0}
 
   @spec dismiss_help(t()) :: t()
   def dismiss_help(%__MODULE__{} = state) do
-    %{state | help_visible: false, help_seen: MapSet.put(state.help_seen, state.active_screen)}
+    %{
+      state
+      | help_visible: false,
+        help_scroll: 0,
+        help_seen: MapSet.put(state.help_seen, state.active_screen)
+    }
+  end
+
+  @spec scroll_help(t(), integer()) :: t()
+  def scroll_help(%__MODULE__{} = state, delta) when is_integer(delta) do
+    %{state | help_scroll: max(state.help_scroll + delta, 0)}
+  end
+
+  @spec scroll_help(t(), integer(), non_neg_integer()) :: t()
+  def scroll_help(%__MODULE__{} = state, delta, max_offset)
+      when is_integer(delta) and is_integer(max_offset) do
+    set_help_scroll(state, state.help_scroll + delta, max_offset)
+  end
+
+  @spec set_help_scroll(t(), integer()) :: t()
+  def set_help_scroll(%__MODULE__{} = state, offset) when is_integer(offset) do
+    %{state | help_scroll: max(offset, 0)}
+  end
+
+  @spec set_help_scroll(t(), integer(), non_neg_integer()) :: t()
+  def set_help_scroll(%__MODULE__{} = state, offset, max_offset)
+      when is_integer(offset) and is_integer(max_offset) do
+    %{state | help_scroll: clamp_help_scroll(offset, max_offset)}
   end
 
   @spec show_debug(t()) :: t()
@@ -298,6 +326,12 @@ defmodule JidoHiveConsole.Model do
 
   defp maybe_room_flow(room_id) when is_binary(room_id), do: RoomFlow.new(room_id)
   defp maybe_room_flow(_room_id), do: nil
+
+  defp clamp_help_scroll(offset, max_offset) do
+    offset
+    |> max(0)
+    |> min(max(max_offset, 0))
+  end
 
   defp maybe_seed_submit(nil, _pending_room_submit), do: nil
 

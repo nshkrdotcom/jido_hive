@@ -6,6 +6,8 @@ defmodule JidoHiveConsole.ScreenUI do
   alias ExRatatui.Widgets.{Block, Paragraph, Popup}
   alias JidoHiveConsole.Model
 
+  @help_footer "Enter or Esc closes this help. Ctrl+G or F1 opens it again. F2 shows debug."
+  @help_scroll_banner "[More below. Up/Down or PageUp/PageDown scroll. Home/End jump.]"
   @pending_indicator_width 16
   @pending_indicator_domain 3.0
   @pending_indicator_pass_ms 1_000
@@ -32,6 +34,7 @@ defmodule JidoHiveConsole.ScreenUI do
     %Paragraph{
       text: text,
       wrap: Keyword.get(opts, :wrap, true),
+      scroll: Keyword.get(opts, :scroll, {0, 0}),
       alignment: Keyword.get(opts, :alignment, :left),
       style: Keyword.get(opts, :style, %Style{fg: :white}),
       block: Keyword.get(opts, :block)
@@ -67,25 +70,23 @@ defmodule JidoHiveConsole.ScreenUI do
     [{popup, area}]
   end
 
-  def help_popup_widgets(frame, %Model{help_visible: true}, title, lines) do
+  def help_popup_widgets(
+        frame,
+        %Model{help_visible: true, help_scroll: help_scroll},
+        title,
+        lines
+      ) do
     area = root_area(frame)
-    available_width = max(frame.width - 4, 20)
-    width = available_width |> min(124) |> max(min(56, available_width))
-    available_height = max(frame.height - 4, 10)
-    height = min(max(length(lines) + 6, 16), available_height)
+
+    %{height: height, scroll: scroll, text: text, width: width} =
+      help_popup_layout(frame, lines, help_scroll)
 
     content =
       text_widget(
-        Enum.join(
-          lines ++
-            [
-              "",
-              "Enter or Esc closes this help. Ctrl+G or F1 opens it again. F2 shows debug."
-            ],
-          "\n"
-        ),
+        text,
         style: %Style{fg: :white},
-        wrap: true
+        wrap: false,
+        scroll: {scroll, 0}
       )
 
     popup = %Popup{
@@ -105,6 +106,14 @@ defmodule JidoHiveConsole.ScreenUI do
   end
 
   def help_popup_widgets(_frame, _state, _title, _lines), do: []
+
+  @spec help_popup_max_scroll(%{width: pos_integer(), height: pos_integer()}, [String.t()]) ::
+          non_neg_integer()
+  def help_popup_max_scroll(frame, lines) do
+    frame
+    |> help_popup_layout(lines, 0)
+    |> Map.fetch!(:max_scroll)
+  end
 
   @spec header_style() :: Style.t()
   def header_style, do: %Style{fg: :cyan, modifiers: [:bold]}
@@ -148,6 +157,110 @@ defmodule JidoHiveConsole.ScreenUI do
 
   defp to_text(lines) when is_list(lines), do: Enum.join(lines, "\n")
   defp to_text(text) when is_binary(text), do: text
+
+  defp help_popup_layout(frame, lines, requested_scroll) do
+    width = help_popup_width(frame)
+    available_height = max(frame.height - 4, 10)
+    content_width = max(width - 4, 1)
+    content_lines = help_popup_content_lines(lines, content_width, available_height)
+    height = min(max(length(content_lines) + 4, 12), available_height)
+    visible_lines = max(height - 4, 1)
+    max_scroll = max(length(content_lines) - visible_lines, 0)
+    scroll = requested_scroll |> max(0) |> min(max_scroll)
+
+    %{
+      height: height,
+      max_scroll: max_scroll,
+      scroll: scroll,
+      text: Enum.join(content_lines, "\n"),
+      width: width
+    }
+  end
+
+  defp help_popup_width(frame) do
+    available_width = max(frame.width - 4, 20)
+    available_width |> min(124) |> max(min(56, available_width))
+  end
+
+  defp help_popup_content_lines(lines, content_width, available_height) do
+    content_lines =
+      wrap_lines(
+        lines ++
+          [
+            "",
+            @help_footer
+          ],
+        content_width
+      )
+
+    max_visible_lines = max(available_height - 4, 1)
+
+    if length(content_lines) > max_visible_lines do
+      wrap_lines([@help_scroll_banner, ""] ++ lines ++ ["", @help_footer], content_width)
+    else
+      content_lines
+    end
+  end
+
+  defp wrap_lines(lines, width) when is_list(lines) do
+    Enum.flat_map(lines, &wrap_line(&1, width))
+  end
+
+  defp wrap_line(line, _width) when line in [nil, ""], do: [""]
+
+  defp wrap_line(line, width) when is_binary(line) and width > 0 do
+    if String.length(line) <= width do
+      [line]
+    else
+      leading = leading_spaces(line)
+      content_width = max(width - String.length(leading), 1)
+
+      line
+      |> String.trim_leading()
+      |> split_words(content_width)
+      |> Enum.map(&(leading <> &1))
+    end
+  end
+
+  defp leading_spaces(line) do
+    line
+    |> String.graphemes()
+    |> Enum.take_while(&(&1 == " "))
+    |> Enum.join()
+  end
+
+  defp split_words(line, width) do
+    line
+    |> String.split(~r/\s+/, trim: true)
+    |> Enum.flat_map(&split_long_word(&1, width))
+    |> Enum.reduce([], fn word, acc ->
+      append_wrapped_word(acc, word, width)
+    end)
+  end
+
+  defp split_long_word(word, width) do
+    if String.length(word) <= width do
+      [word]
+    else
+      word
+      |> String.graphemes()
+      |> Enum.chunk_every(width)
+      |> Enum.map(&Enum.join/1)
+    end
+  end
+
+  defp append_wrapped_word([], word, _width), do: [word]
+
+  defp append_wrapped_word(acc, word, width) do
+    [current | rest] = Enum.reverse(acc)
+    candidate = current <> " " <> word
+
+    if String.length(candidate) <= width do
+      Enum.reverse([candidate | rest])
+    else
+      Enum.reverse([word, current | rest])
+    end
+  end
 
   defp pending_indicator(now_ms) do
     center = shimmer_center(now_ms)
@@ -204,7 +317,7 @@ defmodule JidoHiveConsole.ScreenUI do
       [
         "",
         "F2, Enter, or Esc closes this view.",
-        "Ctrl+C or Ctrl+Q exits the console.",
+        "Ctrl+C clears the active draft when you are typing; otherwise it exits. Ctrl+Q always quits.",
         "For file logging, rerun with --debug and inspect ~/.config/hive/hive_console.log.",
         "If the terminal is ever left dirty after a crash, run: reset"
       ]

@@ -26,6 +26,7 @@ defmodule JidoHiveConsole.HelpGuideTest do
     assert text =~ "Room: room-1."
     assert text =~ "Selected context: ctx-1."
     assert text =~ "Relation mode: supports."
+    assert text =~ "Ctrl+C clears the active draft"
     assert text =~ "WORKFLOW"
   end
 

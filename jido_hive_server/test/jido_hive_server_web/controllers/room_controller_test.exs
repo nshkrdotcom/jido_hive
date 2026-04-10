@@ -103,6 +103,10 @@ defmodule JidoHiveServerWeb.RoomControllerTest do
              "data" => %{
                "room_id" => "room-http-1",
                "status" => "publication_ready",
+               "workflow_summary" => %{
+                 "publish_ready" => true,
+                 "stage" => "Ready to publish"
+               },
                "context_objects" => [_ | _],
                "contributions" => [%{"summary" => _summary}],
                "assignments" => [%{"status" => "completed"}]
@@ -198,6 +202,10 @@ defmodule JidoHiveServerWeb.RoomControllerTest do
              "data" => %{
                "room_id" => "room-http-string-phases-1",
                "status" => "publication_ready",
+               "workflow_summary" => %{
+                 "publish_ready" => true,
+                 "stage" => "Ready to publish"
+               },
                "context_objects" => [_ | _],
                "contributions" => [%{"summary" => _summary}],
                "assignments" => [%{"status" => "completed"}]
@@ -275,6 +283,10 @@ defmodule JidoHiveServerWeb.RoomControllerTest do
            } = json_response(sync_conn, 200)
 
     assert room["status"] in ["idle", "running", "awaiting_authority", "publication_ready"]
+
+    assert room["workflow_summary"]["objective"] ==
+             "Exercise the consolidated room sync endpoint."
+
     assert Enum.any?(timeline, &(&1["kind"] == "contribution.recorded"))
     assert Enum.any?(operations, &(&1["operation_id"] == operation_id))
     assert is_binary(next_cursor)
@@ -293,6 +305,58 @@ defmodule JidoHiveServerWeb.RoomControllerTest do
            } = json_response(sync_after_conn, 200)
 
     assert Enum.any?(operations_after, &(&1["operation_id"] == operation_id))
+  end
+
+  test "publication plan exposes canonical-only source entries for duplicate graph items", %{
+    conn: conn
+  } do
+    create_conn =
+      post(conn, ~p"/api/rooms", %{
+        "room_id" => "room-http-publication-plan-1",
+        "brief" => "Exercise canonical publication planning.",
+        "rules" => [],
+        "dispatch_policy_id" => "human_gate/v1",
+        "participants" => []
+      })
+
+    assert %{"data" => %{"room_id" => "room-http-publication-plan-1"}} =
+             json_response(create_conn, 201)
+
+    for {participant_id, summary} <- [{"alice", "First belief"}, {"bob", "Repeated belief"}] do
+      contribution_conn =
+        post(recycle(create_conn), ~p"/api/rooms/room-http-publication-plan-1/contributions", %{
+          "participant_id" => participant_id,
+          "participant_role" => "coordinator",
+          "participant_kind" => "human",
+          "contribution_type" => "perspective",
+          "authority_level" => "binding",
+          "summary" => summary,
+          "context_objects" => [
+            %{
+              "object_type" => "belief",
+              "title" => "Shared state",
+              "body" => "The server owns room truth."
+            }
+          ],
+          "execution" => %{"status" => "completed"},
+          "status" => "completed"
+        })
+
+      assert %{"data" => %{"room_id" => "room-http-publication-plan-1"}} =
+               json_response(contribution_conn, 201)
+    end
+
+    plan_conn =
+      get(recycle(create_conn), ~p"/api/rooms/room-http-publication-plan-1/publication_plan")
+
+    assert %{
+             "data" => %{
+               "room_id" => "room-http-publication-plan-1",
+               "duplicate_policy" => "canonical_only",
+               "source_entries" => ["ctx-1"],
+               "publications" => [_ | _]
+             }
+           } = json_response(plan_conn, 200)
   end
 
   defp wait_until(fun, attempts \\ 100)

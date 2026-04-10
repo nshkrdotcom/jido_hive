@@ -39,12 +39,15 @@ defmodule JidoHiveServer.PublicationsTest do
     plan = Publications.build_plan(snapshot)
     assert plan.room_id == "room-publications-1"
     assert plan.requested
+    assert plan.duplicate_policy == "canonical_only"
+    assert plan.source_entries == ["ctx-1", "ctx-2", "ctx-3", "ctx-4"]
 
     github_plan = Enum.find(plan.publications, &(&1.channel == "github"))
     assert github_plan.capability_id == "github.issue.create"
     assert github_plan.draft.title =~ "client-server collaboration protocol"
     assert github_plan.draft.body =~ "Shared packet"
     assert github_plan.draft.body =~ "Conflict handling is underspecified"
+    assert String.split(github_plan.draft.body, "Shared packet") |> length() == 2
 
     notion_plan = Enum.find(plan.publications, &(&1.channel == "notion"))
     assert notion_plan.capability_id == "notion.pages.create"
@@ -117,6 +120,12 @@ defmodule JidoHiveServer.PublicationsTest do
           body: "The server should own a shared packet of instructions, context, and refs."
         },
         %{
+          context_id: "ctx-5",
+          object_type: "belief",
+          title: "Shared packet",
+          body: "The server should own a shared packet of instructions, context, and refs."
+        },
+        %{
           context_id: "ctx-3",
           object_type: "evidence",
           title: "Packet lineage",
@@ -139,6 +148,7 @@ defmodule JidoHiveServer.PublicationsTest do
         }
       ],
       status: "publication_ready",
+      context_annotations: %{},
       dispatch_policy_id: "round_robin/v2",
       dispatch_policy_config: %{},
       dispatch_state: %{completed_slots: 2, total_slots: 2},

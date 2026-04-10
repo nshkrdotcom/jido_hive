@@ -1,6 +1,6 @@
 defmodule JidoHiveConsole.TestSupport do
   alias ExRatatui
-  alias ExRatatui.Widgets.{List, Paragraph, Popup, TextInput}
+  alias ExRatatui.Widgets.{List, Paragraph, Popup, TextInput, Textarea}
 
   def tmp_dir do
     path =
@@ -27,6 +27,11 @@ defmodule JidoHiveConsole.TestSupport do
     |> Enum.map(&text_input_value/1)
   end
 
+  def textarea_values(rendered) do
+    widgets(rendered, Textarea)
+    |> Enum.map(&textarea_value/1)
+  end
+
   defp do_collect_text({widget, _area}), do: do_collect_text(widget)
 
   defp do_collect_text(%Paragraph{text: text, block: block}) do
@@ -43,6 +48,11 @@ defmodule JidoHiveConsole.TestSupport do
 
   defp do_collect_text(%TextInput{state: state, placeholder: placeholder, block: block}) do
     value = text_input_value(%TextInput{state: state, placeholder: placeholder})
+    [block_title(block), value]
+  end
+
+  defp do_collect_text(%Textarea{state: state, placeholder: placeholder, block: block}) do
+    value = textarea_value(%Textarea{state: state, placeholder: placeholder})
     [block_title(block), value]
   end
 
@@ -79,4 +89,13 @@ defmodule JidoHiveConsole.TestSupport do
   end
 
   defp text_input_value(%TextInput{placeholder: placeholder}), do: placeholder
+
+  defp textarea_value(%Textarea{state: state, placeholder: placeholder}) when is_reference(state) do
+    case ExRatatui.textarea_get_value(state) do
+      "" -> placeholder
+      value -> value
+    end
+  end
+
+  defp textarea_value(%Textarea{placeholder: placeholder}), do: placeholder
 end

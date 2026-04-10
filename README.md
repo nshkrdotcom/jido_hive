@@ -80,6 +80,8 @@ cd jido_hive_client
 mix escript.build
 ./jido_hive_client room list --api-base-url http://127.0.0.1:4000/api
 ./jido_hive_client room show --api-base-url http://127.0.0.1:4000/api --room-id <room-id>
+./jido_hive_client room workflow --api-base-url http://127.0.0.1:4000/api --room-id <room-id>
+./jido_hive_client room inspect --api-base-url http://127.0.0.1:4000/api --room-id <room-id>
 ./jido_hive_client room submit --api-base-url http://127.0.0.1:4000/api --room-id <room-id> --participant-id alice --text "hello"
 ```
 
@@ -158,6 +160,7 @@ flowchart LR
   - `next_cursor`
   - `context_objects`
   - `operations`
+- `GET /api/rooms/:id` and `GET /api/rooms/:id/sync` include a server-owned `workflow_summary`
 - `JidoHiveClient.Embedded` now uses that single sync surface instead of separate room, timeline, and context fetch fan-out
 - the console derives submit/run status from `JidoHiveClient.RoomFlow`; it no longer polls run status separately
 
@@ -199,7 +202,10 @@ Representative commands:
 ```bash
 ./jido_hive_client room list --api-base-url https://jido-hive-server-test.app.nsai.online/api
 ./jido_hive_client room show --api-base-url https://jido-hive-server-test.app.nsai.online/api --room-id <room-id>
+./jido_hive_client room workflow --api-base-url https://jido-hive-server-test.app.nsai.online/api --room-id <room-id>
+./jido_hive_client room inspect --api-base-url https://jido-hive-server-test.app.nsai.online/api --room-id <room-id>
 ./jido_hive_client room tail --api-base-url https://jido-hive-server-test.app.nsai.online/api --room-id <room-id>
+./jido_hive_client room publish-plan --api-base-url https://jido-hive-server-test.app.nsai.online/api --room-id <room-id>
 ./jido_hive_client room submit --api-base-url https://jido-hive-server-test.app.nsai.online/api --room-id <room-id> --participant-id alice --text "hello"
 ./jido_hive_client room accept --api-base-url https://jido-hive-server-test.app.nsai.online/api --room-id <room-id> --participant-id alice --context-id <context-id>
 ./jido_hive_client room resolve --api-base-url https://jido-hive-server-test.app.nsai.online/api --room-id <room-id> --participant-id alice --left <ctx-a> --right <ctx-b> --text "resolution"

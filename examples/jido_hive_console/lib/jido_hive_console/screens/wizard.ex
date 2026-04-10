@@ -86,10 +86,11 @@ defmodule JidoHiveConsole.Screens.Wizard do
       state: ref,
       style: %Style{fg: :white},
       cursor_style: %Style{fg: :black, bg: :white},
-      placeholder: "Describe the room objective...",
+      placeholder:
+        "Describe the desired outcome, constraints, and what a good result looks like...",
       placeholder_style: ScreenUI.meta_style(),
       block: %ExRatatui.Widgets.Block{
-        title: "Room Brief",
+        title: "Room Objective",
         borders: [:all],
         border_type: :rounded,
         border_style: %Style{fg: :yellow},
@@ -99,7 +100,7 @@ defmodule JidoHiveConsole.Screens.Wizard do
   end
 
   defp body_widget(%Model{wizard_step: 0} = state) do
-    ScreenUI.pane("Room Brief", ["> " <> Map.get(state.wizard_fields, "brief", "")],
+    ScreenUI.pane("Room Objective", ["> " <> Map.get(state.wizard_fields, "brief", "")],
       border_fg: :yellow,
       wrap: true
     )
@@ -151,9 +152,13 @@ defmodule JidoHiveConsole.Screens.Wizard do
 
   defp body_widget(%Model{wizard_step: 2} = state) do
     ScreenUI.pane(
-      "Selected Phases",
-      ["Phases from selected policy:"] ++
-        phase_lines(Map.get(state.wizard_fields, "phases", [])) ++ ["", "Enter to continue."],
+      "Phase Plan",
+      [
+        "The selected dispatch policy will drive the room through these phases:",
+        ""
+      ] ++
+        phase_lines(Map.get(state.wizard_fields, "phases", [])) ++
+        ["", "Enter to continue when this plan matches the room objective."],
       border_fg: :green,
       wrap: true
     )
@@ -222,16 +227,16 @@ defmodule JidoHiveConsole.Screens.Wizard do
     pending_room_id = pending_room_id(state)
 
     ScreenUI.pane(
-      "Confirm",
+      "Launch Checklist",
       [
-        "Brief: #{Map.get(state.wizard_fields, "brief", "")}",
+        "Objective: #{Map.get(state.wizard_fields, "brief", "")}",
         "Policy: #{Map.get(state.wizard_fields, "dispatch_policy_id", "")}",
         "Phases: #{phase_summary(phases)}",
         "Workers: #{Enum.map_join(participants, ", ", & &1["participant_id"])}",
         "",
         if(pending_room_id,
           do: "Creating room #{pending_room_id} in the background. F2 shows debug details.",
-          else: "Enter to create and run the room."
+          else: "Enter to create the room and immediately start execution."
         )
       ],
       border_fg: :green,
@@ -251,22 +256,29 @@ defmodule JidoHiveConsole.Screens.Wizard do
   end
 
   defp footer_lines(%{wizard_step: 0}),
-    do: ["Type brief", "Enter continue", "Esc cancel", "Ctrl+Q quit"]
+    do: ["Write objective", "Enter continue", "Esc cancel", "Ctrl+Q quit"]
 
   defp footer_lines(%{wizard_step: 3}),
     do: ["Up/Down move", "Space toggle worker", "Enter continue", "Esc back", "Ctrl+Q quit"]
 
   defp footer_lines(%{wizard_step: 4}),
-    do: ["Review plan", "Enter create room", "Esc back", "Ctrl+G help", "F2 debug", "Ctrl+Q quit"]
+    do: [
+      "Review launch checklist",
+      "Enter create room",
+      "Esc back",
+      "Ctrl+G help",
+      "F2 debug",
+      "Ctrl+Q quit"
+    ]
 
   defp footer_lines(_state),
     do: ["Up/Down move", "Enter continue", "Esc back", "Ctrl+G help", "F2 debug", "Ctrl+Q quit"]
 
-  defp title_for_step(%{wizard_step: 0}), do: "NEW ROOM — Step 0 of 4: Brief"
-  defp title_for_step(%{wizard_step: 1}), do: "NEW ROOM — Step 1 of 4: Dispatch Policy"
-  defp title_for_step(%{wizard_step: 2}), do: "NEW ROOM — Step 2 of 4: Phases"
-  defp title_for_step(%{wizard_step: 3}), do: "NEW ROOM — Step 3 of 4: Select Workers"
-  defp title_for_step(%{wizard_step: 4}), do: "NEW ROOM — Step 4 of 4: Confirm"
+  defp title_for_step(%{wizard_step: 0}), do: "GUIDED ROOM SETUP — Step 0 of 4: Objective"
+  defp title_for_step(%{wizard_step: 1}), do: "GUIDED ROOM SETUP — Step 1 of 4: Dispatch Policy"
+  defp title_for_step(%{wizard_step: 2}), do: "GUIDED ROOM SETUP — Step 2 of 4: Phase Plan"
+  defp title_for_step(%{wizard_step: 3}), do: "GUIDED ROOM SETUP — Step 3 of 4: Select Workers"
+  defp title_for_step(%{wizard_step: 4}), do: "GUIDED ROOM SETUP — Step 4 of 4: Launch"
 
   defp worker_title(%Model{} = state) do
     "Select Workers (#{length(state.wizard_available_targets)} online)"

@@ -38,9 +38,10 @@ defmodule JidoHiveConsole.Screens.Lobby do
       {header_widget(state), header_area},
       {subtitle_widget(), subtitle_area},
       {body_widget(state), body_area},
-      {footer_widget("Ctrl+G help  ·  ↑↓ select  ·  Enter open  ·  n new room"), footer_top_area},
-      {footer_widget("r refresh  ·  d remove stale entry  ·  F2 debug  ·  Ctrl+Q quit"),
-       footer_bottom_area},
+      {footer_widget("Enter continue room  ·  n guided room  ·  r refresh"), footer_top_area},
+      {footer_widget(
+         "PUB publish-ready  ·  ⚡ needs attention  ·  ✗ stale local entry  ·  F2 debug  ·  Ctrl+Q quit"
+       ), footer_bottom_area},
       {status_widget(state), status_area}
     ]
 
@@ -109,7 +110,7 @@ defmodule JidoHiveConsole.Screens.Lobby do
 
   defp header_widget(state) do
     %Paragraph{
-      text: "Jido Hive Console  ·  #{server_label(state)}  ·  #{identity_label(state)}",
+      text: "Jido Hive Operator Console  ·  #{server_label(state)}  ·  #{identity_label(state)}",
       style: ScreenUI.header_style(),
       block: ScreenUI.text_widget("", block: nil).block
     }
@@ -118,7 +119,7 @@ defmodule JidoHiveConsole.Screens.Lobby do
 
   defp subtitle_widget do
     ScreenUI.text_widget(
-      "Rooms: ~/.config/hive/rooms.json (scoped to current server)",
+      "Continue a room, inspect shared graph progress, or start a guided room.",
       style: ScreenUI.meta_style(),
       wrap: false
     )
@@ -128,9 +129,10 @@ defmodule JidoHiveConsole.Screens.Lobby do
     ScreenUI.pane(
       "Saved Rooms",
       [
-        "No saved rooms yet.",
+        "No saved rooms yet for this server.",
         "",
-        "Press n to open the new-room wizard.",
+        "Press n to launch the guided room setup.",
+        "Use this console when you want to supervise a room, inspect its shared graph, and publish the result.",
         "If you already know a room id, run: hive console --room-id <id>."
       ],
       border_fg: :cyan
@@ -210,7 +212,7 @@ defmodule JidoHiveConsole.Screens.Lobby do
 
   defp panel_body_block do
     %ExRatatui.Widgets.Block{
-      title: "Saved Rooms",
+      title: "Continue Work",
       borders: [:all],
       border_type: :rounded,
       border_style: %Style{fg: :cyan},

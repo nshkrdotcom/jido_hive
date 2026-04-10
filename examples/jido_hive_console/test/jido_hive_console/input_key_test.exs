@@ -33,6 +33,18 @@ defmodule JidoHiveConsole.InputKeyTest do
              {:msg, {:room_input_key, "J"}}
   end
 
+  test "room screen uses ctrl+j to insert a multiline newline instead of submitting" do
+    state =
+      Model.new([])
+      |> Map.put(:active_screen, :room)
+
+    assert App.event_to_msg(%Event.Key{code: "j", modifiers: ["ctrl"]}, state) ==
+             {:msg, {:room_input_key, "enter", []}}
+
+    assert App.event_to_msg(%Event.Key{code: "enter", modifiers: []}, state) ==
+             {:msg, :room_enter}
+  end
+
   test "conflict screen accepts shifted printable input" do
     state =
       Model.new([])

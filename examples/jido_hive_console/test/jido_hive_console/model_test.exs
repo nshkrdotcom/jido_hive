@@ -60,4 +60,18 @@ defmodule JidoHiveConsole.ModelTest do
     assert next.help_visible == false
     assert MapSet.member?(next.help_seen, :room)
   end
+
+  test "help scroll resets on show and stays non-negative while scrolling" do
+    model = Model.new([]) |> Map.put(:help_scroll, 4)
+
+    shown = Model.show_help(model)
+    assert shown.help_visible
+    assert shown.help_scroll == 0
+
+    assert Model.scroll_help(shown, 3).help_scroll == 3
+    assert Model.scroll_help(shown, -10).help_scroll == 0
+    assert Model.set_help_scroll(shown, -2).help_scroll == 0
+    assert Model.scroll_help(shown, 99, 5).help_scroll == 5
+    assert Model.set_help_scroll(shown, 99, 5).help_scroll == 5
+  end
 end

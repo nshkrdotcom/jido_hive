@@ -30,6 +30,28 @@ defmodule JidoHiveConsole.ScreenUITest do
            ] = ScreenUI.help_popup_widgets(%{width: 44, height: 16}, state, "Guide", ["Line 1"])
   end
 
+  test "help popup wraps and scrolls overflowed guide copy" do
+    state = Model.new([]) |> Map.put(:help_visible, true) |> Map.put(:help_scroll, 3)
+
+    lines =
+      List.duplicate(
+        "This help line is intentionally long so the popup has to wrap it before measuring height.",
+        12
+      )
+
+    assert ScreenUI.help_popup_max_scroll(%{width: 72, height: 16}, lines) > 3
+
+    assert [
+             {%Popup{
+                fixed_width: 68,
+                fixed_height: 12,
+                content: %Paragraph{text: text, wrap: false, scroll: {3, 0}}
+              }, %Rect{width: 72, height: 16}}
+           ] = ScreenUI.help_popup_widgets(%{width: 72, height: 16}, state, "Guide", lines)
+
+    assert text =~ "PageUp/PageDown scroll"
+  end
+
   test "status_text adds a moving pending indicator for active chat submits" do
     state =
       Model.new([])

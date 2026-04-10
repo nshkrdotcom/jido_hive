@@ -3,7 +3,7 @@ defmodule JidoHiveClient.HeadlessCLI do
   Headless operator and session commands for scripting `jido_hive_client`.
   """
 
-  alias JidoHiveClient.{Operation, Operator, RoomSession}
+  alias JidoHiveClient.{Operation, Operator, RoomSession, RoomWorkflow}
 
   @operator_switches [
     api_base_url: :string,
@@ -71,6 +71,12 @@ defmodule JidoHiveClient.HeadlessCLI do
   defp normalize_argv(["room", "list" | rest]), do: ["operator", "rooms", "list" | rest]
   defp normalize_argv(["room", "show" | rest]), do: ["operator", "room", "get" | rest]
   defp normalize_argv(["room", "get" | rest]), do: ["operator", "room", "get" | rest]
+  defp normalize_argv(["room", "workflow" | rest]), do: ["operator", "room", "workflow" | rest]
+  defp normalize_argv(["room", "inspect" | rest]), do: ["operator", "room", "inspect" | rest]
+
+  defp normalize_argv(["room", "publish-plan" | rest]),
+    do: ["operator", "room", "publish-plan" | rest]
+
   defp normalize_argv(["room", "tail" | rest]), do: ["operator", "room", "timeline" | rest]
   defp normalize_argv(["room", "timeline" | rest]), do: ["operator", "room", "timeline" | rest]
   defp normalize_argv(["room", "create" | rest]), do: ["operator", "room", "create" | rest]
@@ -122,6 +128,40 @@ defmodule JidoHiveClient.HeadlessCLI do
          {:ok, room_id} <- required_option(parsed, :room_id),
          {:ok, room} <- operator_module.fetch_room(api_base_url, room_id) do
       {:ok, normalize_output(room)}
+    end
+  end
+
+  defp dispatch_operator(["room", "workflow" | rest], config, operator_module) do
+    with {:ok, parsed} <- parse_command_opts(rest, @operator_switches),
+         api_base_url <- api_base_url(parsed, config),
+         {:ok, room_id} <- required_option(parsed, :room_id),
+         {:ok, sync_result} <-
+           operator_module.fetch_room_sync(api_base_url, room_id, after: parsed[:after]) do
+      {:ok,
+       normalize_output(%{
+         room_id: room_id,
+         status: Map.get(sync_result.room_snapshot, "status"),
+         workflow_summary: RoomWorkflow.summary(sync_result.room_snapshot)
+       })}
+    end
+  end
+
+  defp dispatch_operator(["room", "inspect" | rest], config, operator_module) do
+    with {:ok, parsed} <- parse_command_opts(rest, @operator_switches),
+         api_base_url <- api_base_url(parsed, config),
+         {:ok, room_id} <- required_option(parsed, :room_id),
+         {:ok, sync_result} <-
+           operator_module.fetch_room_sync(api_base_url, room_id, after: parsed[:after]) do
+      {:ok, normalize_output(RoomWorkflow.inspect_sync(sync_result))}
+    end
+  end
+
+  defp dispatch_operator(["room", "publish-plan" | rest], config, operator_module) do
+    with {:ok, parsed} <- parse_command_opts(rest, @operator_switches),
+         api_base_url <- api_base_url(parsed, config),
+         {:ok, room_id} <- required_option(parsed, :room_id),
+         {:ok, publication_plan} <- operator_module.fetch_publication_plan(api_base_url, room_id) do
+      {:ok, normalize_output(publication_plan)}
     end
   end
 

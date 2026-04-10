@@ -4,7 +4,7 @@ defmodule JidoHiveConsole.Screens.Room do
   alias ExRatatui.Event
   alias ExRatatui.Layout
   alias ExRatatui.Style
-  alias ExRatatui.Widgets.{Paragraph, TextInput}
+  alias ExRatatui.Widgets.{Paragraph, Textarea}
   alias JidoHiveConsole.{HelpGuide, InputKey, Model, Projection, ScreenUI}
 
   @spec event_to_msg(Event.t(), Model.t()) :: term() | nil
@@ -13,6 +13,9 @@ defmodule JidoHiveConsole.Screens.Room do
   def event_to_msg(%Event.Key{code: "enter"}, _state), do: :room_enter
   def event_to_msg(%Event.Key{code: "tab"}, _state), do: :cycle_pane_focus
   def event_to_msg(%Event.Key{code: "esc"}, _state), do: :room_escape
+
+  def event_to_msg(%Event.Key{code: "j", modifiers: ["ctrl"]}, _state),
+    do: {:room_input_key, "enter", []}
 
   def event_to_msg(%Event.Key{code: code, modifiers: modifiers}, _state)
       when is_binary(code) and modifiers == ["ctrl"] do
@@ -32,12 +35,12 @@ defmodule JidoHiveConsole.Screens.Room do
   def render(%Model{} = state, frame) do
     area = ScreenUI.root_area(frame)
 
-    [header_area, meta_area, main_area, input_area, footer_area, status_area] =
+    [header_area, workflow_area, main_area, input_area, footer_area, status_area] =
       Layout.split(area, :vertical, [
         {:length, 3},
-        {:length, 1},
+        {:length, 6},
         {:min, 10},
-        {:length, 3},
+        {:length, 5},
         {:length, 2},
         {:length, 1}
       ])
@@ -45,7 +48,7 @@ defmodule JidoHiveConsole.Screens.Room do
     widgets =
       [
         {header_widget(state), header_area},
-        {meta_widget(state), meta_area}
+        {workflow_widget(state), workflow_area}
       ] ++
         main_widgets(state, main_area) ++
         [
@@ -59,19 +62,20 @@ defmodule JidoHiveConsole.Screens.Room do
   end
 
   defp main_widgets(state, area) when area.width < 88 do
-    [conversation_area, context_area, events_area] =
-      Layout.split(area, :vertical, [{:percentage, 35}, {:min, 8}, {:length, 6}])
+    [conversation_area, context_area, detail_area, events_area] =
+      Layout.split(area, :vertical, [{:percentage, 32}, {:min, 8}, {:min, 8}, {:length, 6}])
 
     [
       {conversation_widget(state, conversation_area), conversation_area},
       {context_widget(state, context_area), context_area},
+      {detail_widget(state, detail_area), detail_area},
       {events_widget(state, events_area), events_area}
     ]
   end
 
   defp main_widgets(state, area) do
-    [left_area, right_area] =
-      Layout.split(area, :horizontal, [{:percentage, 42}, {:percentage, 58}])
+    [left_area, center_area, right_area] =
+      Layout.split(area, :horizontal, [{:percentage, 34}, {:percentage, 28}, {:percentage, 38}])
 
     [conversation_area, events_area] =
       Layout.split(left_area, :vertical, [{:min, 8}, {:length, 7}])
@@ -79,7 +83,8 @@ defmodule JidoHiveConsole.Screens.Room do
     [
       {conversation_widget(state, conversation_area), conversation_area},
       {events_widget(state, events_area), events_area},
-      {context_widget(state, right_area), right_area}
+      {context_widget(state, center_area), center_area},
+      {detail_widget(state, right_area), right_area}
     ]
   end
 
@@ -107,19 +112,19 @@ defmodule JidoHiveConsole.Screens.Room do
     }
   end
 
-  defp meta_widget(state) do
-    stale_count = Enum.count(Map.get(state.snapshot, "context_objects", []), &stale?/1)
+  defp workflow_widget(state) do
+    summary = Projection.workflow_summary(state.snapshot)
 
-    conflict_count =
-      Enum.count(
-        Map.get(state.snapshot, "context_objects", []),
-        &Projection.conflict?(&1, state.snapshot)
-      )
+    lines = [
+      "Objective: #{summary.objective}",
+      "Stage: #{summary.stage}",
+      "Next action: #{summary.next_action}",
+      "Why: #{summary.reason}",
+      "Graph: #{summary.graph_counts}",
+      "Selected: #{selected_context_label(state)}  ·  Compose as: #{compose_mode_label(state.relation_mode)}  ·  Focus: #{state.pane_focus}"
+    ]
 
-    text =
-      "Mode: #{Atom.to_string(state.relation_mode)}  ·  Selected: #{selected_context_label(state)}  ·  [STALE:#{stale_count}] [CONFLICT:#{conflict_count}]  ·  Focus: #{state.pane_focus}"
-
-    ScreenUI.text_widget(text, style: ScreenUI.meta_style(), wrap: false)
+    ScreenUI.pane("Workflow", lines, border_fg: :cyan, wrap: true)
   end
 
   defp conversation_widget(state, area) do
@@ -141,6 +146,12 @@ defmodule JidoHiveConsole.Screens.Room do
     ScreenUI.pane(context_title(state), lines, border_fg: :yellow, wrap: true)
   end
 
+  defp detail_widget(state, area) do
+    width = max(area.width - 4, 20)
+    lines = detail_lines(state, width, max(area.height * 3, 16))
+    ScreenUI.pane(detail_title(state), lines, border_fg: :green, wrap: true)
+  end
+
   defp events_widget(state, area) do
     ScreenUI.pane(
       "Events",
@@ -151,14 +162,16 @@ defmodule JidoHiveConsole.Screens.Room do
   end
 
   defp input_widget(%Model{room_input_ref: ref}) when is_reference(ref) do
-    %TextInput{
+    %Textarea{
       state: ref,
       style: %Style{fg: :white},
       cursor_style: %Style{fg: :black, bg: :white},
-      placeholder: "Type a room message...",
+      cursor_line_style: %Style{bg: :dark_gray},
+      placeholder:
+        "Write guidance, clarification, or a decision draft.\nCtrl+J inserts newline. Enter sends.",
       placeholder_style: ScreenUI.meta_style(),
       block: %ExRatatui.Widgets.Block{
-        title: "Draft",
+        title: "Compose Steering Message",
         borders: [:all],
         border_type: :rounded,
         border_style: %Style{fg: :yellow},
@@ -169,16 +182,16 @@ defmodule JidoHiveConsole.Screens.Room do
 
   defp input_widget(%Model{} = state) do
     ScreenUI.pane(
-      "Draft",
-      ["> " <> state.input_buffer],
+      "Compose Steering Message",
+      String.split(state.input_buffer, "\n"),
       border_fg: :yellow,
-      wrap: false
+      wrap: true
     )
   end
 
   defp footer_widget(state) do
     ScreenUI.text_widget(
-      "Type draft  ·  Enter send/open conflict  ·  Ctrl+E provenance  ·  Ctrl+A accept  ·  Ctrl+R refresh  ·  Ctrl+P publish  ·  Ctrl+G help  ·  F2 debug  ·  Ctrl+B back  ·  Ctrl+Q quit  ·  Mode #{Atom.to_string(state.relation_mode)}",
+      "Enter send/open conflict  ·  Ctrl+J newline  ·  Ctrl+E provenance  ·  Ctrl+A accept  ·  Ctrl+R refresh  ·  Ctrl+P publish  ·  Ctrl+B back  ·  Ctrl+G help  ·  F2 debug  ·  Ctrl+Q quit  ·  Compose #{compose_mode_label(state.relation_mode)}",
       style: ScreenUI.meta_style(),
       wrap: true
     )
@@ -202,10 +215,15 @@ defmodule JidoHiveConsole.Screens.Room do
     end
   end
 
-  defp context_title(%{drill_context_id: nil}), do: "Context"
+  defp context_title(%{drill_context_id: nil}), do: "Shared Graph"
 
   defp context_title(%{drill_context_id: drill_context_id}),
-    do: "Context: PROVENANCE #{drill_context_id}"
+    do: "Shared Graph: PROVENANCE #{drill_context_id}"
+
+  defp detail_title(%{drill_context_id: nil}), do: "Selected Detail"
+
+  defp detail_title(%{drill_context_id: drill_context_id}),
+    do: "Selected Detail: PROVENANCE #{drill_context_id}"
 
   defp selected_context_label(state) do
     case Model.selected_context(state) do
@@ -214,10 +232,27 @@ defmodule JidoHiveConsole.Screens.Room do
     end
   end
 
-  defp stale?(object) do
-    derived = Map.get(object, "derived") || %{}
-    Map.get(derived, "stale_ancestor", false)
+  defp detail_lines(state, width, limit) do
+    lines =
+      if state.drill_context_id do
+        state.provenance_lines
+      else
+        Projection.selected_context_detail_lines(Model.selected_context(state), state.snapshot)
+      end
+
+    lines
+    |> Enum.map(&Projection.truncate(&1, width))
+    |> Enum.take(limit)
   end
+
+  defp compose_mode_label(:none), do: "plain chat"
+  defp compose_mode_label(:contextual), do: "contextual note"
+  defp compose_mode_label(:references), do: "reference"
+  defp compose_mode_label(:derives_from), do: "derives from"
+  defp compose_mode_label(:supports), do: "support"
+  defp compose_mode_label(:contradicts), do: "contradiction"
+  defp compose_mode_label(:resolves), do: "resolution"
+  defp compose_mode_label(other), do: Atom.to_string(other)
 
   defp ctrl_shortcut("q"), do: :quit
   defp ctrl_shortcut("a"), do: :accept_selected

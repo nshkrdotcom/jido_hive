@@ -146,7 +146,14 @@ defmodule JidoHiveClient.OperatorTest do
         {200, %{},
          Jason.encode!(%{
            "data" => %{
-             "room" => %{"room_id" => "room-1", "status" => "running"},
+             "room" => %{
+               "room_id" => "room-1",
+               "status" => "running",
+               "workflow_summary" => %{
+                 "objective" => "Stabilize the Redis auth path",
+                 "stage" => "Resolve contradictions"
+               }
+             },
              "timeline" => [%{"event_id" => "evt-3", "body" => "third"}],
              "next_cursor" => "evt-3",
              "context_objects" => [%{"context_id" => "ctx-1"}],
@@ -159,7 +166,14 @@ defmodule JidoHiveClient.OperatorTest do
 
     assert {:ok,
             %{
-              room_snapshot: %{"room_id" => "room-1", "status" => "running"},
+              room_snapshot: %{
+                "room_id" => "room-1",
+                "status" => "running",
+                "workflow_summary" => %{
+                  "objective" => "Stabilize the Redis auth path",
+                  "stage" => "Resolve contradictions"
+                }
+              },
               entries: [%{"event_id" => "evt-3", "body" => "third"}],
               next_cursor: "evt-3",
               context_objects: [%{"context_id" => "ctx-1"}],

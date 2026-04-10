@@ -19,6 +19,43 @@ defmodule JidoHiveClient.HeadlessCLITest do
       {:ok, %{"room_id" => "room-1", "status" => "running"}}
     end
 
+    def fetch_room_sync("https://example.com/api", "room-1", after: after_cursor) do
+      send(test_pid(), {:fetch_room_sync, after_cursor})
+
+      {:ok,
+       %{
+         room_snapshot: %{
+           "room_id" => "room-1",
+           "status" => "running",
+           "workflow_summary" => %{
+             "objective" => "Stabilize the Redis auth path",
+             "stage" => "Resolve contradictions",
+             "next_action" => "Review ctx-4 and submit a binding resolution",
+             "blockers" => [%{"kind" => "contradiction", "count" => 2}],
+             "publish_ready" => false,
+             "publish_blockers" => ["Open contradictions remain"],
+             "graph_counts" => %{"duplicates" => 1},
+             "focus_candidates" => [%{"kind" => "contradiction", "context_id" => "ctx-4"}]
+           }
+         },
+         entries: [%{"event_id" => "evt-3"}],
+         next_cursor: "evt-3",
+         context_objects: [%{"context_id" => "ctx-1"}],
+         operations: [%{"operation_id" => "room_run-1", "status" => "running"}]
+       }}
+    end
+
+    def fetch_publication_plan("https://example.com/api", "room-1") do
+      send(test_pid(), :fetch_publication_plan)
+
+      {:ok,
+       %{
+         "duplicate_policy" => "canonical_only",
+         "source_entries" => ["ctx-1", "ctx-3"],
+         "publications" => [%{"channel" => "github"}]
+       }}
+    end
+
     def fetch_room_timeline("https://example.com/api", "room-1", after: "evt-1") do
       {:ok, %{entries: [%{"event_id" => "evt-2"}], next_cursor: "evt-2"}}
     end
@@ -136,6 +173,84 @@ defmodule JidoHiveClient.HeadlessCLITest do
                ],
                operator_module: OperatorStub
              )
+  end
+
+  test "operator room workflow returns the canonical workflow summary from sync" do
+    assert {:ok,
+            %{
+              "room_id" => "room-1",
+              "status" => "running",
+              "workflow_summary" => %{
+                "objective" => "Stabilize the Redis auth path",
+                "stage" => "Resolve contradictions",
+                "graph_counts" => %{"duplicates" => 1}
+              }
+            }} =
+             HeadlessCLI.dispatch(
+               [
+                 "room",
+                 "workflow",
+                 "--api-base-url",
+                 "https://example.com/api",
+                 "--room-id",
+                 "room-1"
+               ],
+               operator_module: OperatorStub
+             )
+
+    assert_receive {:fetch_room_sync, nil}
+  end
+
+  test "operator room inspect returns the consolidated sync surface plus workflow summary" do
+    assert {:ok,
+            %{
+              "room_id" => "room-1",
+              "status" => "running",
+              "workflow_summary" => %{
+                "stage" => "Resolve contradictions"
+              },
+              "entries" => [%{"event_id" => "evt-3"}],
+              "context_objects" => [%{"context_id" => "ctx-1"}],
+              "operations" => [%{"operation_id" => "room_run-1", "status" => "running"}],
+              "next_cursor" => "evt-3"
+            }} =
+             HeadlessCLI.dispatch(
+               [
+                 "room",
+                 "inspect",
+                 "--api-base-url",
+                 "https://example.com/api",
+                 "--room-id",
+                 "room-1",
+                 "--after",
+                 "evt-2"
+               ],
+               operator_module: OperatorStub
+             )
+
+    assert_receive {:fetch_room_sync, "evt-2"}
+  end
+
+  test "operator room publish-plan returns the canonical publication planning surface" do
+    assert {:ok,
+            %{
+              "duplicate_policy" => "canonical_only",
+              "source_entries" => ["ctx-1", "ctx-3"],
+              "publications" => [%{"channel" => "github"}]
+            }} =
+             HeadlessCLI.dispatch(
+               [
+                 "room",
+                 "publish-plan",
+                 "--api-base-url",
+                 "https://example.com/api",
+                 "--room-id",
+                 "room-1"
+               ],
+               operator_module: OperatorStub
+             )
+
+    assert_receive :fetch_publication_plan
   end
 
   test "operator room create persists the room locally after creation" do

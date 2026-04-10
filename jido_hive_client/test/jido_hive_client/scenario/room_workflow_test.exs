@@ -1,6 +1,7 @@
 defmodule JidoHiveClient.Scenario.RoomWorkflowTest do
   use ExUnit.Case, async: true
 
+  alias JidoHiveClient.RoomWorkflow, as: SharedRoomWorkflow
   alias JidoHiveClient.Scenario.RoomWorkflow
 
   defmodule SharedState do
@@ -69,8 +70,11 @@ defmodule JidoHiveClient.Scenario.RoomWorkflowTest do
          %{
            room_snapshot: %{
              "room_id" => room_id,
+             "brief" => state.brief,
              "status" =>
-               if(current_run_status == "completed", do: "publication_ready", else: "running")
+               if(current_run_status == "completed", do: "publication_ready", else: "running"),
+             "workflow_summary" =>
+               workflow_summary(state.brief, current_run_status, state.messages)
            },
            entries:
              Enum.with_index(state.messages, 1)
@@ -87,14 +91,7 @@ defmodule JidoHiveClient.Scenario.RoomWorkflowTest do
                0 -> nil
                count -> "evt-#{count}"
              end,
-           context_objects:
-             Enum.map(state.messages, fn message ->
-               %{
-                 "context_id" => "ctx-#{message}",
-                 "object_type" => "message",
-                 "body" => message
-               }
-             end),
+           context_objects: context_objects(state.messages),
            operations: [
              %{
                "operation_id" => "room_run-1",
@@ -105,6 +102,85 @@ defmodule JidoHiveClient.Scenario.RoomWorkflowTest do
            ]
          }
        end)}
+    end
+
+    defp workflow_summary(brief, current_run_status, messages) do
+      duplicate_count =
+        messages
+        |> Enum.frequencies()
+        |> Enum.reduce(0, fn {_message, count}, acc -> acc + max(count - 1, 0) end)
+
+      publish_ready = current_run_status == "completed"
+
+      %{
+        "objective" => brief,
+        "stage" => if(publish_ready, do: "Ready to publish", else: "Steer active work"),
+        "next_action" =>
+          if(publish_ready,
+            do: "Review the publication plan and submit to the selected channels",
+            else: "Monitor new contributions and steer only if progress stalls"
+          ),
+        "blockers" => [],
+        "publish_ready" => publish_ready,
+        "publish_blockers" => [],
+        "graph_counts" => %{
+          "total" => max(length(messages), 1),
+          "decisions" => 1,
+          "questions" => 0,
+          "contradictions" => 0,
+          "duplicate_groups" => if(duplicate_count > 0, do: 1, else: 0),
+          "duplicates" => duplicate_count,
+          "stale" => 0
+        },
+        "focus_candidates" =>
+          if(duplicate_count > 0,
+            do: [
+              %{
+                "kind" => "duplicate_cluster",
+                "context_id" => "ctx-1",
+                "duplicate_count" => duplicate_count
+              }
+            ],
+            else: []
+          )
+      }
+    end
+
+    defp context_objects(messages) do
+      message_ids =
+        messages
+        |> Enum.with_index(1)
+        |> Enum.map(fn {message, index} -> {message, "ctx-#{index}"} end)
+
+      grouped_ids = Enum.group_by(message_ids, fn {message, _context_id} -> message end)
+
+      Enum.with_index(messages, 1)
+      |> Enum.map(fn {message, index} ->
+        context_id = "ctx-#{index}"
+        duplicate_context_ids = grouped_ids |> Map.fetch!(message) |> Enum.map(&elem(&1, 1))
+        duplicate_size = length(duplicate_context_ids)
+        duplicate_rank = Enum.find_index(duplicate_context_ids, &(&1 == context_id)) || 0
+
+        derived =
+          if duplicate_size > 1 do
+            %{
+              "duplicate_status" => if(duplicate_rank == 0, do: "canonical", else: "duplicate"),
+              "duplicate_size" => duplicate_size,
+              "duplicate_context_ids" => duplicate_context_ids,
+              "canonical_context_id" => hd(duplicate_context_ids)
+            }
+          else
+            %{}
+          end
+
+        %{
+          "context_id" => context_id,
+          "object_type" => "belief",
+          "title" => message,
+          "body" => message,
+          "derived" => derived
+        }
+      end)
     end
   end
 
@@ -209,5 +285,50 @@ defmodule JidoHiveClient.Scenario.RoomWorkflowTest do
 
     assert Enum.any?(report.final_sync.operations, &(&1["operation_id"] == "room_run-1"))
     assert Enum.any?(report.final_sync.entries, &(&1["body"] == "Message during run"))
+    assert report.workflow_summary.stage == "Ready to publish"
+    assert report.workflow_summary.next_action =~ "publication plan"
+    assert report.workflow_summary.graph_counts.duplicates == 0
+  end
+
+  test "reports duplicate pressure through the shared workflow contract in duplicate-heavy rooms" do
+    {:ok, server} = SharedState.start_link()
+
+    assert {:ok, report} =
+             RoomWorkflow.run(
+               api_base_url: "http://127.0.0.1:4000/api",
+               room_payload: %{
+                 "room_id" => "room-duplicates-1",
+                 "brief" => "Collapse repeated room beliefs into one canonical operator view."
+               },
+               participant_id: "alice",
+               participant_role: "coordinator",
+               before_run_text: "Shared state belongs on the server",
+               during_run_text: "Shared state belongs on the server",
+               operator: {OperatorStub, [server: server]},
+               session: {SessionStub, [server: server]},
+               run_opts: [client_operation_id: "room_run-client-1"],
+               poll_interval_ms: 1,
+               max_wait_ms: 20
+             )
+
+    assert report.workflow_summary.objective ==
+             "Collapse repeated room beliefs into one canonical operator view."
+
+    assert report.workflow_summary.stage == "Ready to publish"
+    assert report.workflow_summary.graph_counts.duplicates == 1
+
+    assert report.workflow_summary.focus_candidates == [
+             %{kind: "duplicate_cluster", context_id: "ctx-1", duplicate_count: 1}
+           ]
+
+    assert SharedRoomWorkflow.summary(report.final_sync.room_snapshot) == report.workflow_summary
+
+    assert Enum.map(report.final_sync.context_objects, & &1["context_id"]) == ["ctx-1", "ctx-2"]
+
+    assert Enum.map(
+             report.final_sync.context_objects,
+             &get_in(&1, ["derived", "duplicate_status"])
+           ) ==
+             ["canonical", "duplicate"]
   end
 end

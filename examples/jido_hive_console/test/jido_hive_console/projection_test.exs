@@ -5,6 +5,25 @@ defmodule JidoHiveConsole.ProjectionTest do
 
   defp snapshot do
     %{
+      "brief" => "Stabilize the Redis auth path",
+      "status" => "running",
+      "workflow_summary" => %{
+        "objective" => "Stabilize the Redis auth path",
+        "stage" => "Resolve contradictions",
+        "next_action" => "Review ctx-2 and submit a binding resolution",
+        "blockers" => [%{"kind" => "contradiction", "count" => 2}],
+        "publish_ready" => false,
+        "publish_blockers" => ["Open contradictions remain"],
+        "graph_counts" => %{
+          "decisions" => 1,
+          "questions" => 0,
+          "contradictions" => 2,
+          "duplicates" => 1,
+          "stale" => 1,
+          "total" => 3
+        },
+        "focus_candidates" => [%{"kind" => "contradiction", "context_id" => "ctx-2"}]
+      },
       "timeline" => [
         %{"body" => "Investigating auth timeout", "metadata" => %{"participant_id" => "alice"}},
         %{"body" => "Redis is healthy", "metadata" => %{"participant_id" => "bob"}}
@@ -15,7 +34,13 @@ defmodule JidoHiveConsole.ProjectionTest do
           "object_type" => "belief",
           "title" => "Redis timeout",
           "provenance" => %{"authority_level" => "binding"},
-          "derived" => %{"stale_ancestor" => true},
+          "derived" => %{
+            "stale_ancestor" => true,
+            "duplicate_status" => "canonical",
+            "duplicate_size" => 2,
+            "duplicate_context_ids" => ["ctx-1", "ctx-4"],
+            "canonical_context_id" => "ctx-1"
+          },
           "adjacency" => %{
             "incoming" => [%{"type" => "supports"}],
             "outgoing" => [%{"type" => "contradicts"}, %{"type" => "references"}]
@@ -34,20 +59,71 @@ defmodule JidoHiveConsole.ProjectionTest do
           "title" => "Rollback registry deploy",
           "relations" => [%{"relation" => "references", "target_id" => "ctx-1"}],
           "adjacency" => %{"incoming" => [], "outgoing" => []}
+        },
+        %{
+          "context_id" => "ctx-4",
+          "object_type" => "belief",
+          "title" => "Redis timeout",
+          "body" => "Auth requests are timing out.",
+          "derived" => %{
+            "duplicate_status" => "duplicate",
+            "duplicate_size" => 2,
+            "duplicate_context_ids" => ["ctx-1", "ctx-4"],
+            "canonical_context_id" => "ctx-1"
+          },
+          "adjacency" => %{"incoming" => [], "outgoing" => []}
         }
       ]
     }
   end
 
-  test "formats context markers including binding and conflict" do
+  test "formats grouped context rows with lighter zero-noise badges" do
     assert Projection.context_lines(snapshot(), 1) == [
-             "DECISION",
-             "  Rollback registry deploy [in:0 out:0]",
-             "CONTRADICTION",
+             "DECISIONS",
+             "  Rollback registry deploy",
+             "CONFLICTS",
              "> Datadog says Redis is fine [in:0 out:1] [CONFLICT]",
-             "BELIEF",
-             "  Redis timeout [in:1 out:2] [STALE] [CONFLICT] [BINDING]"
+             "WORKING BELIEFS",
+             "  Redis timeout · ctx-1 [in:1 out:2] [DUP:1] [STALE] [CONFLICT] [BINDING]"
            ]
+  end
+
+  test "builds an operator workflow summary from the shared workflow contract" do
+    summary = Projection.workflow_summary(snapshot())
+
+    assert summary.objective == "Stabilize the Redis auth path"
+    assert summary.stage == "Resolve contradictions"
+    assert summary.next_action =~ "binding resolution"
+    assert summary.reason == "Open contradictions remain"
+    assert summary.graph_counts =~ "1 decision"
+    assert summary.graph_counts =~ "2 contradictions"
+    assert summary.graph_counts =~ "1 duplicate"
+  end
+
+  test "renders selected context detail lines for the operator detail pane" do
+    selected =
+      snapshot()
+      |> Projection.display_context_objects()
+      |> Enum.at(1)
+
+    lines = Projection.selected_context_detail_lines(selected, snapshot())
+
+    assert lines |> Enum.join("\n") =~ "Context ID: ctx-2"
+    assert lines |> Enum.join("\n") =~ "Type: contradiction"
+    assert lines |> Enum.join("\n") =~ "Graph: 0 incoming · 1 outgoing"
+    assert lines |> Enum.join("\n") =~ "Body"
+  end
+
+  test "renders duplicate collapse details for canonical graph entries" do
+    selected =
+      snapshot()
+      |> Projection.display_context_objects()
+      |> Enum.at(2)
+
+    lines = Projection.selected_context_detail_lines(selected, snapshot())
+
+    assert lines |> Enum.join("\n") =~ "Duplicates: 1 collapsed under ctx-1"
+    assert lines |> Enum.join("\n") =~ "Group: ctx-1, ctx-4"
   end
 
   test "builds cycle-safe provenance trees" do

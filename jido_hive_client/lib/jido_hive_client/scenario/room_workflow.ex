@@ -3,6 +3,8 @@ defmodule JidoHiveClient.Scenario.RoomWorkflow do
   Non-TUI room workflow harness for integration and regression testing.
   """
 
+  alias JidoHiveClient.RoomWorkflow, as: SharedRoomWorkflow
+
   @default_poll_interval_ms 100
   @default_max_wait_ms 5_000
 
@@ -68,6 +70,8 @@ defmodule JidoHiveClient.Scenario.RoomWorkflow do
                  room_id,
                  []
                ]) do
+          workflow_summary = SharedRoomWorkflow.summary(final_sync.room_snapshot)
+
           {:ok,
            %{
              room: room,
@@ -75,6 +79,7 @@ defmodule JidoHiveClient.Scenario.RoomWorkflow do
              during_run_submit: during_run_submit,
              run_operation: completed_run_operation,
              final_sync: final_sync,
+             workflow_summary: workflow_summary,
              transitions: [
                :room_created,
                :room_refreshed,

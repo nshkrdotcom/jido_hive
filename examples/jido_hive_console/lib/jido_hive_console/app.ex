@@ -5,7 +5,7 @@ defmodule JidoHiveConsole.App do
   require Logger
 
   alias ExRatatui.{Command, Event, Frame, Runtime, Subscription}
-  alias JidoHiveConsole.{Identity, Model, Nav, Projection, TextInputBridge}
+  alias JidoHiveConsole.{HelpGuide, Identity, Model, Nav, Projection, ScreenUI, TextInputBridge}
   alias JidoHiveConsole.Screens.{Conflict, Lobby, Publish, Room, Wizard}
 
   @impl true
@@ -106,6 +106,19 @@ defmodule JidoHiveConsole.App do
   def update(:quit, state), do: {state, [:quit]}
   def update(:show_help, state), do: {Model.show_help(state), []}
   def update(:dismiss_help, state), do: {Model.dismiss_help(state), []}
+  def update(:clear_active_input, state), do: {clear_active_input(state), []}
+  def update({:scroll_help, delta}, state), do: {scroll_help(state, delta), []}
+  def update(:help_scroll_top, state), do: {Model.set_help_scroll(state, 0), []}
+
+  def update(:help_scroll_bottom, state) do
+    max_scroll =
+      ScreenUI.help_popup_max_scroll(
+        %{width: state.screen_width, height: state.screen_height},
+        HelpGuide.lines(state)
+      )
+
+    {Model.set_help_scroll(state, max_scroll), []}
+  end
 
   def update(:show_debug, state),
     do: {Model.show_debug(state), [{:set_runtime_trace, true}, :refresh_runtime_snapshot]}
@@ -129,7 +142,7 @@ defmodule JidoHiveConsole.App do
   end
 
   def update({:resize, width, height}, state) do
-    {Model.resize(state, width, height), []}
+    {state |> Model.resize(width, height) |> clamp_help_scroll(), []}
   end
 
   def update(:poll, state) do
@@ -213,6 +226,10 @@ defmodule JidoHiveConsole.App do
 
   def update({:room_input_key, code}, %{active_screen: :room} = state) do
     {TextInputBridge.handle_room_key(state, code), []}
+  end
+
+  def update({:room_input_key, code, modifiers}, %{active_screen: :room} = state) do
+    {TextInputBridge.handle_room_key(state, code, modifiers), []}
   end
 
   def update({:input_append, char}, %{active_screen: :room} = state) do
@@ -1075,9 +1092,10 @@ defmodule JidoHiveConsole.App do
   defp screen_module(%{active_screen: :wizard}), do: Wizard
   defp screen_module(_state), do: Room
 
-  defp global_event_to_msg(%Event.Key{code: code, modifiers: ["ctrl"]}, _state)
-       when code in ["c", "q"],
-       do: :quit
+  defp global_event_to_msg(%Event.Key{code: "q", modifiers: ["ctrl"]}, _state), do: :quit
+
+  defp global_event_to_msg(%Event.Key{code: "c", modifiers: ["ctrl"]}, %{debug_visible: true}),
+    do: :quit
 
   defp global_event_to_msg(%Event.Key{code: code}, %{debug_visible: true})
        when code in ["enter", "esc", "f2"],
@@ -1089,12 +1107,37 @@ defmodule JidoHiveConsole.App do
   defp global_event_to_msg(%Event.Key{code: code, modifiers: ["ctrl"]}, %{help_visible: true})
        when code == "g", do: :dismiss_help
 
+  defp global_event_to_msg(%Event.Key{code: "c", modifiers: ["ctrl"]}, %{help_visible: true}),
+    do: :quit
+
+  defp global_event_to_msg(%Event.Key{code: "down"}, %{help_visible: true}),
+    do: {:scroll_help, 1}
+
+  defp global_event_to_msg(%Event.Key{code: "up"}, %{help_visible: true}),
+    do: {:scroll_help, -1}
+
+  defp global_event_to_msg(%Event.Key{code: "page_down"}, %{help_visible: true}),
+    do: {:scroll_help, 8}
+
+  defp global_event_to_msg(%Event.Key{code: "page_up"}, %{help_visible: true}),
+    do: {:scroll_help, -8}
+
+  defp global_event_to_msg(%Event.Key{code: "home"}, %{help_visible: true}),
+    do: :help_scroll_top
+
+  defp global_event_to_msg(%Event.Key{code: "end"}, %{help_visible: true}),
+    do: :help_scroll_bottom
+
   defp global_event_to_msg(%Event.Key{code: "f2"}, %{help_visible: true}), do: :toggle_debug
 
   defp global_event_to_msg(%Event.Key{code: code}, %{help_visible: true})
        when code in ["enter", "esc", "f1"], do: :dismiss_help
 
   defp global_event_to_msg(%Event.Key{}, %{help_visible: true}), do: :ignore
+
+  defp global_event_to_msg(%Event.Key{code: "c", modifiers: ["ctrl"]}, state),
+    do: ctrl_c_action(state)
+
   defp global_event_to_msg(%Event.Key{code: "g", modifiers: ["ctrl"]}, _state), do: :toggle_help
   defp global_event_to_msg(%Event.Key{code: "f1"}, _state), do: :toggle_help
   defp global_event_to_msg(_event, _state), do: nil
@@ -1281,6 +1324,75 @@ defmodule JidoHiveConsole.App do
 
   defp put_nested_binding(bindings, channel, field, value) do
     Map.update(bindings, channel, %{field => value}, &Map.put(&1, field, value))
+  end
+
+  defp ctrl_c_action(%Model{} = state) do
+    if clearable_active_input?(state), do: :clear_active_input, else: :quit
+  end
+
+  defp clearable_active_input?(%Model{active_screen: :room, input_buffer: input_buffer})
+       when is_binary(input_buffer),
+       do: input_buffer != ""
+
+  defp clearable_active_input?(%Model{active_screen: :conflict, conflict_input_buf: input_buffer})
+       when is_binary(input_buffer),
+       do: input_buffer != ""
+
+  defp clearable_active_input?(%Model{active_screen: :wizard, wizard_step: 0} = state) do
+    Map.get(state.wizard_fields, "brief", "") != ""
+  end
+
+  defp clearable_active_input?(%Model{active_screen: :publish} = state) do
+    case Publish.current_focus(state) do
+      %{type: :binding, channel: channel, field: field} ->
+        (get_in(state.publish_bindings, [channel, field]) || "") != ""
+
+      _other ->
+        false
+    end
+  end
+
+  defp clearable_active_input?(_state), do: false
+
+  defp clear_active_input(%Model{active_screen: :room} = state), do: set_room_input(state, "")
+
+  defp clear_active_input(%Model{active_screen: :conflict} = state),
+    do: %{state | conflict_input_buf: ""}
+
+  defp clear_active_input(%Model{active_screen: :wizard, wizard_step: 0} = state) do
+    %{state | wizard_fields: Map.put(state.wizard_fields, "brief", "")}
+  end
+
+  defp clear_active_input(%Model{active_screen: :publish} = state) do
+    case Publish.current_focus(state) do
+      %{type: :binding, channel: channel, field: field} ->
+        %{
+          state
+          | publish_bindings: put_nested_binding(state.publish_bindings, channel, field, "")
+        }
+
+      _other ->
+        state
+    end
+  end
+
+  defp clear_active_input(state), do: state
+
+  defp scroll_help(%Model{} = state, delta) when is_integer(delta) do
+    Model.scroll_help(state, delta, help_popup_max_scroll(state))
+  end
+
+  defp clamp_help_scroll(%Model{help_visible: true} = state) do
+    Model.set_help_scroll(state, state.help_scroll, help_popup_max_scroll(state))
+  end
+
+  defp clamp_help_scroll(state), do: state
+
+  defp help_popup_max_scroll(%Model{} = state) do
+    ScreenUI.help_popup_max_scroll(
+      %{width: state.screen_width, height: state.screen_height},
+      HelpGuide.lines(state)
+    )
   end
 
   defp runtime_reply({next_state, effects}) do
