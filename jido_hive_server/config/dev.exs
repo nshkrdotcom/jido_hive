@@ -18,7 +18,8 @@ config :jido_hive_server, JidoHiveServerWeb.Endpoint,
 
 config :jido_hive_server, JidoHiveServer.Repo,
   database: Path.expand("../tmp/jido_hive_server_dev.db", __DIR__),
-  pool_size: 5
+  pool_size: 5,
+  log: false
 
 # ## SSL Support
 #
@@ -47,7 +48,8 @@ config :jido_hive_server, JidoHiveServer.Repo,
 config :jido_hive_server, dev_routes: true
 
 # Do not include metadata nor timestamps in development logs
-config :logger, :default_formatter, format: "[$level] $message\n"
+config :logger, level: :info
+config :logger, :default_formatter, format: "[$level] $message\n", truncate: 2048
 
 # Set a higher stacktrace during development. Avoid configuring such
 # in production as building large stacktraces may be expensive.

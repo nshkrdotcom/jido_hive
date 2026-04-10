@@ -10,4 +10,4 @@ cli_subprocess_core/
 .codex
 repomix*.xml
 /jido_hive_client/jido_hive_client
-/examples/jido_hive_termui_console/hive
+/examples/jido_hive_console/hive

@@ -82,7 +82,7 @@ console. The preferred contract is:
   - room-scoped session behavior
   - headless CLI for shell scripts and reproduction
   - worker contribution prompt shaping and contribution normalization
-- `examples/jido_hive_termui_console`
+- `examples/jido_hive_console`
   - terminal rendering
   - key handling
   - routing and screen state
@@ -216,7 +216,7 @@ console log, client stderr trace, or transport logs first.
 ### 6. Only then run the TUI against the same room
 
 ```bash
-cd examples/jido_hive_termui_console
+cd examples/jido_hive_console
 mix escript.build
 ./hive console --prod --participant-id alice --debug --room-id <room-id>
 ```
@@ -224,7 +224,7 @@ mix escript.build
 Useful companion tail:
 
 ```bash
-tail -f ~/.config/hive/termui_console.log
+tail -f ~/.config/hive/hive_console.log
 ```
 
 At this point you are testing:

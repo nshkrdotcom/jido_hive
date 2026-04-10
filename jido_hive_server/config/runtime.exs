@@ -40,6 +40,29 @@ case System.get_env("JIDO_HIVE_LOG_LEVEL") do
     raise "unsupported JIDO_HIVE_LOG_LEVEL: #{inspect(other)}"
 end
 
+case System.get_env("JIDO_HIVE_SQL_LOG_LEVEL") do
+  nil ->
+    :ok
+
+  value when value in ["off", "false"] ->
+    config :jido_hive_server, JidoHiveServer.Repo, log: false
+
+  "debug" ->
+    config :jido_hive_server, JidoHiveServer.Repo, log: :debug
+
+  "info" ->
+    config :jido_hive_server, JidoHiveServer.Repo, log: :info
+
+  "warning" ->
+    config :jido_hive_server, JidoHiveServer.Repo, log: :warning
+
+  "error" ->
+    config :jido_hive_server, JidoHiveServer.Repo, log: :error
+
+  other ->
+    raise "unsupported JIDO_HIVE_SQL_LOG_LEVEL: #{inspect(other)}"
+end
+
 unless config_env() == :test do
   config :jido_hive_server, JidoHiveServerWeb.Endpoint,
     http: [port: String.to_integer(System.get_env("PORT", "4000"))]

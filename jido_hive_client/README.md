@@ -390,5 +390,5 @@ General reproducible workflow:
 - Root guide: [README.md](../README.md)
 - General debugging guide: `docs/debugging_guide.md`
 - Server guide: [jido_hive_server/README.md](../jido_hive_server/README.md)
-- Console guide: [examples/jido_hive_termui_console/README.md](../examples/jido_hive_termui_console/README.md)
+- Console guide: [examples/jido_hive_console/README.md](../examples/jido_hive_console/README.md)
 - Debugging runbook: `~/jb/docs/20260408/jido_hive_debugging_introspection/jido_hive_debugging_introspection_and_runbook.md`

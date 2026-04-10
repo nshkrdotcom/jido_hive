@@ -212,7 +212,7 @@ Observed live behavior on 2026-04-08:
 
 For the full site-by-site operator walkthrough, use:
 
-- [examples/jido_hive_termui_console/README.md](../examples/jido_hive_termui_console/README.md)
+- [examples/jido_hive_console/README.md](../examples/jido_hive_console/README.md)
 
 ## Developer guide
 
@@ -287,4 +287,4 @@ MIX_ENV=coolify mix coolify.status --project server --latest
 - Root guide: [README.md](../README.md)
 - General debugging guide: `docs/debugging_guide.md`
 - Client guide: [jido_hive_client/README.md](../jido_hive_client/README.md)
-- Console guide: [examples/jido_hive_termui_console/README.md](../examples/jido_hive_termui_console/README.md)
+- Console guide: [examples/jido_hive_console/README.md](../examples/jido_hive_console/README.md)

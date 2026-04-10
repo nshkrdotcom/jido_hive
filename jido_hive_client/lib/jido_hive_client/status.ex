@@ -1,9 +1,9 @@
 defmodule JidoHiveClient.Status do
   @moduledoc false
 
-  @system_prompt_preview_limit 700
-  @prompt_preview_limit 1_600
-  @response_preview_limit 1_600
+  @system_prompt_preview_limit 220
+  @prompt_preview_limit 320
+  @response_preview_limit 320
 
   def client_start(opts) when is_list(opts) do
     emit(
@@ -160,12 +160,8 @@ defmodule JidoHiveClient.Status do
 
     emit(
       "#{label} preview room=#{assignment["room_id"]} phase=#{phase(assignment)} " <>
-        "bytes=#{byte_size(text)}"
+        "bytes=#{byte_size(text)} preview=#{inspect(preview)}"
     )
-
-    preview
-    |> String.split("\n")
-    |> Enum.each(&emit("  #{&1}"))
   end
 
   defp emit_preview(_label, _assignment, _text, _limit), do: :ok
@@ -179,7 +175,10 @@ defmodule JidoHiveClient.Status do
   end
 
   defp preview_text(text, limit) do
-    trimmed = String.trim(text)
+    trimmed =
+      text
+      |> String.trim()
+      |> String.replace(~r/\s+/, " ")
 
     cond do
       trimmed == "" ->
@@ -189,7 +188,7 @@ defmodule JidoHiveClient.Status do
         trimmed
 
       true ->
-        String.slice(trimmed, 0, limit) <> "\n...[truncated]"
+        String.slice(trimmed, 0, limit - 1) <> "…"
     end
   end
 

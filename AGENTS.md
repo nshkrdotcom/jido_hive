@@ -6,7 +6,7 @@ This repo has three relevant Mix apps:
 
 - `jido_hive_server` – Phoenix API and websocket relay
 - `jido_hive_client` – reusable operator/session client and worker runtime
-- `examples/jido_hive_termui_console` – ExRatatui operator console built on `jido_hive_client`
+- `examples/jido_hive_console` – ExRatatui operator console built on `jido_hive_client`
 
 Architecture rule:
 
@@ -24,7 +24,7 @@ Start here before changing behavior:
 - `docs/debugging_guide.md`
 - `jido_hive_client/README.md`
 - `jido_hive_server/README.md`
-- `examples/jido_hive_termui_console/README.md`
+- `examples/jido_hive_console/README.md`
 
 Additional deep-dive docs live outside the repo under `~/jb/docs/...`. Repo docs must stay self-contained and must not use absolute filesystem paths.
 

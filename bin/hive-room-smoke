@@ -1,0 +1,96 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+APP_DIR="$ROOT/examples/jido_hive_console"
+LOCAL_API="http://127.0.0.1:4000/api"
+PROD_API="https://jido-hive-server-test.app.nsai.online/api"
+
+mode="local"
+declare -a forwarded=()
+
+usage() {
+  cat <<'EOF'
+Usage:
+  bin/hive-room-smoke [--local|--prod] [workflow args...]
+
+Scripted non-TUI room workflow for reproducing the typical room path through
+the client/server stack without launching the console UI.
+
+Mode flags:
+  --local   use http://127.0.0.1:4000/api (default)
+  --prod    use https://jido-hive-server-test.app.nsai.online/api
+
+Forwarded workflow flags:
+  --api-base-url URL
+  --room-id ID
+  --brief TEXT
+  --participant-id ID
+  --participant-role ROLE
+  --authority-level LEVEL
+  --text TEXT
+  --run
+  --max-assignments N
+  --assignment-timeout-ms MS
+
+Examples:
+  bin/hive-room-smoke \
+    --brief "local smoke room" \
+    --text "hello from the scripted path" \
+    --text "second message"
+
+  bin/hive-room-smoke \
+    --run \
+    --brief "local smoke room" \
+    --text "kick off a run too"
+
+  bin/hive-room-smoke \
+    --prod \
+    --room-id prod-smoke-01 \
+    --brief "production smoke room" \
+    --text "hello from prod"
+EOF
+}
+
+while (($# > 0)); do
+  case "$1" in
+    --local)
+      mode="local"
+      shift
+      ;;
+    --prod)
+      mode="prod"
+      shift
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    *)
+      forwarded+=("$1")
+      shift
+      ;;
+  esac
+done
+
+case "$mode" in
+  local) api_base_url="$LOCAL_API" ;;
+  prod) api_base_url="$PROD_API" ;;
+esac
+
+has_api_base_url='false'
+
+for arg in "${forwarded[@]}"; do
+  if [[ "$arg" == "--api-base-url" ]]; then
+    has_api_base_url='true'
+    break
+  fi
+done
+
+if [[ "$has_api_base_url" != 'true' ]]; then
+  forwarded=(--api-base-url "$api_base_url" "${forwarded[@]}")
+fi
+
+cd "$APP_DIR"
+
+exec mix run -e 'JidoHiveConsole.CLI.main(["workflow", "room-smoke" | System.argv()])' -- "${forwarded[@]}"

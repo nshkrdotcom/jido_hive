@@ -16,7 +16,7 @@ This repo currently contains:
 
 - `jido_hive_server`: authoritative room engine, REST API, relay, context graph, dispatch, publications, connector state
 - `jido_hive_client`: worker runtime, headless operator API, room session boundary, and scriptable CLI
-- `examples/jido_hive_termui_console`: the ExRatatui operator console built on top of `jido_hive_client`
+- `examples/jido_hive_console`: the ExRatatui operator console built on top of `jido_hive_client`
 - the root workspace project: shared quality gates and monorepo tooling
 
 If you are new here, read this file first, then the package READMEs.
@@ -61,12 +61,13 @@ Use the helper scripts:
 ```bash
 bin/hive-control
 bin/hive-clients
+bin/hive-room-smoke --brief "local smoke room" --text "hello"
 ```
 
 ### Local operator console
 
 ```bash
-cd examples/jido_hive_termui_console
+cd examples/jido_hive_console
 mix deps.get
 mix escript.build
 ./hive console --local --participant-id alice --debug
@@ -87,7 +88,7 @@ mix escript.build
 ```bash
 bin/hive-control --prod
 bin/hive-clients --prod
-cd examples/jido_hive_termui_console
+cd examples/jido_hive_console
 mix escript.build
 ./hive console --prod --participant-id alice --debug
 ```
@@ -153,7 +154,7 @@ flowchart LR
 - [README.md](README.md): root onboarding and repo-wide workflow
 - [jido_hive_server/README.md](jido_hive_server/README.md): authoritative server design, routes, publications, deployment
 - [jido_hive_client/README.md](jido_hive_client/README.md): operator API, room session boundary, worker runtime, headless CLI
-- [examples/jido_hive_termui_console/README.md](examples/jido_hive_termui_console/README.md): operator guide, keybindings, troubleshooting, connector walkthrough
+- [examples/jido_hive_console/README.md](examples/jido_hive_console/README.md): operator guide, keybindings, troubleshooting, connector walkthrough
 
 ## Operator surfaces
 
@@ -204,12 +205,47 @@ JIDO_HIVE_CLIENT_LOG_LEVEL=debug \
 
 All mutating commands return an explicit `operation_id` in their JSON output.
 
+### Root scripted room smoke
+
+Use this when you want one reproducible command that bypasses the TUI but still
+exercises the typical room flow through the console/client stack.
+
+```bash
+bin/hive-room-smoke \
+  --brief "local smoke room" \
+  --text "hello from the scripted path" \
+  --text "second message"
+```
+
+Start a room run as part of the same script:
+
+```bash
+bin/hive-room-smoke \
+  --run \
+  --brief "local smoke room" \
+  --text "hello from the scripted path"
+```
+
+Production shortcut:
+
+```bash
+bin/hive-room-smoke \
+  --prod \
+  --room-id prod-smoke-01 \
+  --brief "production smoke room" \
+  --text "hello from prod"
+```
+
+This wrapper forwards into the console app's `workflow room-smoke` path and
+prints structured JSON. If this reproduces the issue, debug the client/server
+seam before touching the TUI.
+
 ### ExRatatui console
 
 Use the console when you want the full operator UX.
 
 ```bash
-cd examples/jido_hive_termui_console
+cd examples/jido_hive_console
 mix escript.build
 ./hive console --prod --participant-id alice --debug
 ```
@@ -217,7 +253,7 @@ mix escript.build
 Recommended debug tail:
 
 ```bash
-tail -f ~/.config/hive/termui_console.log
+tail -f ~/.config/hive/hive_console.log
 ```
 
 ## Production connector setup
@@ -270,7 +306,7 @@ Observed working behavior on 2026-04-08:
 
 For the full site-by-site walkthrough, use the console guide:
 
-- [examples/jido_hive_termui_console/README.md](examples/jido_hive_termui_console/README.md)
+- [examples/jido_hive_console/README.md](examples/jido_hive_console/README.md)
 
 ## Developer workflow
 
@@ -344,7 +380,7 @@ use:
 
 - Server: [jido_hive_server/README.md](jido_hive_server/README.md)
 - Client: [jido_hive_client/README.md](jido_hive_client/README.md)
-- Console: [examples/jido_hive_termui_console/README.md](examples/jido_hive_termui_console/README.md)
+- Console: [examples/jido_hive_console/README.md](examples/jido_hive_console/README.md)
 - General debugging guide: `docs/debugging_guide.md`
 
 ## License

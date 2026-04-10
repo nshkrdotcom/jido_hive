@@ -56,6 +56,18 @@ Recommended sequence:
 2. In terminal 1, choose the live demo option from `bin/hive-control`
 3. Watch the client terminal for the per-turn prompt and response previews
 
+If you need a reproducible non-TUI room path from the repo root, use:
+
+```bash
+bin/hive-room-smoke \
+  --brief "local smoke room" \
+  --text "hello from the scripted path" \
+  --text "second message"
+```
+
+Add `--run` if you also want the script to start a room run after the chat
+submissions.
+
 ## Three-Terminal Local Flow
 
 If you want the direct local flow:
@@ -163,7 +175,7 @@ compatible workers.
 
 For the current human-facing graph-authoring path, see:
 
-- `../examples/jido_hive_termui_console/README.md`
+- `../examples/jido_hive_console/README.md`
 - `../jido_hive_client/README.md`
 
 ## Publication Commands

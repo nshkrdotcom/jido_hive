@@ -76,7 +76,7 @@ defmodule JidoHiveWorkspace.MixProject do
       projects: [
         "jido_hive_client",
         "jido_hive_server",
-        "examples/jido_hive_termui_console"
+        "examples/jido_hive_console"
       ],
       isolation: [
         deps_path: true,
