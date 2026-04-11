@@ -9,15 +9,18 @@ Use it when:
 - a worker is not registering
 - a run operation is blocked
 - the TUI shows something that looks wrong
+- the web UI shows something that looks wrong
 
 The governing rule is:
 
 1. server truth first
 2. headless operator client second
-3. worker runtime third if the bug involves relay targets or assignment execution
-4. TUI last
+3. shared operator surface third
+4. worker runtime fourth if the bug involves relay targets or assignment execution
+5. TUI or web UI last
 
-If a behavior reproduces from the headless client, it is not a TUI-only bug.
+If a behavior reproduces from the headless client or shared surface, it is not a
+UI-only bug.
 
 ## Current transport split
 
@@ -30,8 +33,11 @@ That means:
 
 - `setup/hive` is an HTTP-oriented operator/tooling surface
 - `jido_hive_client room ...` commands are HTTP-backed
+- `jido_hive_surface` is the shared UI-neutral workflow layer over those
+  operator seams
 - the Switchyard-backed console is HTTP-backed for room inspection and human
   actions
+- `jido_hive_web` is HTTP-backed for room inspection and human actions
 - `bin/client` and `bin/client-worker` launch websocket relay workers through
   `jido_hive_worker_runtime`
 
@@ -42,11 +48,13 @@ That means:
   state
 - `jido_hive_client`
   reusable operator workflows, room-scoped local session behavior, headless CLI
+- `jido_hive_surface`
+  shared room and publication workflows for TUI and web packages
 - `jido_hive_worker_runtime`
   relay worker registration, assignment delivery, local execution, worker-local
   runtime state
-- Switchyard plus `examples/jido_hive_console`
-  terminal rendering, routing, local screen state, key handling
+- `jido_hive_switchyard_tui`, `jido_hive_web`, and `examples/jido_hive_console`
+  presentation, routing, local screen state, and key handling
 
 ## Standard triage sequence
 
@@ -69,7 +77,7 @@ Questions this answers:
 - does the room already contain the contribution or context object you expect?
 - is the timeline moving even if the console looks stale?
 
-If server truth is wrong, stop blaming the client or TUI.
+If server truth is wrong, stop blaming the client, surface, or UI.
 
 ### 2. Reproduce through `jido_hive_client`
 
@@ -98,7 +106,19 @@ Questions this answers:
 - is the bug already present before the TUI is involved?
 - is the issue in operator/session semantics rather than rendering?
 
-### 3. Reproduce the human action headlessly with trace
+### 3. Reproduce through the shared surface or human action headlessly
+
+Use the shared surface next when the issue seems UI-adjacent but should still be
+reproducible without Phoenix or terminal state.
+
+Typical examples:
+
+- room list does not match saved rooms
+- publication workspace looks wrong
+- provenance flow or room create/run validation looks inconsistent
+
+Then use the headless client with trace for submit, accept, resolve, or publish
+bugs.
 
 Use this for submit, accept, resolve, or publish bugs.
 
@@ -146,7 +166,16 @@ mix escript.build
 ./jido_hive_worker --help
 ```
 
-### 5. Only then run the TUI
+### 5. Only then run the UI
+
+Web:
+
+```bash
+cd jido_hive_web
+mix phx.server
+```
+
+TUI:
 
 ```bash
 cd examples/jido_hive_console
@@ -156,13 +185,14 @@ mix escript.build
 
 At this point you are testing:
 
-- render state
+- browser or terminal render state
 - focus and selection
 - local editor state
 - overlays and presentation
-- composition between Switchyard and `jido_hive_client`
+- composition between presentation layer and the shared operator surface
 
-If the bug is already visible headlessly, do not stay here.
+If the bug is already visible headlessly or from `jido_hive_surface`, do not
+stay here.
 
 ## Structured trace rule
 

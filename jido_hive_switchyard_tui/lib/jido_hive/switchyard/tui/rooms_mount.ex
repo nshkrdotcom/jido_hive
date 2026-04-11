@@ -3,8 +3,8 @@ defmodule JidoHive.Switchyard.TUI.RoomsMount do
 
   @behaviour Switchyard.TUI.Mount
 
-  alias JidoHive.Switchyard.Site.Client
   alias JidoHive.Switchyard.TUI.{RoomsRuntime, RoomsView, State}
+  alias JidoHiveSurface
   alias Switchyard.TUI.Model
 
   @app_id "jido-hive.rooms"
@@ -14,7 +14,7 @@ defmodule JidoHive.Switchyard.TUI.RoomsMount do
 
   @impl true
   def init(opts) do
-    State.new(client_module: Keyword.get(opts, :client_module, Client))
+    State.new(client_module: Keyword.get(opts, :client_module, JidoHiveSurface))
   end
 
   @impl true

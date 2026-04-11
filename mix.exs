@@ -75,10 +75,12 @@ defmodule JidoHiveWorkspace.MixProject do
       root: __DIR__,
       projects: [
         "jido_hive_client",
+        "jido_hive_surface",
         "jido_hive_worker_runtime",
         "jido_hive_server",
         "jido_hive_switchyard_site",
         "jido_hive_switchyard_tui",
+        "jido_hive_web",
         "examples/jido_hive_console"
       ],
       isolation: [

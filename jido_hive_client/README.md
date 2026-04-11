@@ -10,9 +10,16 @@ Use this package when you need:
 - headless operator inspection and mutation against `jido_hive_server`
 - a room-scoped local session boundary for human participation
 - a reproducible JSON CLI for scripts, smoke checks, and bug isolation
+- the reusable transport/session seam beneath `jido_hive_surface`, the
+  Switchyard TUI, and the Phoenix web UI
 
 Do not use this package for relay workers or assignment execution. That lives in
 [../jido_hive_worker_runtime/README.md](../jido_hive_worker_runtime/README.md).
+
+If you are building a new UI package, prefer
+[../jido_hive_surface/README.md](../jido_hive_surface/README.md) as the first
+application-facing entrypoint, and use `jido_hive_client` directly only for the
+lower-level operator/session boundary.
 
 Start with the workspace [README](../README.md) if you need repo-wide context.
 

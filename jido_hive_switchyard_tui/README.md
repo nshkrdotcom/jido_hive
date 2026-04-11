@@ -14,10 +14,13 @@ It owns Jido-specific screen logic, not generic terminal platform behavior.
 
 ## Dependencies
 
+- `jido_hive_surface`
 - `jido_hive_switchyard_site`
 - generic Switchyard TUI and local-site packages
 
-`jido_hive_switchyard_site` brings in `jido_hive_client`.
+This package uses `jido_hive_surface` for reusable room and publication
+workflows.
+
 This package must not depend on `jido_hive_worker_runtime`.
 
 `ex_ratatui` is owned by the Switchyard host dependency chain, not by the
@@ -64,7 +67,7 @@ JidoHive.Switchyard.TUI.run(
 - the public entry module for mounting the Jido Hive workflow into Switchyard
 - a private state module for screen-local room and publication state
 - a private mount/update module for event mapping and app callbacks
-- a private runtime module for async room and publication commands
+- a private runtime module for async commands over `jido_hive_surface`
 - a private view module for room, graph, and overlay rendering
 
 ## Debugging Order
@@ -115,6 +118,7 @@ mix docs --warnings-as-errors
 ## Related Reading
 
 - [Workspace README](../README.md)
+- [Jido Hive Surface README](../jido_hive_surface/README.md)
 - [Jido Hive Client README](../jido_hive_client/README.md)
 - [Jido Hive Switchyard Site README](../jido_hive_switchyard_site/README.md)
 - [Jido Hive Console README](../examples/jido_hive_console/README.md)

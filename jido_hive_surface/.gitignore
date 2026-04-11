@@ -1,0 +1,6 @@
+/_build/
+/cover/
+/deps/
+/doc/
+/jido_hive_surface
+/erl_crash.dump

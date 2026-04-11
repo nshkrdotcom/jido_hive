@@ -8,6 +8,7 @@ If one rule should survive every refactor, it is this:
 
 Workers may execute elsewhere.
 The headless operator client may reproduce operator flows without the TUI.
+The Phoenix web UI may render those same flows without redefining them.
 The worker runtime may execute assignments without the operator client.
 The Switchyard TUI may render those flows interactively.
 None of those surfaces define canonical room state.
@@ -63,6 +64,7 @@ flowchart TB
       Control[setup/hive and control scripts]
       Headless[jido_hive_client headless CLI]
       Console[Switchyard TUI]
+      Web[jido_hive_web]
       Workers[jido_hive_worker_runtime]
     end
 
@@ -88,6 +90,7 @@ flowchart TB
     Control --> API
     Headless --> API
     Console --> API
+    Web --> API
     Workers --> Relay
     API --> Rooms
     Relay --> Rooms

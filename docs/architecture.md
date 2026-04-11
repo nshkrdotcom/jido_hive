@@ -8,17 +8,21 @@
   authoritative room truth, relay, persistence, context graph, publications
 - `jido_hive_client`
   reusable operator workflows, room-scoped local session behavior, headless CLI
+- `jido_hive_surface`
+  UI-neutral operator surface over `jido_hive_client`
 - `jido_hive_worker_runtime`
   relay workers, assignment execution, worker control API, runtime bootstrap
-- Switchyard packages plus the example console
-  terminal rendering and operator workflow presentation over the client seams
+- presentation packages
+  Switchyard-backed TUI packages, the Phoenix web app, and the example console
 
 The important rule is:
 
 - the server decides what the room is
 - the client decides how operator and room-session consumers talk to that room
+- the shared surface decides how reusable room/publication workflows are exposed
+  to UI packages
 - the worker runtime executes assignments against that room
-- the TUI renders those seams; it does not redefine them
+- the TUI and web UI render those seams; they do not redefine them
 
 ## Runtime shape
 
@@ -45,6 +49,18 @@ The server coordinates work, but it does not execute model turns itself.
 
 It does not own relay workers or assignment execution.
 
+### Shared operator surface
+
+`jido_hive_surface` owns:
+
+- room catalog workflows
+- room workspace and provenance loading workflows
+- room create and run-control workflows
+- publication workspace and publish workflows
+- shared input normalization for create and run forms
+
+It does not own terminal rendering, Phoenix rendering, or server truth.
+
 ### Worker runtime
 
 `jido_hive_worker_runtime` owns:
@@ -70,6 +86,18 @@ Switchyard plus the Jido Hive Switchyard packages own:
 
 They do not own authoritative room semantics.
 
+### Web UI
+
+`jido_hive_web` owns:
+
+- browser routing
+- LiveView page state
+- browser-local form state
+- room session rendering in the browser
+
+It consumes `jido_hive_surface` and `jido_hive_client.RoomSession`. It does not
+own room truth or bypass the shared operator seam.
+
 ## Room loop
 
 The steady-state room loop is:
@@ -84,6 +112,8 @@ The steady-state room loop is:
 7. the worker runtime executes locally and returns a structured contribution
 8. the server reduces that contribution into room truth
 9. operator surfaces inspect or steer the same room through API and client seams
+10. the shared surface feeds both terminal and browser operator interfaces from
+    that same room model
 
 ## Transport split
 
@@ -94,8 +124,8 @@ There are two primary transport styles:
 
 That means:
 
-- `setup/hive`, `jido_hive_client`, and the Switchyard-backed console are
-  HTTP-backed for room/operator work
+- `setup/hive`, `jido_hive_client`, `jido_hive_surface`, the Switchyard-backed
+  console, and `jido_hive_web` are HTTP-backed for room/operator work
 - `bin/client` and `bin/client-worker` launch websocket relay workers through
   `jido_hive_worker_runtime`
 

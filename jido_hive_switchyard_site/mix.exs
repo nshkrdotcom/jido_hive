@@ -40,7 +40,7 @@ defmodule JidoHive.Switchyard.Site.MixProject do
 
   defp deps do
     [
-      {:jido_hive_client, path: "../jido_hive_client"},
+      {:jido_hive_surface, path: "../jido_hive_surface"},
       DependencyResolver.switchyard_contracts(),
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
       {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false},

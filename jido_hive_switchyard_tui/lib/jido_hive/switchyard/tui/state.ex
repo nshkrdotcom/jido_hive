@@ -1,10 +1,10 @@
 defmodule JidoHive.Switchyard.TUI.State do
   @moduledoc false
 
-  alias JidoHive.Switchyard.Site.Client
+  alias JidoHiveSurface
 
   @enforce_keys []
-  defstruct client_module: Client,
+  defstruct client_module: JidoHiveSurface,
             screen: :rooms,
             rooms: [],
             room_cursor: 0,

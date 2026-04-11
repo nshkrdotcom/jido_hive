@@ -6,6 +6,7 @@ operator console.
 It now composes:
 
 - `jido_hive_client`
+- `jido_hive_surface`
 - `jido_hive_worker_runtime` indirectly through repo-root worker scripts only
 - `jido_hive_switchyard_site`
 - `jido_hive_switchyard_tui`
@@ -15,6 +16,7 @@ It now composes:
 
 - `jido_hive_server` owns room truth
 - `jido_hive_client` owns reusable operator and room-session behavior
+- `jido_hive_surface` owns reusable UI-neutral room and publication workflows
 - `jido_hive_switchyard_site` owns the Jido Hive site mapping over Switchyard
   contracts
 - `jido_hive_switchyard_tui` owns the Jido-specific terminal workflow
@@ -94,7 +96,8 @@ mix escript.build
 ```
 
 This keeps the example package thin: it composes the Switchyard-backed Jido Hive
-TUI without taking on room truth or reusable client behavior.
+TUI without taking on room truth, the shared operator surface, or reusable
+client behavior.
 
 ## Debugging Order
 
@@ -102,8 +105,9 @@ Always debug in this order:
 
 1. server truth
 2. headless `jido_hive_client`
-3. Jido Hive Switchyard TUI
-4. this example composition layer only if the handoff itself is broken
+3. shared `jido_hive_surface`
+4. Jido Hive Switchyard TUI
+5. this example composition layer only if the handoff itself is broken
 
 Representative headless checks:
 
