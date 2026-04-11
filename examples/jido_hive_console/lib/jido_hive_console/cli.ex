@@ -1,10 +1,7 @@
 defmodule JidoHiveConsole.CLI do
   @moduledoc false
 
-  require Logger
-
-  alias JidoHiveClient.Operator
-  alias JidoHiveConsole.{EscriptBootstrap, LoggerSetup, WorkflowScript}
+  alias JidoHiveConsole.WorkflowScript
 
   @local_api_base_url "http://127.0.0.1:4000/api"
   @prod_api_base_url "https://jido-hive-server-test.app.nsai.online/api"
@@ -29,17 +26,11 @@ defmodule JidoHiveConsole.CLI do
     opts = parse_console_opts(rest)
 
     result =
-      with :ok <- LoggerSetup.configure(opts),
-           :ok <- EscriptBootstrap.start_console_dependencies(),
-           {:ok, output} <-
+      with {:ok, output} <-
              WorkflowScript.run(rest, api_base_url: Keyword.get(opts, :api_base_url)) do
         IO.puts(Jason.encode!(output, pretty: true))
         :ok
-      else
-        {:error, reason} -> {:error, reason}
       end
-
-    :ok = LoggerSetup.restore()
 
     case result do
       :ok ->
@@ -52,46 +43,9 @@ defmodule JidoHiveConsole.CLI do
   end
 
   @spec main([String.t()]) :: no_return()
-  def main(["auth", "login", channel | _rest]) do
-    :ok = Operator.ensure_initialized()
-
-    case Operator.start_device_flow(channel) do
-      {:ok, %{user_code: code, verification_uri: uri}} ->
-        IO.puts("Open: #{uri}")
-        IO.puts("Enter code: #{code}")
-        IO.puts("Credentials file: #{Operator.credentials_path()}")
-        IO.puts("This is the v1 device-flow scaffold. Complete authorization externally.")
-        System.halt(0)
-
-      {:error, reason} ->
-        IO.puts("Auth failed: #{inspect(reason)}")
-        System.halt(1)
-    end
-  end
-
-  def main(["room", "create" | _rest]) do
-    IO.puts(
-      "Non-interactive room creation is not implemented in the CLI stub. Use `hive console`."
-    )
-
-    System.halt(1)
-  end
-
   def main(argv) do
     opts = parse_console_opts(argv)
-    route = parse_args(argv)
-
-    result =
-      with :ok <- LoggerSetup.configure(opts),
-           :ok <- log_console_start(opts, route),
-           :ok <- EscriptBootstrap.start_console_dependencies(),
-           :ok <- JidoHiveConsole.run(Keyword.put(opts, :route, route)) do
-        :ok
-      else
-        {:error, reason} -> {:error, reason}
-      end
-
-    :ok = LoggerSetup.restore()
+    result = JidoHiveConsole.run(opts)
 
     case result do
       :ok ->
@@ -156,14 +110,5 @@ defmodule JidoHiveConsole.CLI do
       true ->
         opts
     end
-  end
-
-  defp log_console_start(opts, route) do
-    Logger.info(
-      "starting console route=#{inspect(route)} api_base_url=#{Keyword.get(opts, :api_base_url)} participant_id=#{Keyword.get(opts, :participant_id, "human-local")} log_level=#{Keyword.get(opts, :log_level, "info")}"
-    )
-
-    Logger.flush()
-    :ok
   end
 end

@@ -8,7 +8,7 @@ If one rule should survive every refactor, it is this:
 
 Workers may execute elsewhere.
 The headless client may reproduce operator flows without the TUI.
-The ExRatatui console may render those flows interactively.
+The Switchyard TUI may render those flows interactively.
 None of those surfaces define canonical room state.
 The server does.
 
@@ -61,7 +61,7 @@ flowchart TB
     subgraph Surfaces[Clients and operator surfaces]
       Control[setup/hive and control scripts]
       Headless[jido_hive_client headless CLI]
-      Console[ExRatatui console]
+      Console[Switchyard TUI]
       Workers[worker runtimes]
     end
 
@@ -208,7 +208,7 @@ Observed live behavior on 2026-04-08:
    - `setup/hive --prod connections notion --subject alice`
 6. Verify publish through either:
    - the headless client CLI, or
-   - the ExRatatui console publish screen
+   - the Switchyard publish screen reached through the compatibility launcher
 
 For the full site-by-site operator walkthrough, use:
 
@@ -239,7 +239,7 @@ When changing the server:
 
 1. Confirm the server route returns the expected truth.
 2. Reproduce through `jido_hive_client` headless CLI.
-3. Only after that, inspect the ExRatatui console.
+3. Only after that, inspect the Switchyard TUI.
 4. Use local `iex` when reducer/controller internals matter.
 5. Production remote `iex` is not yet a supported repo workflow; use Coolify logs, direct HTTP, and the headless client first.
 
@@ -287,4 +287,4 @@ MIX_ENV=coolify mix coolify.status --project server --latest
 - Root guide: [README.md](../README.md)
 - General debugging guide: `docs/debugging_guide.md`
 - Client guide: [jido_hive_client/README.md](../jido_hive_client/README.md)
-- Console guide: [examples/jido_hive_console/README.md](../examples/jido_hive_console/README.md)
+- Compatibility launcher guide: [examples/jido_hive_console/README.md](../examples/jido_hive_console/README.md)

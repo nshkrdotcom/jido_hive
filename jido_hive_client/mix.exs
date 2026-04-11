@@ -1,9 +1,11 @@
-Code.require_file("../build_support/dependency_resolver.exs", __DIR__)
+unless Code.ensure_loaded?(JidoHiveClient.Build.DependencyResolver) do
+  Code.require_file("build_support/dependency_resolver.exs", __DIR__)
+end
 
 defmodule JidoHiveClient.MixProject do
   use Mix.Project
 
-  alias JidoHive.Build.DependencyResolver
+  alias JidoHiveClient.Build.DependencyResolver
 
   def project do
     [

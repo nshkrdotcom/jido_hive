@@ -6,13 +6,13 @@ This repo has three relevant Mix apps:
 
 - `jido_hive_server` – Phoenix API and websocket relay
 - `jido_hive_client` – reusable operator/session client and worker runtime
-- `examples/jido_hive_console` – ExRatatui operator console built on `jido_hive_client`
+- `examples/jido_hive_console` – compatibility launcher and smoke helper for the Switchyard TUI
 
 Architecture rule:
 
 1. `jido_hive_server` owns room truth.
 2. `jido_hive_client` owns reusable operator and room-session behavior.
-3. the ExRatatui console owns only rendering, input, and screen-local view state.
+3. the TUI owns only rendering, input, and screen-local view state.
 
 If a room behavior cannot be reproduced from the headless client, the seam is still wrong.
 
@@ -151,7 +151,7 @@ The console should not own:
 - connector truth
 - business behavior that does not also exist headlessly
 
-If a console bug appears, reproduce it headlessly first. Only debug the ExRatatui layer after the server and headless client are understood.
+If a console bug appears, reproduce it headlessly first. Only debug the Switchyard layer after the server and headless client are understood.
 
 ## Connector Install Tokens
 

@@ -9,8 +9,6 @@ defmodule JidoHiveConsole.MixProject do
       elixirc_options: [warnings_as_errors: true],
       start_permanent: Mix.env() == :prod,
       escript: [
-        app: nil,
-        include_priv_for: [:tzdata, :ex_ratatui],
         main_module: JidoHiveConsole.CLI,
         name: "hive"
       ],
@@ -38,7 +36,6 @@ defmodule JidoHiveConsole.MixProject do
 
   defp deps do
     [
-      {:ex_ratatui, path: "../../../ex_ratatui"},
       {:jason, "~> 1.4"},
       {:jido_hive_client, path: "../../jido_hive_client"},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},

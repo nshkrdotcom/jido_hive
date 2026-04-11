@@ -25,7 +25,7 @@ That means:
 
 - `bin/client-worker` and `bin/client` are websocket clients
 - `jido_hive_client room ...` headless commands are HTTP clients
-- the ExRatatui console is also HTTP-backed for room inspection and human actions
+- the Switchyard TUI is also HTTP-backed for room inspection and human actions
 
 The operator HTTP path is now intentionally lane-based. The important lanes are:
 
@@ -82,7 +82,7 @@ console. The preferred contract is:
   - room-scoped session behavior
   - headless CLI for shell scripts and reproduction
   - worker contribution prompt shaping and contribution normalization
-- `examples/jido_hive_console`
+- the Switchyard TUI and the compatibility launcher under `examples/jido_hive_console`
   - terminal rendering
   - key handling
   - routing and screen state
@@ -220,6 +220,9 @@ cd examples/jido_hive_console
 mix escript.build
 ./hive console --prod --participant-id alice --debug --room-id <room-id>
 ```
+
+That command now hands off into Switchyard. If the handoff fails before the TUI
+starts, debug the compatibility bridge; otherwise debug the Switchyard layer.
 
 Useful companion tail:
 

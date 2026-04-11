@@ -16,7 +16,7 @@ This repo currently contains:
 
 - `jido_hive_server`: authoritative room engine, REST API, relay, context graph, dispatch, publications, connector state
 - `jido_hive_client`: worker runtime, headless operator API, room session boundary, and scriptable CLI
-- `examples/jido_hive_console`: the ExRatatui operator console built on top of `jido_hive_client`
+- `examples/jido_hive_console`: compatibility wrapper and smoke helper that forwards terminal UI work into Switchyard
 - the root workspace project: shared quality gates and monorepo tooling
 
 What makes Jido Hive different is not the relay or the chat transcript.
@@ -73,6 +73,9 @@ bin/hive-room-smoke --brief "local smoke room" --text "hello"
 
 ### Local operator console
 
+The primary TUI implementation now lives in Switchyard. This repo keeps
+`examples/jido_hive_console` as a compatibility launcher.
+
 ```bash
 cd examples/jido_hive_console
 mix deps.get
@@ -109,7 +112,7 @@ mix escript.build
 ```mermaid
 flowchart LR
     subgraph Operator[Operator surfaces]
-      TUI[ExRatatui console]
+      TUI[Switchyard TUI via compatibility wrapper]
       Headless[Headless CLI and shell scripts]
       Control[setup/hive and helper scripts]
     end
@@ -185,7 +188,7 @@ flowchart LR
 - [README.md](README.md): root onboarding and repo-wide workflow
 - [jido_hive_server/README.md](jido_hive_server/README.md): authoritative server design, routes, publications, deployment
 - [jido_hive_client/README.md](jido_hive_client/README.md): operator API, room session boundary, worker runtime, headless CLI
-- [examples/jido_hive_console/README.md](examples/jido_hive_console/README.md): operator guide, keybindings, troubleshooting, connector walkthrough
+- [examples/jido_hive_console/README.md](examples/jido_hive_console/README.md): compatibility launcher and room-smoke helper
 
 ## Operator surfaces
 
@@ -272,13 +275,13 @@ bin/hive-room-smoke \
   --text "hello from prod"
 ```
 
-This wrapper forwards into the console app's `workflow room-smoke` path and
-prints structured JSON. If this reproduces the issue, debug the client/server
-seam before touching the TUI.
+This wrapper forwards into the compatibility app's `workflow room-smoke` path
+and prints structured JSON. If this reproduces the issue, debug the
+client/server seam before touching the TUI.
 
-### ExRatatui console
+### Switchyard TUI
 
-Use the console when you want the full operator UX.
+Use the compatibility launcher when you want the full operator UX.
 
 ```bash
 cd examples/jido_hive_console
@@ -294,9 +297,9 @@ tail -f ~/.config/hive/hive_console.log
 
 Implementation note:
 
-- the console now runs on `ExRatatui.App`'s reducer runtime
-- `F2` surfaces both room/client diagnostics and `ExRatatui.Runtime` inspection data
-- local development currently uses the sibling `../../../ex_ratatui` path dependency from `examples/jido_hive_console`
+- `examples/jido_hive_console` no longer owns the TUI implementation
+- the wrapper hands off into the Switchyard terminal app
+- `ex_ratatui` is now Switchyard-owned, not owned by this repo
 
 ## Production connector setup
 
@@ -346,7 +349,7 @@ Observed working behavior on 2026-04-08:
    - `setup/hive --prod connections notion --subject alice`
 7. Open the console publish screen and confirm both channels show `auth:connected`.
 
-For the full site-by-site walkthrough, use the console guide:
+For the compatibility launcher and smoke helper, use:
 
 - [examples/jido_hive_console/README.md](examples/jido_hive_console/README.md)
 
@@ -386,7 +389,7 @@ When you are debugging behavior:
 
 - reproduce it through `jido_hive_client` headless CLI first
 - if it reproduces there, it is not a TUI bug
-- if it only reproduces in the console, the bug is in the ExRatatui app layer
+- if it only reproduces in the TUI, debug Switchyard after the server and headless client are understood
 
 ## Debugging order
 
@@ -396,7 +399,7 @@ Use this order whenever the system feels confusing.
    - `setup/hive ...`
    - direct room/auth endpoints
 2. Reproduce with `jido_hive_client` headless CLI.
-3. Only after that, inspect the ExRatatui console.
+3. Only after that, inspect the Switchyard TUI or the compatibility handoff.
 4. If a room action is only testable through the TUI, add a headless path before doing more UI work.
 5. Use local `iex` for server/client internals when needed; production remote attach is not yet a supported repo workflow.
 

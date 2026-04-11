@@ -3,7 +3,15 @@ defmodule JidoHiveClient.HeadlessCLI do
   Headless operator and session commands for scripting `jido_hive_client`.
   """
 
-  alias JidoHiveClient.{Operation, Operator, RoomInsight, RoomSession, RoomWorkflow}
+  alias JidoHiveClient.{
+    Operation,
+    Operator,
+    PublicationWorkspace,
+    RoomInsight,
+    RoomSession,
+    RoomWorkflow,
+    RoomWorkspace
+  }
 
   @operator_switches [
     api_base_url: :string,
@@ -19,6 +27,7 @@ defmodule JidoHiveClient.HeadlessCLI do
     operation_id: :string,
     access_token: :string,
     context_id: :string,
+    selected_context_id: :string,
     left: :string,
     right: :string,
     text: :string,
@@ -73,6 +82,7 @@ defmodule JidoHiveClient.HeadlessCLI do
   defp normalize_argv(["room", "show" | rest]), do: ["operator", "room", "get" | rest]
   defp normalize_argv(["room", "get" | rest]), do: ["operator", "room", "get" | rest]
   defp normalize_argv(["room", "workflow" | rest]), do: ["operator", "room", "workflow" | rest]
+  defp normalize_argv(["room", "workspace" | rest]), do: ["operator", "room", "workspace" | rest]
   defp normalize_argv(["room", "focus" | rest]), do: ["operator", "room", "focus" | rest]
   defp normalize_argv(["room", "inspect" | rest]), do: ["operator", "room", "inspect" | rest]
 
@@ -81,6 +91,9 @@ defmodule JidoHiveClient.HeadlessCLI do
 
   defp normalize_argv(["room", "publish-plan" | rest]),
     do: ["operator", "room", "publish-plan" | rest]
+
+  defp normalize_argv(["room", "publication-workspace" | rest]),
+    do: ["operator", "room", "publication-workspace" | rest]
 
   defp normalize_argv(["room", "tail" | rest]), do: ["operator", "room", "timeline" | rest]
   defp normalize_argv(["room", "timeline" | rest]), do: ["operator", "room", "timeline" | rest]
@@ -172,6 +185,24 @@ defmodule JidoHiveClient.HeadlessCLI do
     end
   end
 
+  defp dispatch_operator(["room", "workspace" | rest], config, operator_module) do
+    with {:ok, parsed} <- parse_command_opts(rest, @operator_switches),
+         api_base_url <- api_base_url(parsed, config),
+         {:ok, room_id} <- required_option(parsed, :room_id),
+         {:ok, sync_result} <-
+           operator_module.fetch_room_sync(api_base_url, room_id, after: parsed[:after]) do
+      snapshot = hydrate_sync_snapshot(sync_result)
+
+      {:ok,
+       normalize_output(
+         RoomWorkspace.build(snapshot,
+           selected_context_id: parsed[:selected_context_id],
+           participant_id: parsed[:participant_id]
+         )
+       )}
+    end
+  end
+
   defp dispatch_operator(["room", "focus" | rest], config, operator_module) do
     with {:ok, parsed} <- parse_command_opts(rest, @operator_switches),
          api_base_url <- api_base_url(parsed, config),
@@ -213,6 +244,22 @@ defmodule JidoHiveClient.HeadlessCLI do
          {:ok, room_id} <- required_option(parsed, :room_id),
          {:ok, publication_plan} <- operator_module.fetch_publication_plan(api_base_url, room_id) do
       {:ok, normalize_output(publication_plan)}
+    end
+  end
+
+  defp dispatch_operator(["room", "publication-workspace" | rest], config, operator_module) do
+    with {:ok, parsed} <- parse_command_opts(rest, @operator_switches),
+         api_base_url <- api_base_url(parsed, config),
+         {:ok, room_id} <- required_option(parsed, :room_id),
+         {:ok, subject} <- required_option(parsed, :subject),
+         {:ok, publication_plan} <- operator_module.fetch_publication_plan(api_base_url, room_id) do
+      {:ok,
+       normalize_output(
+         PublicationWorkspace.build(
+           publication_plan,
+           operator_module.load_auth_state(api_base_url, subject)
+         )
+       )}
     end
   end
 

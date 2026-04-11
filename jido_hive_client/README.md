@@ -6,7 +6,7 @@ It has three distinct roles:
 
 - run long-lived worker participants against the relay
 - provide a headless operator API and JSON CLI for scripts, debugging, and control-plane inspection
-- provide a room-scoped local session boundary for human-facing tools such as the ExRatatui console
+- provide a room-scoped local session boundary for human-facing tools such as the Switchyard TUI
 
 It does not own room truth.
 The server still does.
@@ -84,7 +84,7 @@ flowchart LR
     subgraph Consumers[Client consumers]
       WorkerCLI[worker runtime CLI]
       Headless[headless operator CLI]
-      Console[ExRatatui console]
+      Console[Switchyard TUI]
       Other[other local tools]
     end
 
@@ -428,7 +428,7 @@ When a bug is reported in the console:
 
 1. reproduce through the headless CLI first
 2. if it reproduces there, debug `Operator`, `RoomSession`, or server behavior
-3. if it does not, debug the ExRatatui console
+3. if it does not, debug the Switchyard TUI or the compatibility launcher
 4. if the client surface is missing the needed headless action, add it before changing more UI code
 5. if you need deeper local introspection, use local `iex`; do not jump straight to production remote-shell assumptions
 
@@ -441,5 +441,5 @@ General reproducible workflow:
 - Root guide: [README.md](../README.md)
 - General debugging guide: `docs/debugging_guide.md`
 - Server guide: [jido_hive_server/README.md](../jido_hive_server/README.md)
-- Console guide: [examples/jido_hive_console/README.md](../examples/jido_hive_console/README.md)
+- Compatibility launcher guide: [examples/jido_hive_console/README.md](../examples/jido_hive_console/README.md)
 - Debugging runbook: `~/jb/docs/20260408/jido_hive_debugging_introspection/jido_hive_debugging_introspection_and_runbook.md`

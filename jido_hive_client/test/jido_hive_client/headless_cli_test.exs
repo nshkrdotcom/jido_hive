@@ -235,6 +235,50 @@ defmodule JidoHiveClient.HeadlessCLITest do
     assert_receive {:fetch_room_sync, nil}
   end
 
+  test "operator room workspace returns structured room workspace data" do
+    assert {:ok,
+            %{
+              "room_id" => "room-1",
+              "graph_sections" => [%{"title" => "CONFLICTS"} | _],
+              "selected_detail" => %{"context_id" => "ctx-4"}
+            }} =
+             HeadlessCLI.dispatch(
+               [
+                 "room",
+                 "workspace",
+                 "--api-base-url",
+                 "https://example.com/api",
+                 "--room-id",
+                 "room-1",
+                 "--selected-context-id",
+                 "ctx-4"
+               ],
+               operator_module: OperatorStub
+             )
+  end
+
+  test "operator publication workspace returns structured publish data" do
+    assert {:ok,
+            %{
+              "channels" => [%{"channel" => "github"}],
+              "ready?" => true,
+              "source_entries" => ["ctx-1", "ctx-3"]
+            }} =
+             HeadlessCLI.dispatch(
+               [
+                 "room",
+                 "publication-workspace",
+                 "--api-base-url",
+                 "https://example.com/api",
+                 "--room-id",
+                 "room-1",
+                 "--subject",
+                 "alice"
+               ],
+               operator_module: OperatorStub
+             )
+  end
+
   test "operator room inspect returns the consolidated sync surface plus workflow summary" do
     assert {:ok,
             %{
