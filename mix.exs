@@ -76,6 +76,8 @@ defmodule JidoHiveWorkspace.MixProject do
       projects: [
         "jido_hive_client",
         "jido_hive_server",
+        "jido_hive_switchyard_site",
+        "jido_hive_switchyard_tui",
         "examples/jido_hive_console"
       ],
       isolation: [

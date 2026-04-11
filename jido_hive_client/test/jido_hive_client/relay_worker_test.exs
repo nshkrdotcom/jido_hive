@@ -4,6 +4,8 @@ defmodule JidoHiveClient.RelayWorkerTest do
   alias JidoHiveClient.{RelayWorker, Runtime}
   alias PhoenixClient.Message
 
+  @receive_timeout 500
+
   defmodule SocketStub do
     def start_link(opts) do
       Agent.start_link(fn ->
@@ -141,9 +143,11 @@ defmodule JidoHiveClient.RelayWorkerTest do
   } do
     {:ok, _worker} = RelayWorker.start_link(worker_opts(runtime, self()))
 
-    assert_receive {:channel_joined, "relay:workspace-1", %{"workspace_id" => "workspace-1"}}
-    assert_receive {:channel_push, "relay.hello", hello_payload}
-    assert_receive {:channel_push, "participant.upsert", participant_payload}
+    assert_receive {:channel_joined, "relay:workspace-1", %{"workspace_id" => "workspace-1"}},
+                   @receive_timeout
+
+    assert_receive {:channel_push, "relay.hello", hello_payload}, @receive_timeout
+    assert_receive {:channel_push, "participant.upsert", participant_payload}, @receive_timeout
 
     assert hello_payload["participant_id"] == "participant-1"
     assert participant_payload["target_id"] == "target-1"
@@ -160,7 +164,7 @@ defmodule JidoHiveClient.RelayWorkerTest do
 
     send(worker, %Message{event: "assignment.start", payload: assignment_payload()})
 
-    assert_receive {:channel_push, "contribution.submit", contribution, 12_345}
+    assert_receive {:channel_push, "contribution.submit", contribution, 12_345}, @receive_timeout
     assert contribution["assignment_id"] == "asn-1"
     assert String.starts_with?(contribution["contribution_id"], "contrib-")
     assert contribution["status"] == "completed"
@@ -188,16 +192,18 @@ defmodule JidoHiveClient.RelayWorkerTest do
 
     send(worker, %Message{event: "assignment.start", payload: assignment_payload()})
 
-    assert_receive {:channel_push, "contribution.submit", _contribution, 30_000}
+    assert_receive {:channel_push, "contribution.submit", _contribution, 30_000}, @receive_timeout
     assert Process.alive?(worker)
 
     assert_assignment_failed(runtime)
   end
 
   defp await_handshake do
-    assert_receive {:channel_joined, "relay:workspace-1", %{"workspace_id" => "workspace-1"}}
-    assert_receive {:channel_push, "relay.hello", _payload}
-    assert_receive {:channel_push, "participant.upsert", _payload}
+    assert_receive {:channel_joined, "relay:workspace-1", %{"workspace_id" => "workspace-1"}},
+                   @receive_timeout
+
+    assert_receive {:channel_push, "relay.hello", _payload}, @receive_timeout
+    assert_receive {:channel_push, "participant.upsert", _payload}, @receive_timeout
     :ok
   end
 

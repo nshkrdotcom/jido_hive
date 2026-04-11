@@ -4,6 +4,7 @@ defmodule JidoHive.Build.DependencyResolver do
   @repo_root Path.expand("..", __DIR__)
   @jido_integration_repo "https://github.com/agentjido/jido_integration.git"
   @jido_ai_repo "https://github.com/agentjido/jido_ai.git"
+  @switchyard_repo "https://github.com/nshkrdotcom/switchyard.git"
 
   def jido(opts \\ []) do
     resolve_hex(:jido, "~> 2.2", [], opts)
@@ -122,6 +123,33 @@ defmodule JidoHive.Build.DependencyResolver do
 
   def coolify_ex(opts \\ []) do
     resolve_hex(:coolify_ex, "~> 0.5.1", [], opts)
+  end
+
+  def switchyard_contracts(opts \\ []) do
+    resolve(
+      :switchyard_contracts,
+      ["../switchyard/core/workbench_contracts"],
+      [git: @switchyard_repo, branch: "main", sparse: "core/workbench_contracts"],
+      opts
+    )
+  end
+
+  def switchyard_site_local(opts \\ []) do
+    resolve(
+      :switchyard_site_local,
+      ["../switchyard/sites/site_local"],
+      [git: @switchyard_repo, branch: "main", sparse: "sites/site_local"],
+      opts
+    )
+  end
+
+  def switchyard_tui(opts \\ []) do
+    resolve(
+      :switchyard_tui,
+      ["../switchyard/apps/terminal_workbench_tui"],
+      [git: @switchyard_repo, branch: "main", sparse: "apps/terminal_workbench_tui"],
+      opts
+    )
   end
 
   defp resolve(app, local_paths, fallback_opts, opts) do

@@ -16,7 +16,9 @@ This repo currently contains:
 
 - `jido_hive_server`: authoritative room engine, REST API, relay, context graph, dispatch, publications, connector state
 - `jido_hive_client`: worker runtime, headless operator API, room session boundary, and scriptable CLI
-- `examples/jido_hive_console`: compatibility wrapper and smoke helper that forwards terminal UI work into Switchyard
+- `jido_hive_switchyard_site`: headless Switchyard site adapter for Jido Hive resources, actions, and workflow detail
+- `jido_hive_switchyard_tui`: Jido Hive operator workflow mounted on the generic Switchyard TUI host
+- `examples/jido_hive_console`: runnable composition layer and smoke helper over the Jido Hive Switchyard packages
 - the root workspace project: shared quality gates and monorepo tooling
 
 What makes Jido Hive different is not the relay or the chat transcript.
@@ -73,8 +75,8 @@ bin/hive-room-smoke --brief "local smoke room" --text "hello"
 
 ### Local operator console
 
-The primary TUI implementation now lives in Switchyard. This repo keeps
-`examples/jido_hive_console` as a compatibility launcher.
+The generic host runtime lives in Switchyard. The Jido Hive-specific site and
+operator workflow live in this repo.
 
 ```bash
 cd examples/jido_hive_console
@@ -160,7 +162,9 @@ flowchart LR
 
 - `jido_hive_server` decides what the room is.
 - `jido_hive_client` is the reusable operator/runtime platform for talking to that room.
-- the console is a rendering shell plus input adapter over the client.
+- `jido_hive_switchyard_site` maps Jido Hive resources and actions into Switchyard contracts.
+- `jido_hive_switchyard_tui` owns the Jido Hive-specific terminal workflow over the generic host.
+- the example console composes those packages into a runnable operator entrypoint.
 - if a behavior cannot be reproduced from the headless client surface, the seam is still wrong.
 
 ### Product model
@@ -188,7 +192,9 @@ flowchart LR
 - [README.md](README.md): root onboarding and repo-wide workflow
 - [jido_hive_server/README.md](jido_hive_server/README.md): authoritative server design, routes, publications, deployment
 - [jido_hive_client/README.md](jido_hive_client/README.md): operator API, room session boundary, worker runtime, headless CLI
-- [examples/jido_hive_console/README.md](examples/jido_hive_console/README.md): compatibility launcher and room-smoke helper
+- [jido_hive_switchyard_site/README.md](jido_hive_switchyard_site/README.md): headless site adapter package
+- [jido_hive_switchyard_tui/README.md](jido_hive_switchyard_tui/README.md): Jido Hive operator workflow package over Switchyard
+- [examples/jido_hive_console/README.md](examples/jido_hive_console/README.md): runnable composition layer and room-smoke helper
 
 ## Operator surfaces
 

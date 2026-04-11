@@ -1,0 +1,10 @@
+# jido_hive_switchyard_tui v0.1.0 - Table of Contents
+
+## Pages
+
+- [Jido Hive Switchyard TUI](readme.md)
+
+## Modules
+
+- [JidoHive.Switchyard.TUI](JidoHive.Switchyard.TUI.md): Jido Hive Switchyard composition entrypoint.
+

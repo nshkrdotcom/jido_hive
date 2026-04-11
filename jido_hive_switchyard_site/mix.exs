@@ -1,18 +1,19 @@
-defmodule JidoHiveConsole.MixProject do
+unless Code.ensure_loaded?(JidoHive.Build.DependencyResolver) do
+  Code.require_file("../build_support/dependency_resolver.exs", __DIR__)
+end
+
+defmodule JidoHive.Switchyard.Site.MixProject do
   use Mix.Project
+
+  alias JidoHive.Build.DependencyResolver
 
   def project do
     [
-      app: :jido_hive_console,
+      app: :jido_hive_switchyard_site,
       version: "0.1.0",
       elixir: "~> 1.19",
       elixirc_options: [warnings_as_errors: true],
       start_permanent: Mix.env() == :prod,
-      escript: [
-        main_module: JidoHiveConsole.CLI,
-        name: "hive"
-      ],
-      aliases: aliases(),
       deps: deps(),
       dialyzer: [plt_add_apps: [:ex_unit]],
       docs: [main: "readme", extras: ["README.md"]]
@@ -28,34 +29,18 @@ defmodule JidoHiveConsole.MixProject do
       preferred_envs: [
         credo: :test,
         dialyzer: :test,
-        docs: :dev,
-        quality: :test
+        docs: :dev
       ]
     ]
   end
 
   defp deps do
     [
-      {:jason, "~> 1.4"},
-      {:jido_hive_client, path: "../../jido_hive_client"},
-      {:jido_hive_switchyard_tui, path: "../../jido_hive_switchyard_tui"},
+      {:jido_hive_client, path: "../jido_hive_client"},
+      DependencyResolver.switchyard_contracts(),
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
       {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false},
       {:ex_doc, "~> 0.40", only: [:dev, :test], runtime: false}
-    ]
-  end
-
-  defp aliases do
-    [
-      setup: ["deps.get"],
-      quality: [
-        "format --check-formatted",
-        "compile",
-        "test",
-        "credo --strict",
-        "dialyzer",
-        "cmd env MIX_ENV=dev mix docs --warnings-as-errors"
-      ]
     ]
   end
 end

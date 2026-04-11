@@ -1,28 +1,32 @@
-# Jido Hive Console Compatibility Wrapper
+# Jido Hive Console
 
-`examples/jido_hive_console` is no longer the primary terminal UI
-implementation for `jido_hive`.
+`examples/jido_hive_console` is the runnable composition layer for the Jido Hive
+operator console.
 
-The live terminal UX now belongs in the separate `switchyard` repo.
-This package remains for two reasons:
+It now composes:
 
-- compatibility: `./hive console ...` still launches the Switchyard TUI
-- scripting: `workflow room-smoke` still provides a small non-TUI smoke path
+- `jido_hive_client`
+- `jido_hive_switchyard_site`
+- `jido_hive_switchyard_tui`
+- generic Switchyard packages pulled in through those package dependencies
 
 ## Current Contract
 
 - `jido_hive_server` owns room truth
 - `jido_hive_client` owns reusable operator and room-session behavior
-- Switchyard owns the terminal UI implementation and the `ex_ratatui`
-  dependency
-- this package is a bridge, not a second UI stack
+- `jido_hive_switchyard_site` owns the Jido Hive site mapping over Switchyard
+  contracts
+- `jido_hive_switchyard_tui` owns the Jido-specific terminal workflow
+- Switchyard remains generic platform/runtime code beneath those packages
+- this example package owns only composition, CLI defaults, and smoke scripts
+- this example package does not depend directly on `ex_ratatui`
 
 If a room behavior cannot be reproduced from `jido_hive_client`, the seam is
 still wrong.
 
 ## Quick Start
 
-### Build the compatibility escript
+### Build the example escript
 
 ```bash
 cd examples/jido_hive_console
@@ -30,7 +34,7 @@ mix deps.get
 mix escript.build
 ```
 
-### Launch the TUI through Switchyard
+### Launch the TUI
 
 Local:
 
@@ -43,16 +47,6 @@ Production:
 ```bash
 ./hive console --prod --participant-id alice --debug
 ```
-
-The wrapper will try, in order:
-
-1. `SWITCHYARD_BIN`
-2. `switchyard` on `PATH`
-3. a built sibling Switchyard escript
-4. `mix run` inside the sibling Switchyard TUI app
-
-If none of those are available, the wrapper exits with
-`{:error, :switchyard_not_found}`.
 
 ### Run the headless room smoke path
 
@@ -78,8 +72,8 @@ Always debug in this order:
 
 1. server truth
 2. headless `jido_hive_client`
-3. Switchyard TUI
-4. this compatibility wrapper only if the launch handoff itself is broken
+3. Jido Hive Switchyard TUI
+4. this example composition layer only if the handoff itself is broken
 
 Representative headless checks:
 
@@ -96,11 +90,9 @@ mix escript.build
 
 ## What Lives Here Now
 
-- [lib/jido_hive_console.ex](lib/jido_hive_console.ex): compatibility entrypoint
-- [lib/jido_hive_console/cli.ex](lib/jido_hive_console/cli.ex): wrapper CLI and
+- [lib/jido_hive_console.ex](lib/jido_hive_console.ex): example entrypoint
+- [lib/jido_hive_console/cli.ex](lib/jido_hive_console/cli.ex): console CLI and
   workflow smoke entry
-- [lib/jido_hive_console/switchyard_bridge.ex](lib/jido_hive_console/switchyard_bridge.ex):
-  Switchyard handoff logic
 - [lib/jido_hive_console/workflow_script.ex](lib/jido_hive_console/workflow_script.ex):
   scripted smoke path over `JidoHiveClient.HeadlessCLI`
 

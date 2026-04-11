@@ -1,10 +1,8 @@
 defmodule JidoHiveConsole do
   @moduledoc false
 
-  alias JidoHiveConsole.SwitchyardBridge
-
   @spec run(keyword()) :: :ok | {:error, term()}
   def run(opts \\ []) do
-    SwitchyardBridge.run_console(opts)
+    Keyword.get(opts, :tui_module, JidoHive.Switchyard.TUI).run(opts)
   end
 end
