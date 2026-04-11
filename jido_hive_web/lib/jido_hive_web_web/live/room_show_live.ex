@@ -85,6 +85,18 @@ defmodule JidoHiveWebWeb.RoomShowLive do
   end
 
   @impl true
+  def handle_info(
+        {:client_runtime_event, %{room_id: room_id}},
+        %{assigns: %{room_id: room_id}} = socket
+      ) do
+    {:noreply, socket}
+  end
+
+  def handle_info({:client_runtime_event, _event}, socket) do
+    {:noreply, socket}
+  end
+
+  @impl true
   def handle_event("select_context", %{"context_id" => context_id}, socket) do
     room_workspace =
       case socket.assigns.raw_snapshot do
@@ -218,210 +230,371 @@ defmodule JidoHiveWebWeb.RoomShowLive do
   @impl true
   def render(assigns) do
     ~H"""
-    <div class="mx-auto max-w-7xl space-y-6 p-6">
-      <header class="space-y-2">
-        <div class="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <p class="text-sm uppercase tracking-[0.2em] text-zinc-500">Room Workspace</p>
-            <h1 class="text-3xl font-semibold text-zinc-900">{@room_workspace.objective}</h1>
+    <Layouts.app
+      flash={@flash}
+      active_nav="rooms"
+      eyebrow="Room Workspace"
+      title={@room_workspace.objective}
+      subtitle="Full-screen operator workspace over the shared room-session seam."
+    >
+      <:actions>
+        <button phx-click="refresh_room" class="ui-button ui-button--ghost">
+          Refresh
+        </button>
+        <a href={~p"/rooms/#{@room_id}/publish"} class="ui-button ui-button--primary">
+          Publish
+        </a>
+      </:actions>
+
+      <:header_meta>
+        <div class="ui-meta-grid">
+          <div class="ui-meta-row">
+            <span class="ui-chip">Room</span>
+            <span class="ui-meta-value mono">{@room_id}</span>
           </div>
-          <div class="flex gap-3 text-sm">
-            <button
-              phx-click="refresh_room"
-              class="rounded-md border border-zinc-300 px-3 py-2 font-medium text-zinc-800"
-            >
-              Refresh
-            </button>
-            <a
-              href={~p"/rooms/#{@room_id}/publish"}
-              class="rounded-md bg-zinc-900 px-3 py-2 font-medium text-white"
-            >
-              Publish
-            </a>
+          <div class="ui-meta-row">
+            <span class="ui-chip">Operator</span>
+            <span class="ui-meta-value">
+              {@identity.participant_id} · {@identity.participant_role}
+            </span>
           </div>
         </div>
+      </:header_meta>
 
-        <div class="grid gap-3 rounded-xl border border-zinc-200 bg-white p-5 shadow-sm md:grid-cols-4">
-          <div>
-            <p class="text-xs uppercase tracking-wide text-zinc-500">Stage</p>
-            <p class="text-sm font-medium text-zinc-900">{@room_workspace.control_plane.stage}</p>
+      <div class="ui-page ui-page--room" data-screen="room-show">
+        <section class="ui-ribbon">
+          <div class="ui-ribbon__item">
+            <p class="ui-ribbon__label">Stage</p>
+            <p class="ui-ribbon__value">{@room_workspace.control_plane.stage}</p>
           </div>
-          <div>
-            <p class="text-xs uppercase tracking-wide text-zinc-500">Next Action</p>
-            <p class="text-sm font-medium text-zinc-900">
-              {@room_workspace.control_plane.next_action}
+          <div class="ui-ribbon__item">
+            <p class="ui-ribbon__label">Next Action</p>
+            <p class="ui-ribbon__value">{@room_workspace.control_plane.next_action}</p>
+          </div>
+          <div class="ui-ribbon__item">
+            <p class="ui-ribbon__label">Why</p>
+            <p class="ui-ribbon__value ui-ribbon__value--wrap">
+              {@room_workspace.control_plane.reason}
             </p>
           </div>
-          <div>
-            <p class="text-xs uppercase tracking-wide text-zinc-500">Why</p>
-            <p class="text-sm text-zinc-700">{@room_workspace.control_plane.reason}</p>
-          </div>
-          <div>
-            <p class="text-xs uppercase tracking-wide text-zinc-500">Publish Ready</p>
-            <p class="text-sm font-medium text-zinc-900">
-              {@room_workspace.control_plane.publish_ready}
+          <div class="ui-ribbon__item">
+            <p class="ui-ribbon__label">Publish Ready</p>
+            <p class="ui-ribbon__value">
+              <span class={publish_ready_class(@room_workspace.control_plane.publish_ready)}>
+                {publish_ready_label(@room_workspace.control_plane.publish_ready)}
+              </span>
             </p>
           </div>
-        </div>
-      </header>
+        </section>
 
-      <div class="grid gap-6 xl:grid-cols-[1.1fr_1fr_0.9fr]">
-        <section class="space-y-4 rounded-xl border border-zinc-200 bg-white p-5 shadow-sm">
-          <div class="flex items-center justify-between">
-            <h2 class="text-lg font-semibold text-zinc-900">Conversation</h2>
-            <span class="text-sm text-zinc-500">{length(@room_workspace.conversation)} entries</span>
-          </div>
+        <section class="ui-room-grid">
+          <div class="ui-room-column">
+            <article class="ui-panel ui-panel--fill">
+              <header class="ui-panel__header">
+                <div>
+                  <p class="ui-panel__eyebrow">Transcript</p>
+                  <h2 class="ui-panel__title">Conversation</h2>
+                </div>
+                <p class="ui-panel__meta">{length(@room_workspace.conversation)} entries</p>
+              </header>
 
-          <div class="space-y-3">
-            <article
-              :for={entry <- @room_workspace.conversation}
-              class="rounded-lg bg-zinc-50 p-3 text-sm"
-            >
-              <p class="font-medium text-zinc-900">
-                {entry.participant_id} · {entry.contribution_type}
-              </p>
-              <p class="mt-1 text-zinc-700">{entry.body}</p>
+              <div class="ui-panel__body">
+                <div :if={@room_workspace.conversation == []} class="ui-empty-state">
+                  <p class="ui-empty-state__title">No conversation yet</p>
+                  <p class="ui-empty-state__body">
+                    Use the steering composer below to push the room forward.
+                  </p>
+                </div>
+
+                <div :if={@room_workspace.conversation != []} class="ui-feed">
+                  <article :for={entry <- @room_workspace.conversation} class="ui-feed__item">
+                    <div class="ui-feed__meta">
+                      <span class="ui-feed__author">{entry.participant_id}</span>
+                      <span class="ui-feed__kind">{entry.contribution_type}</span>
+                    </div>
+                    <p class="ui-feed__body">{entry.body}</p>
+                  </article>
+                </div>
+              </div>
+            </article>
+
+            <article class="ui-panel ui-panel--fill">
+              <header class="ui-panel__header">
+                <div>
+                  <p class="ui-panel__eyebrow">Timeline</p>
+                  <h2 class="ui-panel__title">Events</h2>
+                </div>
+                <p class="ui-panel__meta">{length(@room_workspace.events)} events</p>
+              </header>
+
+              <div class="ui-panel__body">
+                <div :if={@room_workspace.events == []} class="ui-empty-state">
+                  <p class="ui-empty-state__title">No room events yet</p>
+                  <p class="ui-empty-state__body">Refresh after the next run or operator action.</p>
+                </div>
+
+                <div :if={@room_workspace.events != []} class="ui-feed ui-feed--dense">
+                  <article
+                    :for={event <- @room_workspace.events}
+                    class="ui-feed__item ui-feed__item--event"
+                  >
+                    <div class="ui-feed__meta">
+                      <span class="ui-feed__kind">{event.kind}</span>
+                      <span class="ui-feed__status">{event.status}</span>
+                    </div>
+                    <p class="ui-feed__body">{event.body}</p>
+                  </article>
+                </div>
+              </div>
             </article>
           </div>
 
-          <.form id="draft-form" for={@draft_form} phx-submit="submit_draft" class="space-y-2">
-            <label class="block text-sm font-medium text-zinc-700">Steering Message</label>
-            <textarea
-              name={@draft_form[:text].name}
-              class="min-h-28 w-full rounded-md border border-zinc-300 px-3 py-2 text-sm"
-            ><%= @draft_form[:text].value %></textarea>
-            <button
-              type="submit"
-              class="rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white"
-            >
-              Submit steering
-            </button>
-          </.form>
-        </section>
-
-        <section class="space-y-4 rounded-xl border border-zinc-200 bg-white p-5 shadow-sm">
-          <div class="flex items-center justify-between">
-            <h2 class="text-lg font-semibold text-zinc-900">Shared Graph</h2>
-            <button
-              id="show-provenance"
-              phx-click="show_provenance"
-              class="text-sm font-medium text-zinc-900 hover:underline"
-            >
-              Provenance
-            </button>
-          </div>
-
-          <div :for={section <- @room_workspace.graph_sections} class="space-y-2">
-            <h3 class="text-xs font-semibold uppercase tracking-wide text-zinc-500">
-              {section.title}
-            </h3>
-            <button
-              :for={item <- section.items}
-              id={"context-#{item.context_id}"}
-              phx-click="select_context"
-              phx-value-context_id={item.context_id}
-              class={[
-                "w-full rounded-lg border px-3 py-2 text-left text-sm",
-                if(item.context_id == @selected_context_id,
-                  do: "border-zinc-900 bg-zinc-100 text-zinc-900",
-                  else: "border-zinc-200 bg-white text-zinc-700"
-                )
-              ]}
-            >
-              <div class="font-medium">{item.title}</div>
-            </button>
-          </div>
-        </section>
-
-        <section class="space-y-4 rounded-xl border border-zinc-200 bg-white p-5 shadow-sm">
-          <h2 class="text-lg font-semibold text-zinc-900">Selected Detail</h2>
-
-          <%= if detail = @room_workspace.selected_detail do %>
-            <div class="space-y-3">
+          <article class="ui-panel ui-panel--fill">
+            <header class="ui-panel__header">
               <div>
-                <p class="text-xs uppercase tracking-wide text-zinc-500">Title</p>
-                <p class="text-sm font-medium text-zinc-900">{detail.title}</p>
+                <p class="ui-panel__eyebrow">Shared Context</p>
+                <h2 class="ui-panel__title">Shared Graph</h2>
               </div>
-              <div>
-                <p class="text-xs uppercase tracking-wide text-zinc-500">Body</p>
-                <p class="text-sm text-zinc-700">{detail.body}</p>
-              </div>
+              <button
+                id="show-provenance"
+                phx-click="show_provenance"
+                class="ui-button ui-button--ghost ui-button--compact"
+              >
+                Provenance
+              </button>
+            </header>
 
-              <div>
-                <p class="text-xs uppercase tracking-wide text-zinc-500">Recommended Actions</p>
-                <ul class="mt-1 space-y-1 text-sm text-zinc-700">
-                  <li :for={action <- detail.recommended_actions}>{action.label}</li>
-                </ul>
+            <div class="ui-panel__body ui-panel__body--flush">
+              <div :for={section <- @room_workspace.graph_sections} class="ui-graph-section">
+                <div class="ui-graph-section__header">
+                  <h3 class="ui-graph-section__title">{section.title}</h3>
+                  <span class="ui-graph-section__count">{length(section.items)}</span>
+                </div>
+
+                <div class="ui-graph-list">
+                  <button
+                    :for={item <- section.items}
+                    id={"context-#{item.context_id}"}
+                    phx-click="select_context"
+                    phx-value-context_id={item.context_id}
+                    class={context_item_class(item.context_id == @selected_context_id)}
+                  >
+                    <div class="ui-graph-item__header">
+                      <h4 class="ui-graph-item__title">{item.title}</h4>
+                      <span class="ui-graph-item__counts">
+                        {item.graph.incoming}/{item.graph.outgoing}
+                      </span>
+                    </div>
+
+                    <div class="ui-context-tags">
+                      <span :if={item.flags.binding} class="ui-context-tag ui-context-tag--accent">
+                        Binding
+                      </span>
+                      <span :if={item.flags.conflict} class="ui-context-tag ui-context-tag--danger">
+                        Conflict
+                      </span>
+                      <span :if={item.flags.stale} class="ui-context-tag ui-context-tag--warning">
+                        Stale
+                      </span>
+                      <span
+                        :if={(item.flags.duplicate_count || 0) > 0}
+                        class="ui-context-tag ui-context-tag--muted"
+                      >
+                        Duplicates {item.flags.duplicate_count}
+                      </span>
+                    </div>
+                  </button>
+                </div>
               </div>
             </div>
-          <% else %>
-            <p class="text-sm text-zinc-600">No context selected.</p>
-          <% end %>
+          </article>
 
-          <div class="border-t border-zinc-200 pt-4">
-            <h3 class="mb-2 text-sm font-semibold text-zinc-900">Run Room</h3>
-            <.form id="run-room-form" for={@run_form} phx-submit="run_room" class="space-y-3">
-              <div>
-                <label class="mb-1 block text-sm font-medium text-zinc-700">Max Assignments</label>
-                <input
-                  type="text"
-                  name={@run_form[:max_assignments].name}
-                  value={@run_form[:max_assignments].value}
-                  class="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm"
-                />
-                <p
-                  :if={Map.has_key?(@run_errors, :max_assignments)}
-                  class="mt-1 text-sm text-rose-600"
-                >
-                  {@run_errors.max_assignments}
+          <div class="ui-room-column ui-room-column--side">
+            <article class="ui-panel ui-panel--fill">
+              <header class="ui-panel__header">
+                <div>
+                  <p class="ui-panel__eyebrow">Selection</p>
+                  <h2 class="ui-panel__title">Selected Detail</h2>
+                </div>
+                <p class="ui-panel__meta">
+                  {if @selected_context_id, do: @selected_context_id, else: "No selection"}
                 </p>
-              </div>
+              </header>
 
-              <div>
-                <label class="mb-1 block text-sm font-medium text-zinc-700">
-                  Assignment Timeout (ms)
-                </label>
-                <input
-                  type="text"
-                  name={@run_form[:assignment_timeout_ms].name}
-                  value={@run_form[:assignment_timeout_ms].value}
-                  class="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm"
-                />
-              </div>
+              <div class="ui-panel__body">
+                <%= if detail = @room_workspace.selected_detail do %>
+                  <div class="ui-detail-stack">
+                    <div class="ui-detail-block">
+                      <p class="ui-detail-block__label">Title</p>
+                      <p class="ui-detail-block__value">{detail.title}</p>
+                    </div>
 
-              <button
-                type="submit"
-                class="rounded-md border border-zinc-900 px-4 py-2 text-sm font-medium text-zinc-900"
-              >
-                Run room
-              </button>
-            </.form>
+                    <div class="ui-detail-block">
+                      <p class="ui-detail-block__label">Body</p>
+                      <p class="ui-detail-block__body">{detail.body}</p>
+                    </div>
+
+                    <div class="ui-detail-block">
+                      <p class="ui-detail-block__label">Recommended Actions</p>
+                      <div class="ui-action-list">
+                        <span
+                          :for={action <- detail.recommended_actions}
+                          class="ui-action-chip"
+                        >
+                          {action.label}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div
+                      :if={@room_workspace.control_plane.publish_blockers != []}
+                      class="ui-note-block"
+                    >
+                      <h3>Publish blockers</h3>
+                      <ul class="ui-bullet-list">
+                        <li :for={blocker <- @room_workspace.control_plane.publish_blockers}>
+                          {blocker}
+                        </li>
+                      </ul>
+                    </div>
+                  </div>
+                <% else %>
+                  <div class="ui-empty-state">
+                    <p class="ui-empty-state__title">No context selected</p>
+                    <p class="ui-empty-state__body">
+                      Choose a graph object to inspect its body and recommended actions.
+                    </p>
+                  </div>
+                <% end %>
+              </div>
+            </article>
+
+            <article class="ui-panel">
+              <header class="ui-panel__header">
+                <div>
+                  <p class="ui-panel__eyebrow">Execution</p>
+                  <h2 class="ui-panel__title">Run Room</h2>
+                </div>
+                <p class="ui-panel__meta">Queue additional assignments</p>
+              </header>
+
+              <div class="ui-panel__body">
+                <.form id="run-room-form" for={@run_form} phx-submit="run_room" class="ui-form">
+                  <div class="ui-field">
+                    <label class="ui-label" for={@run_form[:max_assignments].id}>
+                      Max Assignments
+                    </label>
+                    <input
+                      id={@run_form[:max_assignments].id}
+                      type="text"
+                      name={@run_form[:max_assignments].name}
+                      value={@run_form[:max_assignments].value}
+                      class="ui-input"
+                    />
+                    <p
+                      :if={Map.has_key?(@run_errors, :max_assignments)}
+                      class="ui-field-error"
+                    >
+                      {@run_errors.max_assignments}
+                    </p>
+                  </div>
+
+                  <div class="ui-field">
+                    <label class="ui-label" for={@run_form[:assignment_timeout_ms].id}>
+                      Assignment Timeout (ms)
+                    </label>
+                    <input
+                      id={@run_form[:assignment_timeout_ms].id}
+                      type="text"
+                      name={@run_form[:assignment_timeout_ms].name}
+                      value={@run_form[:assignment_timeout_ms].value}
+                      class="ui-input"
+                    />
+                  </div>
+
+                  <div class="ui-form__actions">
+                    <button type="submit" class="ui-button ui-button--secondary">Run room</button>
+                  </div>
+                </.form>
+              </div>
+            </article>
           </div>
         </section>
+
+        <article class="ui-panel ui-panel--composer">
+          <header class="ui-panel__header">
+            <div>
+              <p class="ui-panel__eyebrow">Operator Action</p>
+              <h2 class="ui-panel__title">Steering Composer</h2>
+            </div>
+            <p class="ui-panel__meta">Submit room guidance through the shared session boundary</p>
+          </header>
+
+          <div class="ui-panel__body">
+            <.form id="draft-form" for={@draft_form} phx-submit="submit_draft" class="ui-form">
+              <div class="ui-field">
+                <label class="ui-label" for={@draft_form[:text].id}>Steering Message</label>
+                <textarea
+                  id={@draft_form[:text].id}
+                  name={@draft_form[:text].name}
+                  class="ui-textarea"
+                  placeholder="Tell the room what to clarify, decide, or run next."
+                ><%= @draft_form[:text].value %></textarea>
+              </div>
+
+              <div class="ui-form__actions">
+                <button type="submit" class="ui-button ui-button--primary">
+                  Submit steering
+                </button>
+              </div>
+            </.form>
+          </div>
+        </article>
       </div>
 
-      <section
-        :if={match?({:ok, _}, @provenance)}
-        id="provenance-modal"
-        class="rounded-xl border border-zinc-200 bg-white p-5 shadow-sm"
-      >
+      <section :if={match?({:ok, _}, @provenance)} id="provenance-modal" class="ui-overlay">
         <% {:ok, provenance} = @provenance %>
-        <div class="mb-3 flex items-center justify-between">
-          <h2 class="text-lg font-semibold text-zinc-900">Provenance</h2>
-          <button
-            phx-click="hide_provenance"
-            class="text-sm font-medium text-zinc-900 hover:underline"
-          >
-            Close
-          </button>
-        </div>
+        <button phx-click="hide_provenance" class="ui-overlay__backdrop" aria-label="Close provenance">
+        </button>
+        <article class="ui-overlay__card">
+          <header class="ui-panel__header ui-panel__header--overlay">
+            <div>
+              <p class="ui-panel__eyebrow">Trace</p>
+              <h2 class="ui-panel__title">Provenance</h2>
+            </div>
+            <button phx-click="hide_provenance" class="ui-button ui-button--ghost ui-button--compact">
+              Close
+            </button>
+          </header>
 
-        <p class="text-sm font-medium text-zinc-900">{provenance.title}</p>
-        <ul class="mt-3 space-y-1 text-sm text-zinc-700">
-          <li :for={action <- provenance.recommended_actions}>{action.label}</li>
-        </ul>
+          <div class="ui-overlay__body">
+            <div class="ui-detail-block">
+              <p class="ui-detail-block__label">Selected Context</p>
+              <p class="ui-detail-block__value">{provenance.title}</p>
+            </div>
+
+            <div class="ui-detail-block">
+              <p class="ui-detail-block__label">Recommended Actions</p>
+              <div class="ui-action-list">
+                <span :for={action <- provenance.recommended_actions} class="ui-action-chip">
+                  {action.label}
+                </span>
+              </div>
+            </div>
+
+            <div class="ui-detail-block">
+              <p class="ui-detail-block__label">Trace</p>
+              <ol class="ui-provenance-trace">
+                <li :for={step <- provenance.trace}>
+                  <span class="ui-provenance-trace__depth">Depth {step.depth}</span>
+                  <span class="ui-provenance-trace__title">{step.title}</span>
+                </li>
+              </ol>
+            </div>
+          </div>
+        </article>
       </section>
-    </div>
+    </Layouts.app>
     """
   end
 
@@ -435,4 +608,13 @@ defmodule JidoHiveWebWeb.RoomShowLive do
   defp workspace_selected_context(snapshot, participant_id) do
     build_workspace(snapshot, nil, participant_id).selected_context_id
   end
+
+  defp publish_ready_label(true), do: "Ready"
+  defp publish_ready_label(false), do: "Blocked"
+
+  defp publish_ready_class(true), do: "ui-status-chip ui-status-chip--success"
+  defp publish_ready_class(false), do: "ui-status-chip ui-status-chip--danger"
+
+  defp context_item_class(true), do: "ui-graph-item is-active"
+  defp context_item_class(false), do: "ui-graph-item"
 end

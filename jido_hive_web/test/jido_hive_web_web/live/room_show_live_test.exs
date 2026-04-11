@@ -34,11 +34,15 @@ defmodule JidoHiveWebWeb.RoomShowLiveTest do
   test "renders room workflow, provenance, steering, and run controls", %{conn: conn} do
     {:ok, view, html} = live(conn, ~p"/rooms/room-1")
 
+    assert html =~ "data-screen=\"room-show\""
     assert html =~ "Inspect contradiction"
     assert html =~ "Question"
+    assert html =~ "Shared Graph"
+    assert html =~ "Steering Composer"
 
     assert_receive {:room_session_start, opts}
     assert opts[:room_id] == "room-1"
+    assert render(view) =~ "Conversation"
 
     view
     |> element("#show-provenance")

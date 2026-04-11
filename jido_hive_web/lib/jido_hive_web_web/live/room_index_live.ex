@@ -44,122 +44,180 @@ defmodule JidoHiveWebWeb.RoomIndexLive do
   @impl true
   def render(assigns) do
     ~H"""
-    <div class="mx-auto max-w-6xl space-y-8 p-6">
-      <header class="space-y-2">
-        <p class="text-sm uppercase tracking-[0.2em] text-zinc-500">Jido Hive Web</p>
-        <h1 class="text-3xl font-semibold text-zinc-900">Rooms</h1>
-        <p class="max-w-3xl text-sm text-zinc-600">
-          Browser operator surface over the same room workflow seam used by the headless client and Switchyard TUI.
-        </p>
-      </header>
-
-      <section class="rounded-xl border border-zinc-200 bg-white p-5 shadow-sm">
-        <div class="mb-4">
-          <h2 class="text-lg font-semibold text-zinc-900">Create Room</h2>
-          <p class="text-sm text-zinc-600">
-            Create a room directly from the browser without bypassing the shared operator surface.
-          </p>
+    <Layouts.app
+      flash={@flash}
+      active_nav="rooms"
+      eyebrow="Jido Hive Web"
+      title="Room Workspaces"
+      subtitle="Browser operator surface over the same room workflow seam used by the headless client and Switchyard TUI."
+    >
+      <:header_meta>
+        <div class="ui-meta-row">
+          <span class="ui-chip">API</span>
+          <span class="ui-meta-value">{@api_base_url}</span>
         </div>
+      </:header_meta>
 
-        <.form
-          id="create-room-form"
-          for={@room_form}
-          phx-submit="create_room"
-          class="grid gap-4 md:grid-cols-2"
-        >
-          <div>
-            <label class="mb-1 block text-sm font-medium text-zinc-700">Room ID</label>
-            <input
-              type="text"
-              name={@room_form[:room_id].name}
-              value={@room_form[:room_id].value}
-              class="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm"
-              placeholder="room-123"
-            />
+      <div class="ui-page ui-page--index" data-screen="room-index">
+        <section class="ui-ribbon">
+          <div class="ui-ribbon__item">
+            <p class="ui-ribbon__label">Current Surface</p>
+            <p class="ui-ribbon__value">Shared operator seam</p>
           </div>
-
-          <div>
-            <label class="mb-1 block text-sm font-medium text-zinc-700">Brief</label>
-            <input
-              type="text"
-              name={@room_form[:brief].name}
-              value={@room_form[:brief].value}
-              class="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm"
-              placeholder="What should the room solve?"
-            />
-            <p :if={Map.has_key?(@create_errors, :brief)} class="mt-1 text-sm text-rose-600">
-              {@create_errors.brief}
-            </p>
+          <div class="ui-ribbon__item">
+            <p class="ui-ribbon__label">Known Rooms</p>
+            <p class="ui-ribbon__value">{length(@rooms)}</p>
           </div>
-
-          <div class="md:col-span-2">
-            <button
-              type="submit"
-              class="rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white"
-            >
-              Create room
-            </button>
+          <div class="ui-ribbon__item">
+            <p class="ui-ribbon__label">Primary Action</p>
+            <p class="ui-ribbon__value">Open a room or create a new one</p>
           </div>
-        </.form>
-      </section>
+        </section>
 
-      <section class="space-y-4">
-        <div>
-          <h2 class="text-lg font-semibold text-zinc-900">Saved Rooms</h2>
-          <p class="text-sm text-zinc-600">
-            Rooms known to the operator client for the current API base URL.
-          </p>
-        </div>
-
-        <div class="grid gap-4">
-          <article
-            :for={room <- @rooms}
-            class="rounded-xl border border-zinc-200 bg-white p-5 shadow-sm"
-          >
-            <div class="flex flex-wrap items-center justify-between gap-3">
-              <div class="space-y-1">
-                <h3 class="text-lg font-semibold text-zinc-900">
-                  <a href={~p"/rooms/#{room.room_id}"} class="hover:underline">{room.brief}</a>
-                </h3>
-                <p class="text-sm text-zinc-600">{room.room_id}</p>
+        <section class="ui-index-grid">
+          <article class="ui-panel">
+            <header class="ui-panel__header">
+              <div>
+                <p class="ui-panel__eyebrow">Workflow</p>
+                <h2 class="ui-panel__title">Create Room</h2>
               </div>
+              <p class="ui-panel__meta">Start a fresh operator workspace</p>
+            </header>
 
-              <div class="rounded-full bg-zinc-100 px-3 py-1 text-sm font-medium text-zinc-700">
-                {room.status}
-              </div>
+            <div class="ui-panel__body">
+              <.form id="create-room-form" for={@room_form} phx-submit="create_room" class="ui-form">
+                <div class="ui-field">
+                  <label class="ui-label" for={@room_form[:room_id].id}>Room ID</label>
+                  <input
+                    id={@room_form[:room_id].id}
+                    type="text"
+                    name={@room_form[:room_id].name}
+                    value={@room_form[:room_id].value}
+                    class="ui-input"
+                    placeholder="room-123"
+                  />
+                  <p class="ui-field-hint">Leave blank to generate a durable room id.</p>
+                </div>
+
+                <div class="ui-field">
+                  <label class="ui-label" for={@room_form[:brief].id}>Brief</label>
+                  <textarea
+                    id={@room_form[:brief].id}
+                    name={@room_form[:brief].name}
+                    class="ui-textarea ui-textarea--compact"
+                    placeholder="What should the room solve?"
+                  ><%= @room_form[:brief].value %></textarea>
+                  <p :if={Map.has_key?(@create_errors, :brief)} class="ui-field-error">
+                    {@create_errors.brief}
+                  </p>
+                </div>
+
+                <div class="ui-form__actions">
+                  <button type="submit" class="ui-button ui-button--primary">Create room</button>
+                </div>
+              </.form>
             </div>
+          </article>
 
-            <dl class="mt-4 grid gap-3 text-sm text-zinc-600 md:grid-cols-3">
+          <article class="ui-panel">
+            <header class="ui-panel__header">
               <div>
-                <dt class="font-medium text-zinc-800">Slots</dt>
-                <dd>{room.completed_slots}/{room.total_slots}</dd>
+                <p class="ui-panel__eyebrow">Room Catalog</p>
+                <h2 class="ui-panel__title">Saved Rooms</h2>
               </div>
-              <div>
-                <dt class="font-medium text-zinc-800">Participants</dt>
-                <dd>{room.participant_count}</dd>
+              <p class="ui-panel__meta">Known to the operator client for this API base</p>
+            </header>
+
+            <div class="ui-panel__body ui-panel__body--flush">
+              <div :if={@rooms == []} class="ui-empty-state">
+                <p class="ui-empty-state__title">No saved rooms yet</p>
+                <p class="ui-empty-state__body">
+                  Create a room or save one through the shared operator surface.
+                </p>
               </div>
-              <div>
-                <dt class="font-medium text-zinc-800">Actions</dt>
-                <dd class="space-x-3">
-                  <a
-                    href={~p"/rooms/#{room.room_id}"}
-                    class="font-medium text-zinc-900 hover:underline"
-                  >
-                    Open
-                  </a>
-                  <a
-                    href={~p"/rooms/#{room.room_id}/publish"}
-                    class="font-medium text-zinc-900 hover:underline"
-                  >
+
+              <article :for={room <- @rooms} class="ui-room-card">
+                <div class="ui-room-card__header">
+                  <div class="ui-room-card__title-block">
+                    <h3 class="ui-room-card__title">
+                      <a href={~p"/rooms/#{room.room_id}"}>{room.brief}</a>
+                    </h3>
+                    <p class="ui-room-card__meta">{room.room_id}</p>
+                  </div>
+                  <span class={status_chip_class(room.status)}>{room.status}</span>
+                </div>
+
+                <dl class="ui-stats-grid">
+                  <div class="ui-stat">
+                    <dt>Slots</dt>
+                    <dd>{room.completed_slots}/{room.total_slots}</dd>
+                  </div>
+                  <div class="ui-stat">
+                    <dt>Participants</dt>
+                    <dd>{room.participant_count}</dd>
+                  </div>
+                  <div class="ui-stat">
+                    <dt>State</dt>
+                    <dd>{if room.fetch_error, do: "fetch_error", else: "reachable"}</dd>
+                  </div>
+                </dl>
+
+                <div class="ui-room-card__actions">
+                  <a href={~p"/rooms/#{room.room_id}"} class="ui-button ui-button--secondary">Open</a>
+                  <a href={~p"/rooms/#{room.room_id}/publish"} class="ui-button ui-button--ghost">
                     Publish
                   </a>
-                </dd>
-              </div>
-            </dl>
+                </div>
+              </article>
+            </div>
           </article>
-        </div>
-      </section>
-    </div>
+
+          <article class="ui-panel">
+            <header class="ui-panel__header">
+              <div>
+                <p class="ui-panel__eyebrow">Operator Guide</p>
+                <h2 class="ui-panel__title">What This Surface Does</h2>
+              </div>
+              <p class="ui-panel__meta">Same workflow truth, browser-native interaction</p>
+            </header>
+
+            <div class="ui-panel__body">
+              <div class="ui-note-block">
+                <h3>Core workflow</h3>
+                <ul class="ui-bullet-list">
+                  <li>Open a room to inspect workflow truth and the shared graph.</li>
+                  <li>Send steering messages without bypassing the room session boundary.</li>
+                  <li>Review publication readiness from the same shared operator surface.</li>
+                </ul>
+              </div>
+
+              <div class="ui-note-block">
+                <h3>Debugging order</h3>
+                <ol class="ui-bullet-list ui-bullet-list--ordered">
+                  <li>Server truth first.</li>
+                  <li>Headless `jido_hive_client` second.</li>
+                  <li>This web UI last.</li>
+                </ol>
+              </div>
+
+              <div class="ui-note-block">
+                <h3>Why this layout</h3>
+                <p>
+                  This screen uses pane-based composition so the browser surface can match the
+                  operator posture of the TUI instead of collapsing into a document-centric CRUD page.
+                </p>
+              </div>
+            </div>
+          </article>
+        </section>
+      </div>
+    </Layouts.app>
     """
   end
+
+  defp status_chip_class("publication_ready"), do: "ui-status-chip ui-status-chip--success"
+  defp status_chip_class("running"), do: "ui-status-chip ui-status-chip--info"
+  defp status_chip_class("failed"), do: "ui-status-chip ui-status-chip--danger"
+  defp status_chip_class("missing"), do: "ui-status-chip ui-status-chip--muted"
+  defp status_chip_class(_status), do: "ui-status-chip"
 end

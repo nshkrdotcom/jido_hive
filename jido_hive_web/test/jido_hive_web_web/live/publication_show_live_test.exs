@@ -31,8 +31,12 @@ defmodule JidoHiveWebWeb.PublicationShowLiveTest do
   test "renders publication workspace and publishes bindings", %{conn: conn} do
     {:ok, view, html} = live(conn, ~p"/rooms/room-1/publish")
 
+    assert html =~ "data-screen=\"publication-show\""
     assert html =~ "Draft"
+    assert html =~ "blocks"
+    assert html =~ "rich_text"
     assert html =~ "Repository name"
+    assert html =~ "Publish Controls"
 
     assert view
            |> element("#publish-form")

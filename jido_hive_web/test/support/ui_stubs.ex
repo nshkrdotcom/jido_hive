@@ -135,7 +135,19 @@ defmodule JidoHiveWebWeb.Support.PublicationsStub do
           selected?: true,
           auth: %{status: :cached, connection_id: "conn-1"},
           required_bindings: [%{field: "repo", description: "Repository name"}],
-          draft: %{"title" => "Draft", "body" => "Body"}
+          draft: %{
+            "title" => "Draft",
+            "body" => "Body",
+            "blocks" => [
+              %{
+                "object" => "block",
+                "type" => "paragraph",
+                "paragraph" => %{
+                  "rich_text" => [%{"type" => "text", "text" => %{"content" => "Body"}}]
+                }
+              }
+            ]
+          }
         }
       ],
       selected_channel: %{
@@ -163,6 +175,16 @@ defmodule JidoHiveWebWeb.Support.RoomSessionStub do
   end
 
   def subscribe(:session) do
+    send(
+      self(),
+      {:client_runtime_event,
+       %{
+         type: "embedded.sync.updated",
+         room_id: "room-1",
+         payload: %{"context_count" => 1, "new_entries" => 1}
+       }}
+    )
+
     send(self(), {:room_session_snapshot, "room-1", snapshot()})
     :ok
   end

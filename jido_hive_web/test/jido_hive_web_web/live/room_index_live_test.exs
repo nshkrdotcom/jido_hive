@@ -26,7 +26,9 @@ defmodule JidoHiveWebWeb.RoomIndexLiveTest do
   test "lists rooms and creates a room", %{conn: conn} do
     {:ok, view, html} = live(conn, ~p"/rooms")
 
+    assert html =~ "data-screen=\"room-index\""
     assert html =~ "Stabilize auth path"
+    assert html =~ "Operator Guide"
 
     assert view
            |> element("#create-room-form")
