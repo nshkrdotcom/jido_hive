@@ -122,7 +122,7 @@ flowchart LR
 
 - `JidoHiveClient.Operator` owns server-facing operator workflows such as room inspection, publication planning, connector auth state, and room creation.
 - `JidoHiveClient.RoomSession` owns room-scoped human participation semantics such as snapshot, refresh, submit-chat, and accept-context.
-- `JidoHiveClient.Embedded` is the implementation behind `RoomSession`, not the surface new callers should reach for first.
+- the embedded room-session implementation is behind `RoomSession`, not the surface new callers should reach for first.
 - `JidoHiveClient.RoomWorkflow` is the shared decoder/normalizer for the server-owned workflow contract.
 - `JidoHiveClient.RoomInsight` is the shared operator-insight layer for control-plane digest, focus queue, and provenance tracing.
 - worker runtime code remains separate from operator/session flows.
@@ -130,7 +130,7 @@ flowchart LR
 ### Current room-session architecture
 
 - `JidoHiveClient.Operator.fetch_room_sync/3` is the canonical consolidated inspection call for a room
-- `JidoHiveClient.Embedded` polls the server through that sync surface and exposes merged local submit operations plus server run operations in `snapshot["operations"]`
+- the embedded room-session implementation polls the server through that sync surface and exposes merged local submit operations plus server run operations in `snapshot["operations"]`
 - `JidoHiveClient.RoomFlow` is the shared pure state machine for room submit/run lifecycle derivation
 - `JidoHiveClient.Scenario.RoomWorkflow` is the non-TUI scenario harness for scripted create/submit/run/submit/wait/sync workflows
 
@@ -208,7 +208,7 @@ Current scripted path:
 6. wait for run completion
 7. fetch consolidated final room sync
 
-### `JidoHiveClient.CLI`
+### CLI escript entrypoint
 
 This is the escript entrypoint. It supports both:
 

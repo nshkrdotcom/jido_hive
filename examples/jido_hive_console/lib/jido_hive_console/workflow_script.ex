@@ -1,7 +1,7 @@
 defmodule JidoHiveConsole.WorkflowScript do
   @moduledoc false
 
-  alias JidoHiveClient.HeadlessCLI
+  alias JidoHiveClient.{EscriptBootstrap, HeadlessCLI}
 
   @default_api_base_url "http://127.0.0.1:4000/api"
   @default_brief "Workflow smoke room"
@@ -23,7 +23,9 @@ defmodule JidoHiveConsole.WorkflowScript do
 
   @spec run([String.t()], keyword()) :: {:ok, map()} | {:error, term()}
   def run(argv, opts \\ []) when is_list(argv) and is_list(opts) do
+    bootstrap_module = Keyword.get(opts, :bootstrap_module, EscriptBootstrap)
     headless_module = Keyword.get(opts, :headless_module, HeadlessCLI)
+    :ok = bootstrap_module.start_cli_dependencies()
 
     with {:ok, parsed} <- parse_args(argv) do
       api_base_url =

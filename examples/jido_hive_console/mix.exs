@@ -1,5 +1,11 @@
+unless Code.ensure_loaded?(JidoHive.Build.PackageDocs) do
+  Code.require_file("../../build_support/package_docs.exs", __DIR__)
+end
+
 defmodule JidoHiveConsole.MixProject do
   use Mix.Project
+
+  alias JidoHive.Build.PackageDocs
 
   def project do
     [
@@ -9,13 +15,15 @@ defmodule JidoHiveConsole.MixProject do
       elixirc_options: [warnings_as_errors: true],
       start_permanent: Mix.env() == :prod,
       escript: [
+        app: nil,
+        include_priv_for: [:tzdata],
         main_module: JidoHiveConsole.CLI,
         name: "hive"
       ],
       aliases: aliases(),
       deps: deps(),
       dialyzer: [plt_add_apps: [:ex_unit]],
-      docs: [main: "readme", extras: ["README.md"]]
+      docs: docs()
     ]
   end
 
@@ -57,5 +65,9 @@ defmodule JidoHiveConsole.MixProject do
         "cmd env MIX_ENV=dev mix docs --warnings-as-errors"
       ]
     ]
+  end
+
+  defp docs do
+    PackageDocs.docs(package_title: "Jido Hive Console", root_prefix: "../..")
   end
 end

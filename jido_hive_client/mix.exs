@@ -2,9 +2,14 @@ unless Code.ensure_loaded?(JidoHiveClient.Build.DependencyResolver) do
   Code.require_file("build_support/dependency_resolver.exs", __DIR__)
 end
 
+unless Code.ensure_loaded?(JidoHive.Build.PackageDocs) do
+  Code.require_file("../build_support/package_docs.exs", __DIR__)
+end
+
 defmodule JidoHiveClient.MixProject do
   use Mix.Project
 
+  alias JidoHive.Build.PackageDocs
   alias JidoHiveClient.Build.DependencyResolver
 
   def project do
@@ -17,12 +22,13 @@ defmodule JidoHiveClient.MixProject do
       start_permanent: Mix.env() == :prod,
       escript: [
         app: nil,
-        include_priv_for: [:tzdata],
+        include_priv_for: [:erlexec, :tzdata],
         main_module: JidoHiveClient.CLI
       ],
       aliases: aliases(),
       deps: deps(),
-      dialyzer: [plt_add_apps: [:ex_unit]]
+      dialyzer: [plt_add_apps: [:ex_unit]],
+      docs: docs()
     ]
   end
 
@@ -59,7 +65,6 @@ defmodule JidoHiveClient.MixProject do
       DependencyResolver.jido_shell(override: true),
       DependencyResolver.jido_vfs(override: true),
       DependencyResolver.sprites(override: true),
-      DependencyResolver.external_runtime_transport(override: true),
       DependencyResolver.jido_integration_runtime_asm_bridge(override: true),
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
       {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false},
@@ -79,5 +84,9 @@ defmodule JidoHiveClient.MixProject do
         "cmd env MIX_ENV=dev mix docs --warnings-as-errors"
       ]
     ]
+  end
+
+  defp docs do
+    PackageDocs.docs(package_title: "Jido Hive Client")
   end
 end

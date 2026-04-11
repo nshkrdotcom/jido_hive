@@ -184,7 +184,7 @@ flowchart LR
   - `context_objects`
   - `operations`
 - `GET /api/rooms/:id` and `GET /api/rooms/:id/sync` include a server-owned `workflow_summary`
-- `JidoHiveClient.Embedded` now uses that single sync surface instead of separate room, timeline, and context fetch fan-out
+- the embedded room-session implementation now uses that single sync surface instead of separate room, timeline, and context fetch fan-out
 - the console derives submit/run status from `JidoHiveClient.RoomFlow`; it no longer polls run status separately
 
 ## Monorepo layout

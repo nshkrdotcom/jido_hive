@@ -3,6 +3,13 @@ defmodule JidoHiveConsole.WorkflowScriptTest do
 
   alias JidoHiveConsole.WorkflowScript
 
+  defmodule BootstrapStub do
+    def start_cli_dependencies do
+      send(self(), :bootstrap_started)
+      :ok
+    end
+  end
+
   defmodule HeadlessStub do
     def dispatch(argv, opts) do
       server = Keyword.fetch!(opts, :test_server)
@@ -98,6 +105,7 @@ defmodule JidoHiveConsole.WorkflowScriptTest do
                  "--text",
                  "second message"
                ],
+               bootstrap_module: BootstrapStub,
                headless_module: HeadlessStub,
                test_server: server
              )
@@ -108,6 +116,7 @@ defmodule JidoHiveConsole.WorkflowScriptTest do
     assert get_in(result, ["final_room", "contributions"]) |> length() == 2
     assert get_in(result, ["timeline", "entries"]) |> length() == 2
 
+    assert_received :bootstrap_started
     assert_receive {:dispatch, ["room", "create" | _]}
     assert_receive {:dispatch, ["room", "show" | _]}
     assert_receive {:dispatch, ["room", "submit" | _]}

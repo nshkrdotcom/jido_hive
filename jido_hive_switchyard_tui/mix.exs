@@ -2,10 +2,14 @@ unless Code.ensure_loaded?(JidoHive.Build.DependencyResolver) do
   Code.require_file("../build_support/dependency_resolver.exs", __DIR__)
 end
 
+unless Code.ensure_loaded?(JidoHive.Build.PackageDocs) do
+  Code.require_file("../build_support/package_docs.exs", __DIR__)
+end
+
 defmodule JidoHive.Switchyard.TUI.MixProject do
   use Mix.Project
 
-  alias JidoHive.Build.DependencyResolver
+  alias JidoHive.Build.{DependencyResolver, PackageDocs}
 
   def project do
     [
@@ -16,7 +20,7 @@ defmodule JidoHive.Switchyard.TUI.MixProject do
       start_permanent: Mix.env() == :prod,
       deps: deps(),
       dialyzer: [plt_add_apps: [:ex_unit]],
-      docs: [main: "readme", extras: ["README.md"]]
+      docs: docs()
     ]
   end
 
@@ -43,5 +47,9 @@ defmodule JidoHive.Switchyard.TUI.MixProject do
       {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false},
       {:ex_doc, "~> 0.40", only: [:dev, :test], runtime: false}
     ]
+  end
+
+  defp docs do
+    PackageDocs.docs(package_title: "Jido Hive Switchyard TUI")
   end
 end

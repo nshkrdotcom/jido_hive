@@ -3,12 +3,20 @@ defmodule JidoHiveClient.EscriptBootstrap do
 
   alias JidoHiveClient.Operator
 
+  @erlexec_app :erlexec
+  @erlexec_archive_prefix "erlexec/priv/"
+  @erlexec_config_prefix "erlexec/priv"
   @release_ets_prefix "tzdata/priv/release_ets/"
   @tzdata_app :tzdata
   @zip_name ~c"escript.zip"
 
   @spec start_cli_dependencies() :: :ok | {:error, term()}
   def start_cli_dependencies do
+    :ok = configure_tzdata()
+    configure_erlexec()
+  end
+
+  defp configure_tzdata do
     data_dir = Path.join(Operator.config_dir(), "tzdata")
     release_dir = Path.join(data_dir, "release_ets")
 
@@ -23,6 +31,39 @@ defmodule JidoHiveClient.EscriptBootstrap do
     end
   end
 
+  defp configure_erlexec do
+    priv_dir = Path.join(Operator.config_dir(), @erlexec_config_prefix)
+
+    case ensure_erlexec_portexe(priv_dir) do
+      {:ok, portexe} ->
+        Application.put_env(@erlexec_app, :portexe, portexe, persistent: true)
+        :ok
+
+      {:error, :not_running_from_escript} ->
+        :ok
+
+      {:error, _reason} = error ->
+        error
+    end
+  end
+
+  defp ensure_erlexec_portexe(priv_dir) do
+    File.mkdir_p!(priv_dir)
+
+    case erlexec_portexe(priv_dir) do
+      {:ok, portexe} ->
+        File.chmod!(portexe, 0o755)
+        {:ok, portexe}
+
+      {:error, _reason} ->
+        with :ok <- seed_erlexec_priv_dir(priv_dir),
+             {:ok, portexe} <- erlexec_portexe(priv_dir) do
+          File.chmod!(portexe, 0o755)
+          {:ok, portexe}
+        end
+    end
+  end
+
   defp seed_tzdata_release_files(release_dir) do
     case copy_release_files_from_installed_priv(release_dir) do
       :ok ->
@@ -30,6 +71,19 @@ defmodule JidoHiveClient.EscriptBootstrap do
 
       :error ->
         case copy_release_files_from_escript_archive(release_dir) do
+          :ok -> :ok
+          {:error, _reason} = error -> error
+        end
+    end
+  end
+
+  defp seed_erlexec_priv_dir(priv_dir) do
+    case copy_erlexec_from_installed_priv(priv_dir) do
+      :ok ->
+        :ok
+
+      :error ->
+        case copy_erlexec_from_escript_archive(priv_dir) do
           :ok -> :ok
           {:error, _reason} = error -> error
         end
@@ -53,6 +107,23 @@ defmodule JidoHiveClient.EscriptBootstrap do
     end
   end
 
+  defp copy_erlexec_from_installed_priv(priv_dir) do
+    source_dir = Application.app_dir(@erlexec_app, "priv")
+
+    case erlexec_portexe(source_dir) do
+      {:ok, portexe} ->
+        relative_path = Path.relative_to(portexe, source_dir)
+        target_path = Path.join(priv_dir, relative_path)
+        File.mkdir_p!(Path.dirname(target_path))
+        File.cp!(portexe, target_path)
+        File.chmod!(target_path, 0o755)
+        :ok
+
+      {:error, _reason} ->
+        :error
+    end
+  end
+
   defp copy_release_files_from_escript_archive(release_dir) do
     with {:ok, archive} <- escript_archive(),
          {:ok, copied} <- copy_release_files_from_archive_binary(archive, release_dir),
@@ -60,6 +131,18 @@ defmodule JidoHiveClient.EscriptBootstrap do
       :ok
     else
       false -> {:error, :missing_release_ets_in_archive}
+      {:error, _reason} = error -> error
+    end
+  end
+
+  defp copy_erlexec_from_escript_archive(priv_dir) do
+    with {:ok, archive} <- escript_archive(),
+         {:ok, copied} <-
+           copy_prefixed_archive_files_to_dir(archive, @erlexec_archive_prefix, priv_dir),
+         true <- copied > 0 do
+      :ok
+    else
+      false -> {:error, :missing_erlexec_files_in_archive}
       {:error, _reason} = error -> error
     end
   end
@@ -76,6 +159,26 @@ defmodule JidoHiveClient.EscriptBootstrap do
       {:error, _reason} = error -> error
       nil -> {:error, :missing_escript_archive}
     end
+  end
+
+  defp copy_prefixed_archive_files_to_dir(archive, prefix, target_dir) do
+    :zip.foldl(
+      fn name, _get_info, get_bin, copied ->
+        archive_path = List.to_string(name)
+
+        if String.starts_with?(archive_path, prefix) do
+          relative_path = String.replace_prefix(archive_path, prefix, "")
+          target_path = Path.join(target_dir, relative_path)
+          File.mkdir_p!(Path.dirname(target_path))
+          File.write!(target_path, get_bin.())
+          copied + 1
+        else
+          copied
+        end
+      end,
+      0,
+      {@zip_name, archive}
+    )
   end
 
   defp copy_release_files_from_archive_binary(archive, release_dir) do
@@ -102,6 +205,36 @@ defmodule JidoHiveClient.EscriptBootstrap do
     |> case do
       {:ok, filenames} -> Enum.any?(filenames, &release_ets_filename?/1)
       {:error, _reason} -> false
+    end
+  end
+
+  defp erlexec_portexe(priv_dir) do
+    case priv_dir |> Path.join("*/exec-port") |> String.to_charlist() |> :filelib.wildcard() do
+      [portexe] ->
+        {:ok, normalize_erlexec_match(priv_dir, portexe)}
+
+      [] ->
+        {:error, {:missing_exec_port, priv_dir}}
+
+      portexes ->
+        arch = List.to_string(:erlang.system_info(:system_architecture))
+
+        case Enum.find(portexes, &String.contains?(&1, arch)) do
+          nil -> {:error, {:missing_arch_exec_port, arch}}
+          portexe -> {:ok, normalize_erlexec_match(priv_dir, portexe)}
+        end
+    end
+  end
+
+  defp normalize_erlexec_match(priv_dir, portexe) when is_list(portexe) do
+    normalize_erlexec_match(priv_dir, List.to_string(portexe))
+  end
+
+  defp normalize_erlexec_match(priv_dir, portexe) when is_binary(portexe) do
+    if Path.type(portexe) == :absolute do
+      portexe
+    else
+      Path.join(priv_dir, portexe)
     end
   end
 

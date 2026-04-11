@@ -43,4 +43,34 @@ defmodule JidoHiveConsole.CLITest do
   test "parse_console_opts preserves explicit log level over --debug" do
     assert CLI.parse_console_opts(["--debug", "--log-level", "error"]) == [log_level: "error"]
   end
+
+  test "help_text documents the main console entrypoints" do
+    output = CLI.help_text(:main)
+
+    assert output =~ "hive console"
+    assert output =~ "hive workflow room-smoke"
+    assert output =~ "hive help"
+  end
+
+  test "help_text documents the console-specific flags" do
+    output = CLI.help_text(:console)
+
+    assert output =~ "--participant-id"
+    assert output =~ "--room-id"
+    assert output =~ "--debug"
+  end
+
+  test "help_text documents the workflow room smoke flags" do
+    output = CLI.help_text(:workflow_room_smoke)
+
+    assert output =~ "--brief"
+    assert output =~ "--text"
+    assert output =~ "--run"
+  end
+
+  test "run_status returns success for help entrypoints" do
+    assert CLI.run_status(["help"]) == 0
+    assert CLI.run_status(["console", "--help"]) == 0
+    assert CLI.run_status(["workflow", "room-smoke", "--help"]) == 0
+  end
 end

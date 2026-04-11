@@ -48,6 +48,14 @@ Production:
 ./hive console --prod --participant-id alice --debug
 ```
 
+Built-in help:
+
+```bash
+./hive help
+./hive console --help
+./hive workflow room-smoke --help
+```
+
 ### Run the headless room smoke path
 
 ```bash
@@ -65,6 +73,26 @@ bin/hive-room-smoke \
   --brief "local smoke room" \
   --text "hello from the scripted path"
 ```
+
+## Recommended Local Startup
+
+From the repo root, the normal developer flow is:
+
+```bash
+bin/live-demo-server
+bin/hive-clients
+```
+
+Then, from this package:
+
+```bash
+cd examples/jido_hive_console
+mix escript.build
+./hive console --local --participant-id alice --debug
+```
+
+This keeps the example package thin: it composes the Switchyard-backed Jido Hive
+TUI without taking on room truth or reusable client behavior.
 
 ## Debugging Order
 
@@ -88,6 +116,12 @@ mix escript.build
 ./jido_hive_client room publish-plan --api-base-url https://jido-hive-server-test.app.nsai.online/api --room-id <room-id>
 ```
 
+## Examples
+
+- [test/jido_hive_console/cli_test.exs](test/jido_hive_console/cli_test.exs) covers console option parsing and direct-room startup behavior.
+- [test/jido_hive_console/console_test.exs](test/jido_hive_console/console_test.exs) verifies that the example delegates startup into the Switchyard-backed TUI package.
+- [test/jido_hive_console/workflow_script_test.exs](test/jido_hive_console/workflow_script_test.exs) covers the scripted `workflow room-smoke` path over the headless client seam.
+
 ## What Lives Here Now
 
 - [lib/jido_hive_console.ex](lib/jido_hive_console.ex): example entrypoint
@@ -95,6 +129,26 @@ mix escript.build
   workflow smoke entry
 - [lib/jido_hive_console/workflow_script.ex](lib/jido_hive_console/workflow_script.ex):
   scripted smoke path over `JidoHiveClient.HeadlessCLI`
+
+## Developer Workflow
+
+Run package-local checks from this directory:
+
+```bash
+mix format --check-formatted
+mix compile --warnings-as-errors
+mix test
+mix credo --strict
+mix dialyzer
+mix docs --warnings-as-errors
+```
+
+For repo-wide validation:
+
+```bash
+cd ../..
+mix ci
+```
 
 ## Quality
 

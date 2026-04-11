@@ -47,15 +47,6 @@ defmodule JidoHiveClient.Build.DependencyResolver do
     resolve(:sprites, [], [github: "mikehostetler/sprites-ex", branch: "main"], opts)
   end
 
-  def external_runtime_transport(opts \\ []) do
-    resolve(
-      :external_runtime_transport,
-      ["../external_runtime_transport", "../../external_runtime_transport"],
-      [github: "nshkrdotcom/external_runtime_transport", branch: "main"],
-      opts
-    )
-  end
-
   def jido_integration_runtime_asm_bridge(opts \\ []) do
     resolve(
       :jido_integration_v2_runtime_asm_bridge,
