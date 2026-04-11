@@ -126,4 +126,58 @@ defmodule JidoHiveConsole.WorkflowScriptTest do
     assert_receive {:dispatch, ["room", "show" | _]}
     assert_receive {:dispatch, ["room", "timeline" | _]}
   end
+
+  test "room-smoke workflow accepts mode flags and resolves the local api base url" do
+    test_pid = self()
+
+    {:ok, server} =
+      Agent.start_link(fn ->
+        %{room_id: "room-smoke-local", submitted: [], test_pid: test_pid}
+      end)
+
+    assert {:ok, result} =
+             WorkflowScript.run(
+               [
+                 "--local",
+                 "--room-id",
+                 "room-smoke-local",
+                 "--text",
+                 "hello from local mode"
+               ],
+               bootstrap_module: BootstrapStub,
+               headless_module: HeadlessStub,
+               test_server: server
+             )
+
+    assert result["api_base_url"] == "http://127.0.0.1:4000/api"
+    assert result["room_id"] == "room-smoke-local"
+    assert Enum.map(result["submissions"], & &1["text"]) == ["hello from local mode"]
+  end
+
+  test "explicit api base url wins over mode flags" do
+    test_pid = self()
+
+    {:ok, server} =
+      Agent.start_link(fn ->
+        %{room_id: "room-smoke-explicit", submitted: [], test_pid: test_pid}
+      end)
+
+    assert {:ok, result} =
+             WorkflowScript.run(
+               [
+                 "--prod",
+                 "--api-base-url",
+                 "https://example.com/api",
+                 "--room-id",
+                 "room-smoke-explicit",
+                 "--text",
+                 "hello from explicit mode"
+               ],
+               bootstrap_module: BootstrapStub,
+               headless_module: HeadlessStub,
+               test_server: server
+             )
+
+    assert result["api_base_url"] == "https://example.com/api"
+  end
 end

@@ -2,10 +2,10 @@ defmodule JidoHiveServerWeb.RoomControllerTest do
   use JidoHiveServerWeb.ConnCase, async: false
 
   alias Jido.Integration.V2
-  alias JidoHiveClient.Executor.Session
-  alias JidoHiveClient.RelayWorker
-  alias JidoHiveClient.TestSupport.ScriptedRunModule
   alias JidoHiveServer.RemoteExec
+  alias JidoHiveWorkerRuntime.Executor.Session
+  alias JidoHiveWorkerRuntime.RelayWorker
+  alias JidoHiveWorkerRuntime.TestSupport.ScriptedRunModule
 
   test "creates a room and runs a one-assignment round robin flow", %{conn: conn} do
     port =

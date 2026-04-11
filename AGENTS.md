@@ -2,17 +2,21 @@
 
 ## Scope
 
-This repo has three relevant Mix apps:
+This repo has six relevant Mix apps:
 
-- `jido_hive_server` – Phoenix API and websocket relay
-- `jido_hive_client` – reusable operator/session client and worker runtime
-- `examples/jido_hive_console` – compatibility launcher and smoke helper for the Switchyard TUI
+- `jido_hive_server` – Phoenix API, websocket relay, and authoritative room engine
+- `jido_hive_client` – reusable operator/session client and headless CLI
+- `jido_hive_worker_runtime` – relay worker runtime and worker CLI
+- `jido_hive_switchyard_site` – Jido Hive site adapter over Switchyard contracts
+- `jido_hive_switchyard_tui` – Jido Hive operator workflow mounted on Switchyard
+- `examples/jido_hive_console` – runnable composition layer and smoke helper
 
 Architecture rule:
 
 1. `jido_hive_server` owns room truth.
 2. `jido_hive_client` owns reusable operator and room-session behavior.
-3. the TUI owns only rendering, input, and screen-local view state.
+3. `jido_hive_worker_runtime` owns relay workers and assignment execution.
+4. the TUI owns only rendering, input, and screen-local view state.
 
 If a room behavior cannot be reproduced from the headless client, the seam is still wrong.
 
@@ -23,6 +27,7 @@ Start here before changing behavior:
 - `README.md`
 - `docs/debugging_guide.md`
 - `jido_hive_client/README.md`
+- `jido_hive_worker_runtime/README.md`
 - `jido_hive_server/README.md`
 - `examples/jido_hive_console/README.md`
 
@@ -66,7 +71,8 @@ Always debug in this order:
 
 1. server truth first
 2. headless `jido_hive_client` second
-3. TUI last
+3. worker runtime third if the bug involves target registration or assignment execution
+4. TUI last
 
 That means:
 

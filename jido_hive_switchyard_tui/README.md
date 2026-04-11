@@ -15,8 +15,10 @@ It owns Jido-specific screen logic, not generic terminal platform behavior.
 ## Dependencies
 
 - `jido_hive_switchyard_site`
-- `jido_hive_client`
 - generic Switchyard TUI and local-site packages
+
+`jido_hive_switchyard_site` brings in `jido_hive_client`.
+This package must not depend on `jido_hive_worker_runtime`.
 
 `ex_ratatui` is owned by the Switchyard host dependency chain, not by the
 example console package.
@@ -34,6 +36,9 @@ bin/live-demo-server
 bin/client-worker --worker-index 1
 bin/client-worker --worker-index 2
 ```
+
+Those worker scripts launch `jido_hive_worker_runtime`; they are intentionally
+outside this package boundary.
 
 Then, from this package:
 

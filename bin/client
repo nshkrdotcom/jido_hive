@@ -68,9 +68,9 @@ JIDO_HIVE_REASONING_EFFORT="${JIDO_HIVE_REASONING_EFFORT:-low}"
 JIDO_HIVE_TIMEOUT_MS="${JIDO_HIVE_TIMEOUT_MS:-}"
 JIDO_HIVE_CLI_PATH="${JIDO_HIVE_CLI_PATH:-}"
 
-cd "$ROOT/jido_hive_client"
+cd "$ROOT/jido_hive_worker_runtime"
 
-exec mix run --no-halt -e 'JidoHiveClient.CLI.main(System.argv())' -- \
+exec mix run --no-halt -e 'JidoHiveWorkerRuntime.CLI.main(System.argv())' -- \
   --url "$URL" \
   --relay-topic "$RELAY_TOPIC" \
   --workspace-id "$WORKSPACE_ID" \

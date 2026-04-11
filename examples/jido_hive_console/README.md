@@ -6,6 +6,7 @@ operator console.
 It now composes:
 
 - `jido_hive_client`
+- `jido_hive_worker_runtime` indirectly through repo-root worker scripts only
 - `jido_hive_switchyard_site`
 - `jido_hive_switchyard_tui`
 - generic Switchyard packages pulled in through those package dependencies
@@ -20,6 +21,7 @@ It now composes:
 - Switchyard remains generic platform/runtime code beneath those packages
 - this example package owns only composition, CLI defaults, and smoke scripts
 - this example package does not depend directly on `ex_ratatui`
+- this example package does not inherit worker-runtime deps through `jido_hive_client`
 
 If a room behavior cannot be reproduced from `jido_hive_client`, the seam is
 still wrong.

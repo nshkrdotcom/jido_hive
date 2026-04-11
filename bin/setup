@@ -12,6 +12,7 @@ What it does:
   - installs Hex and Rebar if needed
   - runs mix setup in jido_hive_server
   - runs mix setup in jido_hive_client
+  - runs mix setup in jido_hive_worker_runtime
   - prints the next local run commands
 
 Options:
@@ -98,6 +99,7 @@ mix local.rebar --force
 
 run_setup jido_hive_server
 run_setup jido_hive_client
+run_setup jido_hive_worker_runtime
 
 printf '\n'
 printf 'Setup complete.\n'

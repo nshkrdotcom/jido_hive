@@ -85,7 +85,7 @@ defmodule JidoHiveServer.MixProject do
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
       {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false},
       {:ex_doc, "~> 0.40", only: [:dev, :test], runtime: false},
-      {:jido_hive_client, path: "../jido_hive_client", only: :test},
+      {:jido_hive_worker_runtime, path: "../jido_hive_worker_runtime", only: :test},
       {:phoenix_client, "~> 0.11.1", only: :test}
     ]
   end
@@ -118,6 +118,7 @@ defmodule JidoHiveServer.MixProject do
         "../README.md": [title: "Overview"],
         "../LICENSE": [title: "License"],
         "../docs/architecture.md": [title: "Architecture"],
+        "../docs/debugging_guide.md": [title: "Debugging Guide"],
         "../setup/README.md": [title: "Setup Toolkit"],
         "../docs/developer/multi_agent_round_robin.md": [
           title: "Developer Guide: Multi-Agent Round Robin"
@@ -125,7 +126,11 @@ defmodule JidoHiveServer.MixProject do
       ],
       groups_for_extras: [
         "Project Overview": ["../README.md", "../LICENSE"],
-        "User Guides": ["../docs/architecture.md", "../setup/README.md"],
+        "User Guides": [
+          "../docs/architecture.md",
+          "../docs/debugging_guide.md",
+          "../setup/README.md"
+        ],
         "Developer Guides": ["../docs/developer/multi_agent_round_robin.md"]
       ],
       source_url: @source_url

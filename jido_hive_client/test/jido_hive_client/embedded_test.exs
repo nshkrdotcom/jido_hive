@@ -380,7 +380,7 @@ defmodule JidoHiveClient.EmbeddedTest do
     assert {:ok, snapshot} = Embedded.refresh(embedded)
     assert snapshot["room_id"] == "room-1"
     assert snapshot["participant"].participant_id == "alice"
-    assert snapshot["runtime"].identity.participant_id == "alice"
+    assert snapshot["session_state"].identity.participant_id == "alice"
     flush_mailbox()
 
     assert :ok = Embedded.subscribe(embedded)

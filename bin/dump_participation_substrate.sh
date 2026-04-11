@@ -42,21 +42,27 @@ FILES=(
   "jido_hive_server/lib/jido_hive_server_web/controllers/room_contribution_controller.ex"
   "jido_hive_server/lib/jido_hive_server_web/controllers/room_timeline_controller.ex"
   
-  # Client - Core Execution & Boundaries (Phase 4)
-  "jido_hive_client/lib/jido_hive_client/runtime.ex"
-  "jido_hive_client/lib/jido_hive_client/runtime/state.ex"
-  "jido_hive_client/lib/jido_hive_client/executor.ex"
-  "jido_hive_client/lib/jido_hive_client/executor/session.ex"
-  "jido_hive_client/lib/jido_hive_client/executor/projection.ex"
-  "jido_hive_client/lib/jido_hive_client/collaboration_prompt.ex"
-  "jido_hive_client/lib/jido_hive_client/execution_contract.ex"
-  "jido_hive_client/lib/jido_hive_client/result_decoder.ex"
-  "jido_hive_client/lib/jido_hive_client/relay_worker.ex"
-  "jido_hive_client/lib/jido_hive_client/boundary/protocol_codec.ex"
+  # Worker Runtime - Core Execution & Boundaries (Phase 4)
+  "jido_hive_worker_runtime/lib/jido_hive_worker_runtime/runtime.ex"
+  "jido_hive_worker_runtime/lib/jido_hive_worker_runtime/runtime/state.ex"
+  "jido_hive_worker_runtime/lib/jido_hive_worker_runtime/executor.ex"
+  "jido_hive_worker_runtime/lib/jido_hive_worker_runtime/executor/session.ex"
+  "jido_hive_worker_runtime/lib/jido_hive_worker_runtime/executor/projection.ex"
+  "jido_hive_worker_runtime/lib/jido_hive_worker_runtime/collaboration_prompt.ex"
+  "jido_hive_worker_runtime/lib/jido_hive_worker_runtime/execution_contract.ex"
+  "jido_hive_worker_runtime/lib/jido_hive_worker_runtime/result_decoder.ex"
+  "jido_hive_worker_runtime/lib/jido_hive_worker_runtime/relay_worker.ex"
+  "jido_hive_worker_runtime/lib/jido_hive_worker_runtime/boundary/protocol_codec.ex"
   
-  # Client - Control (Phase 4)
-  "jido_hive_client/lib/jido_hive_client/control/server.ex"
-  "jido_hive_client/lib/jido_hive_client/control/router.ex"
+  # Worker Runtime - Control (Phase 4)
+  "jido_hive_worker_runtime/lib/jido_hive_worker_runtime/control/server.ex"
+  "jido_hive_worker_runtime/lib/jido_hive_worker_runtime/control/router.ex"
+
+  # Client - Operator/Session Boundary (Phase 4)
+  "jido_hive_client/lib/jido_hive_client/room_session.ex"
+  "jido_hive_client/lib/jido_hive_client/embedded.ex"
+  "jido_hive_client/lib/jido_hive_client/session_state.ex"
+  "jido_hive_client/lib/jido_hive_client/session_event_log.ex"
 )
 
 for file in "${FILES[@]}"; do

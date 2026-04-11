@@ -1,9 +1,9 @@
 defmodule JidoHiveServer.TestSupport.DelayedExecutor do
   @moduledoc false
 
-  @behaviour JidoHiveClient.Executor
+  @behaviour JidoHiveWorkerRuntime.Executor
 
-  alias JidoHiveClient.Executor.Session
+  alias JidoHiveWorkerRuntime.Executor.Session
 
   @impl true
   def run(job, opts) when is_map(job) and is_list(opts) do

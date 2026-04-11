@@ -9,6 +9,11 @@ It now assumes a generalized worker model:
 - optional `--participant-count` locking
 - default turn budgets derived from the room execution plan
 
+The worker launch path is now a separate package boundary:
+
+- `bin/client` and `bin/client-worker` launch `jido_hive_worker_runtime`
+- `jido_hive_client` remains the headless operator/session package
+
 Run `bin/setup` once from the repo root before using the toolkit.
 
 ## Requirements

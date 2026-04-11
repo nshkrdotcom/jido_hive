@@ -7,7 +7,8 @@ If one rule should survive every refactor, it is this:
 - the server owns room truth
 
 Workers may execute elsewhere.
-The headless client may reproduce operator flows without the TUI.
+The headless operator client may reproduce operator flows without the TUI.
+The worker runtime may execute assignments without the operator client.
 The Switchyard TUI may render those flows interactively.
 None of those surfaces define canonical room state.
 The server does.
@@ -62,7 +63,7 @@ flowchart TB
       Control[setup/hive and control scripts]
       Headless[jido_hive_client headless CLI]
       Console[Switchyard TUI]
-      Workers[worker runtimes]
+      Workers[jido_hive_worker_runtime]
     end
 
     subgraph Transport[Phoenix boundaries]
@@ -144,7 +145,8 @@ High-value routes include:
 
 ### Websocket relay
 
-Worker runtimes connect through Phoenix Channels to receive assignments and submit structured work.
+`jido_hive_worker_runtime` connects through Phoenix Channels to receive
+assignments and submit structured work.
 
 ## Connector install and publication flow
 
@@ -246,13 +248,11 @@ When changing the server:
 If a bug appears only in the TUI, it is not a server bug.
 If the server route is wrong, the client and TUI should not compensate for it.
 
-Detailed runbook:
-
-- `~/jb/docs/20260408/jido_hive_debugging_introspection/jido_hive_debugging_introspection_and_runbook.md`
-
 General reproducible workflow:
 
-- `docs/debugging_guide.md`
+- [../docs/debugging_guide.md](../docs/debugging_guide.md)
+- keep machine-specific investigation notes outside the repo; this README stays
+  repo-local and reproducible
 
 ### Quality loop
 
@@ -285,6 +285,6 @@ MIX_ENV=coolify mix coolify.status --project server --latest
 ## Related docs
 
 - Root guide: [README.md](../README.md)
-- General debugging guide: `docs/debugging_guide.md`
+- General debugging guide: [../docs/debugging_guide.md](../docs/debugging_guide.md)
 - Client guide: [jido_hive_client/README.md](../jido_hive_client/README.md)
 - Compatibility launcher guide: [examples/jido_hive_console/README.md](../examples/jido_hive_console/README.md)

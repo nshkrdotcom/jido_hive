@@ -3,11 +3,11 @@ defmodule JidoHiveServer.Collaboration.RelaySliceTest do
   use JidoHiveServer.PersistenceCase
 
   alias Jido.Integration.V2
-  alias JidoHiveClient.Executor.Session
-  alias JidoHiveClient.RelayWorker
-  alias JidoHiveClient.TestSupport.ScriptedRunModule
   alias JidoHiveServer.Collaboration
   alias JidoHiveServer.RemoteExec
+  alias JidoHiveWorkerRuntime.Executor.Session
+  alias JidoHiveWorkerRuntime.RelayWorker
+  alias JidoHiveWorkerRuntime.TestSupport.ScriptedRunModule
 
   test "two local clients collaborate through the relay and finish a four-assignment round robin room" do
     url = relay_url()

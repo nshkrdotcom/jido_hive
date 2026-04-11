@@ -17,6 +17,8 @@ This package is headless. It owns no terminal rendering.
 - `jido_hive_client`
 - generic Switchyard contracts only
 
+This package must not depend on `jido_hive_worker_runtime`.
+
 This package must not depend on `ex_ratatui`.
 
 ## Quick Start
@@ -42,6 +44,9 @@ The primary headless seam is `JidoHive.Switchyard.Site.Client`:
 ```elixir
 JidoHive.Switchyard.Site.Client.list_rooms("http://127.0.0.1:4000/api")
 ```
+
+This client surface should stay reproducible from `jido_hive_client`; this
+package only maps those semantics into Switchyard contracts.
 
 ## Current Modules
 

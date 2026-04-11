@@ -4,47 +4,47 @@
 
 # jido_hive
 
-`jido_hive` is a human-plus-AI collaboration system built as an Elixir monorepo.
+`jido_hive` is a human-plus-AI collaboration system built as a non-umbrella
+Elixir monorepo.
 
 The governing rule is simple:
 
-- the server owns room truth
-- the client owns operator/runtime behavior against that truth
-- the TUI is a consumer of the client, not a second source of workflow semantics
+- `jido_hive_server` owns room truth
+- `jido_hive_client` owns reusable operator and room-session behavior
+- `jido_hive_worker_runtime` owns relay workers and local assignment execution
+- Switchyard packages and the example console consume those seams; they do not
+  redefine them
+
+If a room behavior cannot be reproduced from the headless client surface, the
+seam is still wrong.
+
+## Repo layout
 
 This repo currently contains:
 
-- `jido_hive_server`: authoritative room engine, REST API, relay, context graph, dispatch, publications, connector state
-- `jido_hive_client`: worker runtime, headless operator API, room session boundary, and scriptable CLI
-- `jido_hive_switchyard_site`: headless Switchyard site adapter for Jido Hive resources, actions, and workflow detail
-- `jido_hive_switchyard_tui`: Jido Hive operator workflow mounted on the generic Switchyard TUI host
-- `examples/jido_hive_console`: runnable composition layer and smoke helper over the Jido Hive Switchyard packages
-- the root workspace project: shared quality gates and monorepo tooling
+- `jido_hive_server`
+  authoritative room engine, REST API, websocket relay, context graph,
+  publications, connector state
+- `jido_hive_client`
+  headless operator API, JSON CLI, and room-scoped local session boundary
+- `jido_hive_worker_runtime`
+  long-lived relay worker runtime, local executor stack, worker CLI, and worker
+  control API
+- `jido_hive_switchyard_site`
+  Jido Hive resource/action mapping over generic Switchyard contracts
+- `jido_hive_switchyard_tui`
+  Jido Hive operator workflow mounted on the generic Switchyard host
+- `examples/jido_hive_console`
+  runnable composition layer and smoke helper over the Switchyard-backed Jido
+  Hive TUI
+- the root workspace project
+  shared quality gates and monorepo tooling
 
-What makes Jido Hive different is not the relay or the chat transcript.
-It is the combination of:
-
-- server-owned workflow truth
-- structured shared context with provenance, contradiction, and canonicalization signals
-- operator surfaces that can inspect, steer, and publish against that same truth through API, CLI, and TUI
-
-If you are new here, read this file first, then the package READMEs.
-
-## Table of contents
-
-- [Quick start](#quick-start)
-- [Architecture at a glance](#architecture-at-a-glance)
-- [Monorepo layout](#monorepo-layout)
-- [Operator surfaces](#operator-surfaces)
-- [Production connector setup](#production-connector-setup)
-- [Developer workflow](#developer-workflow)
-- [Debugging order](#debugging-order)
-- [General debugging guide](#general-debugging-guide)
-- [Package guides](#package-guides)
+Start with this file, then the package READMEs.
 
 ## Quick start
 
-### Local setup
+### Setup
 
 ```bash
 bin/setup
@@ -52,31 +52,27 @@ bin/setup
 
 ### Local runtime
 
-Run the server:
+Start the server:
 
 ```bash
 bin/live-demo-server
 ```
 
-Run at least two workers in separate shells:
+Start at least two workers in separate shells:
 
 ```bash
 bin/client-worker --worker-index 1
 bin/client-worker --worker-index 2
 ```
 
-Use the helper scripts:
+Or use the helper menus:
 
 ```bash
 bin/hive-control
 bin/hive-clients
-bin/hive-room-smoke --brief "local smoke room" --text "hello"
 ```
 
 ### Local operator console
-
-The generic host runtime lives in Switchyard. The Jido Hive-specific site and
-operator workflow live in this repo.
 
 ```bash
 cd examples/jido_hive_console
@@ -89,7 +85,9 @@ mix escript.build
 
 ```bash
 cd jido_hive_client
+mix deps.get
 mix escript.build
+
 ./jido_hive_client room list --api-base-url http://127.0.0.1:4000/api
 ./jido_hive_client room show --api-base-url http://127.0.0.1:4000/api --room-id <room-id>
 ./jido_hive_client room workflow --api-base-url http://127.0.0.1:4000/api --room-id <room-id>
@@ -99,14 +97,11 @@ mix escript.build
 ./jido_hive_client room submit --api-base-url http://127.0.0.1:4000/api --room-id <room-id> --participant-id alice --text "hello"
 ```
 
-### Production operator console
+### Production shortcuts
 
 ```bash
 bin/hive-control --prod
 bin/hive-clients --prod
-cd examples/jido_hive_console
-mix escript.build
-./hive console --prod --participant-id alice --debug
 ```
 
 ## Architecture at a glance
@@ -114,274 +109,97 @@ mix escript.build
 ```mermaid
 flowchart LR
     subgraph Operator[Operator surfaces]
-      TUI[Switchyard TUI via compatibility wrapper]
-      Headless[Headless CLI and shell scripts]
-      Control[setup/hive and helper scripts]
+      Headless[Headless CLI]
+      Session[RoomSession consumers]
+      TUI[Switchyard-backed TUI]
+      Setup[setup/hive and helper scripts]
     end
 
     subgraph Client[jido_hive_client]
       OperatorAPI[JidoHiveClient.Operator]
-      Session[JidoHiveClient.RoomSession]
-      Worker[JidoHiveClient worker runtime]
-      Embedded[JidoHiveClient.Embedded implementation]
+      RoomSession[JidoHiveClient.RoomSession]
+      Embedded[JidoHiveClient.Embedded]
+    end
+
+    subgraph Workers[jido_hive_worker_runtime]
+      WorkerCLI[worker CLI]
+      RelayWorker[relay worker]
+      Executor[executor stack]
     end
 
     subgraph Server[jido_hive_server]
-      API[Phoenix REST API]
-      Relay[Phoenix websocket relay]
-      Rooms[Room reducer and snapshots]
-      Context[Context graph and projections]
-      Publish[Publication planner and executor]
-      Connectors[Connector install and connection state]
+      API[REST API]
+      Relay[websocket relay]
+      Rooms[room reducer and snapshots]
+      Publish[publication planner]
+      Connectors[connector state]
     end
 
-    subgraph External[External systems]
-      GitHub[GitHub]
-      Notion[Notion]
-    end
-
-    TUI --> OperatorAPI
-    TUI --> Session
     Headless --> OperatorAPI
-    Headless --> Session
-    Control --> API
-    Worker --> Relay
-    Session --> Embedded
+    Headless --> RoomSession
+    Session --> RoomSession
+    TUI --> OperatorAPI
+    TUI --> RoomSession
+    Setup --> API
+    RoomSession --> Embedded
     OperatorAPI --> API
     Embedded --> API
-    API --> Rooms
+    WorkerCLI --> RelayWorker
+    RelayWorker --> Relay
     Relay --> Rooms
-    Rooms --> Context
+    API --> Rooms
     Rooms --> Publish
     Publish --> Connectors
-    Connectors --> GitHub
-    Connectors --> Notion
+    RelayWorker --> Executor
 ```
 
 ### Practical model
 
-- `jido_hive_server` decides what the room is.
-- `jido_hive_client` is the reusable operator/runtime platform for talking to that room.
-- `jido_hive_switchyard_site` maps Jido Hive resources and actions into Switchyard contracts.
-- `jido_hive_switchyard_tui` owns the Jido Hive-specific terminal workflow over the generic host.
-- the example console composes those packages into a runnable operator entrypoint.
-- if a behavior cannot be reproduced from the headless client surface, the seam is still wrong.
+- the server decides what the room is
+- the client reads and mutates that truth through reusable operator/session seams
+- the worker runtime executes assignments and publishes structured results
+- the Switchyard-backed TUI renders those seams interactively
+- the example console is only a runnable composition layer
 
 ### Product model
 
-- The workflow summary answers "what stage is this room in?" and "what should the operator do next?"
-- The focus queue answers "which object needs review right now?"
-- Provenance answers "why does this object exist?"
-- The publication plan answers "what becomes official output and why?"
+What is unique here is not the transcript or the websocket transport. It is the
+combination of:
 
-### Current room-sync contract
+- server-owned workflow truth
+- a typed shared context graph with provenance, contradiction, and canonical
+  signals
+- the same room model exposed through API, headless CLI, and TUI
+- publication planning that explains what becomes official output and why
 
-- room polling is consolidated at `GET /api/rooms/:id/sync`
-- the sync payload returns:
-  - `room`
-  - `timeline`
-  - `next_cursor`
-  - `context_objects`
-  - `operations`
-- `GET /api/rooms/:id` and `GET /api/rooms/:id/sync` include a server-owned `workflow_summary`
-- the embedded room-session implementation now uses that single sync surface instead of separate room, timeline, and context fetch fan-out
-- the console derives submit/run status from `JidoHiveClient.RoomFlow`; it no longer polls run status separately
+## Package guide
 
-## Monorepo layout
-
-- [README.md](README.md): root onboarding and repo-wide workflow
-- [jido_hive_server/README.md](jido_hive_server/README.md): authoritative server design, routes, publications, deployment
-- [jido_hive_client/README.md](jido_hive_client/README.md): operator API, room session boundary, worker runtime, headless CLI
-- [jido_hive_switchyard_site/README.md](jido_hive_switchyard_site/README.md): headless site adapter package
-- [jido_hive_switchyard_tui/README.md](jido_hive_switchyard_tui/README.md): Jido Hive operator workflow package over Switchyard
-- [examples/jido_hive_console/README.md](examples/jido_hive_console/README.md): runnable composition layer and room-smoke helper
-
-## Operator surfaces
-
-### `setup/hive`
-
-Use this for server-oriented inspection and operational helpers:
-
-```bash
-setup/hive doctor
-setup/hive targets
-setup/hive server-info
-setup/hive --prod doctor
-setup/hive --prod targets
-setup/hive --prod server-info
-```
-
-### `jido_hive_client` headless CLI
-
-Use this when you want to separate TUI bugs from client/server bugs.
-
-Build once:
-
-```bash
-cd jido_hive_client
-mix escript.build
-```
-
-Representative commands:
-
-```bash
-./jido_hive_client room list --api-base-url https://jido-hive-server-test.app.nsai.online/api
-./jido_hive_client room show --api-base-url https://jido-hive-server-test.app.nsai.online/api --room-id <room-id>
-./jido_hive_client room workflow --api-base-url https://jido-hive-server-test.app.nsai.online/api --room-id <room-id>
-./jido_hive_client room focus --api-base-url https://jido-hive-server-test.app.nsai.online/api --room-id <room-id>
-./jido_hive_client room inspect --api-base-url https://jido-hive-server-test.app.nsai.online/api --room-id <room-id>
-./jido_hive_client room provenance --api-base-url https://jido-hive-server-test.app.nsai.online/api --room-id <room-id> --context-id <context-id>
-./jido_hive_client room tail --api-base-url https://jido-hive-server-test.app.nsai.online/api --room-id <room-id>
-./jido_hive_client room publish-plan --api-base-url https://jido-hive-server-test.app.nsai.online/api --room-id <room-id>
-./jido_hive_client room submit --api-base-url https://jido-hive-server-test.app.nsai.online/api --room-id <room-id> --participant-id alice --text "hello"
-./jido_hive_client room accept --api-base-url https://jido-hive-server-test.app.nsai.online/api --room-id <room-id> --participant-id alice --context-id <context-id>
-./jido_hive_client room resolve --api-base-url https://jido-hive-server-test.app.nsai.online/api --room-id <room-id> --participant-id alice --left <ctx-a> --right <ctx-b> --text "resolution"
-./jido_hive_client auth state --api-base-url https://jido-hive-server-test.app.nsai.online/api --subject alice
-```
-
-Structured trace stays on stderr:
-
-```bash
-JIDO_HIVE_CLIENT_LOG_LEVEL=debug \
-./jido_hive_client room show --api-base-url https://jido-hive-server-test.app.nsai.online/api --room-id <room-id> \
-  > room.json \
-  2> trace.ndjson
-```
-
-All mutating commands return an explicit `operation_id` in their JSON output.
-
-### Root scripted room smoke
-
-Use this when you want one reproducible command that bypasses the TUI but still
-exercises the typical room flow through the console/client stack.
-
-```bash
-bin/hive-room-smoke \
-  --brief "local smoke room" \
-  --text "hello from the scripted path" \
-  --text "second message"
-```
-
-Start a room run as part of the same script:
-
-```bash
-bin/hive-room-smoke \
-  --run \
-  --brief "local smoke room" \
-  --text "hello from the scripted path"
-```
-
-Production shortcut:
-
-```bash
-bin/hive-room-smoke \
-  --prod \
-  --room-id prod-smoke-01 \
-  --brief "production smoke room" \
-  --text "hello from prod"
-```
-
-This wrapper forwards into the compatibility app's `workflow room-smoke` path
-and prints structured JSON. If this reproduces the issue, debug the
-client/server seam before touching the TUI.
-
-### Switchyard TUI
-
-Use the compatibility launcher when you want the full operator UX.
-
-```bash
-cd examples/jido_hive_console
-mix escript.build
-./hive console --prod --participant-id alice --debug
-```
-
-Recommended debug tail:
-
-```bash
-tail -f ~/.config/hive/hive_console.log
-```
-
-Implementation note:
-
-- `examples/jido_hive_console` no longer owns the TUI implementation
-- the wrapper hands off into the Switchyard terminal app
-- `ex_ratatui` is now Switchyard-owned, not owned by this repo
-
-## Production connector setup
-
-This is the current validated manual-install path.
-
-### Use these exact token types
-
-- GitHub manual installs: `GITHUB_TOKEN`
-- Notion manual installs: `NOTION_TOKEN`
-
-### Do not use these as the default manual-install path
-
-These may exist in your environment, but they are not the currently validated default path:
-
-- `GITHUB_OAUTH_ACCESS_TOKEN`
-- `NOTION_OAUTH_ACCESS_TOKEN`
-
-Observed working behavior on 2026-04-08:
-
-- `GITHUB_TOKEN` PAT: works for GitHub issue publication
-- `GITHUB_OAUTH_ACCESS_TOKEN`: connected previously, but failed GitHub issue creation
-- `NOTION_TOKEN`: works for Notion page publication
-- `NOTION_OAUTH_ACCESS_TOKEN`: rejected by the provider with `401 unauthorized`
-
-### Current validated publication targets
-
-- GitHub repo: `nshkrdotcom/test`
-- Notion data source: `49970410-3e2c-49c9-bd4d-220ebb5d72f7`
-
-### Fast production-safe setup
-
-1. Create a GitHub PAT with `repo` scope.
-2. Create a Notion internal integration and share the target data source with it.
-3. Put these in `~/.bash/bash_secrets`:
-   - `export GITHUB_TOKEN="..."`
-   - `export NOTION_TOKEN="..."`
-   - `export JIDO_INTEGRATION_V2_GITHUB_WRITE_REPO="nshkrdotcom/test"`
-4. Reload the shell:
-   - `source ~/.bash/bash_secrets`
-5. Complete the server-backed installs:
-   - `setup/hive --prod start-install github --subject alice`
-   - `setup/hive --prod complete-install <install-id> --subject alice --access-token "$GITHUB_TOKEN"`
-   - `setup/hive --prod start-install notion --subject alice`
-   - `setup/hive --prod complete-install <install-id> --subject alice --access-token "$NOTION_TOKEN"`
-6. Verify:
-   - `setup/hive --prod connections github --subject alice`
-   - `setup/hive --prod connections notion --subject alice`
-7. Open the console publish screen and confirm both channels show `auth:connected`.
-
-For the compatibility launcher and smoke helper, use:
-
+- [jido_hive_server/README.md](jido_hive_server/README.md)
+  server truth, routes, publications, deployment
+- [jido_hive_client/README.md](jido_hive_client/README.md)
+  operator API, room session boundary, headless CLI
+- [jido_hive_worker_runtime/README.md](jido_hive_worker_runtime/README.md)
+  relay workers, executor stack, worker CLI
+- [jido_hive_switchyard_site/README.md](jido_hive_switchyard_site/README.md)
+  Jido Hive site adapter for Switchyard
+- [jido_hive_switchyard_tui/README.md](jido_hive_switchyard_tui/README.md)
+  Jido Hive operator workflow mounted on Switchyard
 - [examples/jido_hive_console/README.md](examples/jido_hive_console/README.md)
+  runnable console composition layer
 
 ## Developer workflow
 
-### Repo-wide quality gate
-
-From the repo root:
+Run repo-wide quality gates from the repo root:
 
 ```bash
 mix ci
 ```
 
-That runs:
-
-1. `mix deps.get`
-2. `mix format --check-formatted`
-3. `mix compile --warnings-as-errors`
-4. `mix test`
-5. `mix credo --strict`
-6. `mix dialyzer --force-check`
-7. `mix docs --warnings-as-errors`
-
-### Useful shortcuts
+Useful workspace shortcuts:
 
 ```bash
+mix mr.deps.get
+mix mr.format
 mix mr.compile
 mix mr.test
 mix mr.credo
@@ -389,51 +207,53 @@ mix mr.dialyzer
 mix mr.docs
 ```
 
-### Working rule
-
-When you are debugging behavior:
-
-- reproduce it through `jido_hive_client` headless CLI first
-- if it reproduces there, it is not a TUI bug
-- if it only reproduces in the TUI, debug Switchyard after the server and headless client are understood
-
 ## Debugging order
 
-Use this order whenever the system feels confusing.
+Always debug in this order:
 
-1. Confirm server truth:
-   - `setup/hive ...`
-   - direct room/auth endpoints
-2. Reproduce with `jido_hive_client` headless CLI.
-3. Only after that, inspect the Switchyard TUI or the compatibility handoff.
-4. If a room action is only testable through the TUI, add a headless path before doing more UI work.
-5. Use local `iex` for server/client internals when needed; production remote attach is not yet a supported repo workflow.
+1. server truth
+2. headless `jido_hive_client`
+3. worker runtime only if the bug is assignment delivery or local execution
+4. Switchyard-backed TUI
+5. example composition layer
 
-Detailed runbook:
+Representative first checks:
 
-- `~/jb/docs/20260408/jido_hive_debugging_introspection/jido_hive_debugging_introspection_and_runbook.md`
+```bash
+setup/hive server-info
+curl -sS http://127.0.0.1:4000/api/rooms/<room-id> | jq
+curl -sS http://127.0.0.1:4000/api/rooms/<room-id>/timeline | jq
+```
 
-## General debugging guide
+Then reproduce headlessly:
 
-For the full reproducible workflow, including:
+```bash
+cd jido_hive_client
+mix escript.build
 
-- server truth first
-- headless client reproduction
-- TUI-last verification
-- room ownership matrix
-- trace capture expectations
+./jido_hive_client room show --api-base-url http://127.0.0.1:4000/api --room-id <room-id>
+./jido_hive_client room tail --api-base-url http://127.0.0.1:4000/api --room-id <room-id>
+./jido_hive_client room submit --api-base-url http://127.0.0.1:4000/api --room-id <room-id> --participant-id alice --text "debug probe"
+```
 
-use:
+Only after that should you open the TUI:
 
-- `docs/debugging_guide.md`
+```bash
+cd examples/jido_hive_console
+mix escript.build
+./hive console --local --participant-id alice --debug --room-id <room-id>
+```
 
-## Package guides
+For the detailed triage sequence, read
+[docs/debugging_guide.md](docs/debugging_guide.md).
 
-- Server: [jido_hive_server/README.md](jido_hive_server/README.md)
-- Client: [jido_hive_client/README.md](jido_hive_client/README.md)
-- Console: [examples/jido_hive_console/README.md](examples/jido_hive_console/README.md)
-- General debugging guide: `docs/debugging_guide.md`
+## Other guides
+
+- [docs/architecture.md](docs/architecture.md)
+- [docs/debugging_guide.md](docs/debugging_guide.md)
+- [setup/README.md](setup/README.md)
+- [docs/developer/multi_agent_round_robin.md](docs/developer/multi_agent_round_robin.md)
 
 ## License
 
-This project is licensed under the MIT License. See [LICENSE](LICENSE) for details.
+[MIT](LICENSE)

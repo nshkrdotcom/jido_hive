@@ -1,7 +1,3 @@
-unless Code.ensure_loaded?(JidoHiveClient.Build.DependencyResolver) do
-  Code.require_file("build_support/dependency_resolver.exs", __DIR__)
-end
-
 unless Code.ensure_loaded?(JidoHive.Build.PackageDocs) do
   Code.require_file("../build_support/package_docs.exs", __DIR__)
 end
@@ -10,7 +6,6 @@ defmodule JidoHiveClient.MixProject do
   use Mix.Project
 
   alias JidoHive.Build.PackageDocs
-  alias JidoHiveClient.Build.DependencyResolver
 
   def project do
     [
@@ -22,7 +17,7 @@ defmodule JidoHiveClient.MixProject do
       start_permanent: Mix.env() == :prod,
       escript: [
         app: nil,
-        include_priv_for: [:erlexec, :tzdata],
+        include_priv_for: [:tzdata],
         main_module: JidoHiveClient.CLI
       ],
       aliases: aliases(),
@@ -45,8 +40,7 @@ defmodule JidoHiveClient.MixProject do
 
   def application do
     [
-      extra_applications: [:logger, :inets, :ssl],
-      mod: {JidoHiveClient.Application, []}
+      extra_applications: [:logger, :inets, :ssl]
     ]
   end
 
@@ -56,16 +50,6 @@ defmodule JidoHiveClient.MixProject do
   defp deps do
     [
       {:jason, "~> 1.4"},
-      {:phoenix_client, "~> 0.11.1"},
-      {:plug_cowboy, "~> 2.7"},
-      DependencyResolver.jido(override: true),
-      DependencyResolver.jido_action(override: true),
-      DependencyResolver.jido_signal(override: true),
-      DependencyResolver.jido_harness(override: true),
-      DependencyResolver.jido_shell(override: true),
-      DependencyResolver.jido_vfs(override: true),
-      DependencyResolver.sprites(override: true),
-      DependencyResolver.jido_integration_runtime_asm_bridge(override: true),
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
       {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false},
       {:ex_doc, "~> 0.40", only: [:dev, :test], runtime: false}

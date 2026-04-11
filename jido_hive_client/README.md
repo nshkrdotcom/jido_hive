@@ -1,29 +1,20 @@
-# JidoHiveClient
+# Jido Hive Client
 
-`jido_hive_client` is the reusable client/runtime platform for `jido_hive`.
+`jido_hive_client` is the reusable operator and room-session package for
+`jido_hive`.
 
-It has three distinct roles:
+It does not own worker execution anymore.
 
-- run long-lived worker participants against the relay
-- provide a headless operator API and JSON CLI for scripts, debugging, and control-plane inspection
-- provide a room-scoped local session boundary for human-facing tools such as the Switchyard TUI
+Use this package when you need:
 
-It does not own room truth.
-The server still does.
+- headless operator inspection and mutation against `jido_hive_server`
+- a room-scoped local session boundary for human participation
+- a reproducible JSON CLI for scripts, smoke checks, and bug isolation
 
-Start with the root [README](../README.md) if you want repo-wide context first.
+Do not use this package for relay workers or assignment execution. That lives in
+[../jido_hive_worker_runtime/README.md](../jido_hive_worker_runtime/README.md).
 
-## Table of contents
-
-- [Quick start](#quick-start)
-- [Architecture](#architecture)
-- [Public surfaces](#public-surfaces)
-- [Headless CLI](#headless-cli)
-- [RoomSession library API](#roomsession-library-api)
-- [Worker mode](#worker-mode)
-- [Developer guide](#developer-guide)
-- [Debugging order](#debugging-order)
-- [Related docs](#related-docs)
+Start with the workspace [README](../README.md) if you need repo-wide context.
 
 ## Quick start
 
@@ -45,15 +36,7 @@ mix escript.build
 ./jido_hive_client room inspect --api-base-url http://127.0.0.1:4000/api --room-id <room-id>
 ./jido_hive_client room provenance --api-base-url http://127.0.0.1:4000/api --room-id <room-id> --context-id <context-id>
 ./jido_hive_client room tail --api-base-url http://127.0.0.1:4000/api --room-id <room-id>
-```
-
-### Capture a structured debug trace
-
-```bash
-JIDO_HIVE_CLIENT_LOG_LEVEL=debug \
-./jido_hive_client room show --api-base-url http://127.0.0.1:4000/api --room-id <room-id> \
-  > room.json \
-  2> trace.ndjson
+./jido_hive_client room publish-plan --api-base-url http://127.0.0.1:4000/api --room-id <room-id>
 ```
 
 ### Submit human actions headlessly
@@ -64,75 +47,87 @@ JIDO_HIVE_CLIENT_LOG_LEVEL=debug \
 ./jido_hive_client room resolve --api-base-url http://127.0.0.1:4000/api --room-id <room-id> --participant-id alice --left <ctx-a> --right <ctx-b> --text "resolution"
 ```
 
-### Inspect connector auth state
+### Capture a structured trace
 
 ```bash
-./jido_hive_client auth state --api-base-url https://jido-hive-server-test.app.nsai.online/api --subject alice
+JIDO_HIVE_CLIENT_LOG_LEVEL=debug \
+./jido_hive_client room show --api-base-url http://127.0.0.1:4000/api --room-id <room-id> \
+  > room.json \
+  2> trace.ndjson
 ```
 
-### Worker mode
+Rules:
 
-```bash
-bin/client-worker --worker-index 1
-bin/client-worker --worker-index 2
+- JSON stays on stdout
+- trace stays on stderr
+- use this before adding ad hoc logging
+
+### Use the RoomSession library boundary
+
+```elixir
+{:ok, session} =
+  JidoHiveClient.RoomSession.start_link(
+    room_id: "room-1",
+    api_base_url: "http://127.0.0.1:4000/api",
+    participant_id: "alice",
+    participant_role: "coordinator"
+  )
+
+{:ok, snapshot} = JidoHiveClient.RoomSession.refresh(session)
+{:ok, _result} = JidoHiveClient.RoomSession.submit_chat(session, %{text: "debug probe"})
+JidoHiveClient.RoomSession.shutdown(session)
 ```
 
 ## Architecture
 
 ```mermaid
 flowchart LR
-    subgraph Consumers[Client consumers]
-      WorkerCLI[worker runtime CLI]
-      Headless[headless operator CLI]
-      Console[Switchyard TUI]
-      Other[other local tools]
+    subgraph Consumers[Consumers]
+      Headless[Headless CLI]
+      TUI[Switchyard-backed TUI]
+      Scripts[Scripts and tests]
+      Other[Other Elixir callers]
     end
 
     subgraph Client[jido_hive_client]
       Operator[JidoHiveClient.Operator]
+      Insight[JidoHiveClient.RoomInsight]
+      Workflow[JidoHiveClient.RoomWorkflow]
       Session[JidoHiveClient.RoomSession]
-      Embedded[JidoHiveClient.Embedded implementation]
-      Runtime[relay worker runtime]
-      Boundary[HTTP and relay boundaries]
+      Embedded[JidoHiveClient.Embedded]
+      SessionState[JidoHiveClient.SessionState]
     end
 
     subgraph Server[jido_hive_server]
       API[REST API]
-      Relay[websocket relay]
-      Rooms[room reducer and snapshots]
+      Rooms[Room reducer and snapshots]
     end
 
-    WorkerCLI --> Runtime
     Headless --> Operator
     Headless --> Session
-    Console --> Operator
-    Console --> Session
+    TUI --> Operator
+    TUI --> Session
+    Scripts --> Operator
+    Scripts --> Session
     Other --> Session
     Session --> Embedded
-    Operator --> Boundary
-    Runtime --> Boundary
-    Embedded --> Boundary
-    Boundary --> API
-    Boundary --> Relay
+    Embedded --> SessionState
+    Operator --> Workflow
+    Operator --> Insight
+    Operator --> API
+    Embedded --> API
     API --> Rooms
-    Relay --> Rooms
 ```
 
 ### Boundary rules
 
-- `JidoHiveClient.Operator` owns server-facing operator workflows such as room inspection, publication planning, connector auth state, and room creation.
-- `JidoHiveClient.RoomSession` owns room-scoped human participation semantics such as snapshot, refresh, submit-chat, and accept-context.
-- the embedded room-session implementation is behind `RoomSession`, not the surface new callers should reach for first.
-- `JidoHiveClient.RoomWorkflow` is the shared decoder/normalizer for the server-owned workflow contract.
-- `JidoHiveClient.RoomInsight` is the shared operator-insight layer for control-plane digest, focus queue, and provenance tracing.
-- worker runtime code remains separate from operator/session flows.
-
-### Current room-session architecture
-
-- `JidoHiveClient.Operator.fetch_room_sync/3` is the canonical consolidated inspection call for a room
-- the embedded room-session implementation polls the server through that sync surface and exposes merged local submit operations plus server run operations in `snapshot["operations"]`
-- `JidoHiveClient.RoomFlow` is the shared pure state machine for room submit/run lifecycle derivation
-- `JidoHiveClient.Scenario.RoomWorkflow` is the non-TUI scenario harness for scripted create/submit/run/submit/wait/sync workflows
+- `JidoHiveClient.Operator` owns server-facing operator workflows
+- `JidoHiveClient.RoomSession` owns room-scoped local participation behavior
+- the embedded room-session implementation is private behind `RoomSession`
+- client-local session state and event history are private bookkeeping, not
+  worker runtime state
+- worker execution, relay registration, and local assignment execution are out of
+  scope for this package
 
 ## Public surfaces
 
@@ -146,10 +141,10 @@ Current responsibilities:
 - saved-room registry scoped by API base URL
 - connector auth-state loading
 - room fetch, workflow inspection, and timeline fetch
-- target/policy listing
-- room creation and run
+- target and policy listing
+- room creation and run-operation control
 - publication plan fetch and publish submit
-- connector install start/complete
+- connector install start and complete
 - direct contribution submission for scriptable conflict resolution
 
 Representative functions:
@@ -161,13 +156,12 @@ Representative functions:
 - `fetch_room_sync/3`
 - `fetch_room_timeline/3`
 - `create_room/2`
-- `run_room/3`
+- `start_room_run_operation/3`
+- `fetch_room_run_operation/4`
 - `fetch_publication_plan/2`
 - `publish_room/3`
 - `load_auth_state/2`
-- `start_install/4`
-- `complete_install/4`
-- `submit_contribution/3`
+- `submit_contribution/4`
 
 ### `JidoHiveClient.RoomInsight`
 
@@ -190,256 +184,136 @@ Representative functions:
 - `snapshot/1`
 - `refresh/1`
 - `submit_chat/2`
+- `submit_chat_async/2`
 - `accept_context/3`
 - `shutdown/1`
 - `sync_health/1`
 
+Snapshot shape now includes:
+
+- `participant`
+- `session_state`
+- `timeline`
+- `context_objects`
+- `operations`
+- `transport`
+
+The old worker-style `runtime` field is gone from this surface.
+
 ### `JidoHiveClient.Scenario.RoomWorkflow`
 
-Use this when you want an executable workflow regression outside the TUI.
-
-Current scripted path:
-
-1. create room
-2. refresh local room session
-3. submit human chat before a run
-4. start room run
-5. submit human chat during the run
-6. wait for run completion
-7. fetch consolidated final room sync
-
-### CLI escript entrypoint
-
-This is the escript entrypoint. It supports both:
-
-- worker runtime startup when invoked with worker/runtime flags
-- headless operator/session commands when invoked with `room ...`, `auth ...`, `targets ...`, `policies ...`, `config show`, or `session ...`
+Use this when you want an executable create/submit/run/wait/sync regression
+without the TUI.
 
 ## Headless CLI
 
-### Room inspection
+The escript entrypoint is operator/session only.
+
+Representative command groups:
+
+- `config show`
+- `room list`
+- `room show`
+- `room workflow`
+- `room focus`
+- `room inspect`
+- `room provenance`
+- `room tail`
+- `room create`
+- `room run`
+- `room run-status`
+- `room publish-plan`
+- `room publish`
+- `room submit`
+- `room accept`
+- `room resolve`
+- `auth state`
+- `targets list`
+- `policies list`
+
+## What is not in this package
+
+Notably absent now:
+
+- relay websocket workers
+- assignment execution
+- prompt shaping for worker turns
+- result decoding for worker contributions
+- worker control endpoints
+- subprocess/runtime bootstrap
+
+Those live in
+[../jido_hive_worker_runtime/README.md](../jido_hive_worker_runtime/README.md).
+
+## Developer workflow
+
+Run package-local checks from this directory:
 
 ```bash
-./jido_hive_client room list --api-base-url https://jido-hive-server-test.app.nsai.online/api
-./jido_hive_client room show --api-base-url https://jido-hive-server-test.app.nsai.online/api --room-id <room-id>
-./jido_hive_client room workflow --api-base-url https://jido-hive-server-test.app.nsai.online/api --room-id <room-id>
-./jido_hive_client room focus --api-base-url https://jido-hive-server-test.app.nsai.online/api --room-id <room-id>
-./jido_hive_client room inspect --api-base-url https://jido-hive-server-test.app.nsai.online/api --room-id <room-id>
-./jido_hive_client room provenance --api-base-url https://jido-hive-server-test.app.nsai.online/api --room-id <room-id> --context-id <context-id>
-./jido_hive_client room tail --api-base-url https://jido-hive-server-test.app.nsai.online/api --room-id <room-id>
-```
-
-Use these intentionally:
-
-- `room workflow`: server workflow summary, stage, blockers, readiness, and next action
-- `room focus`: distilled control-plane digest plus current focus queue
-- `room provenance`: explain why one context object exists and what action is available on it
-- `room inspect`: full sync payload for deeper debugging and scripted automation
-
-### Room mutation
-
-```bash
-./jido_hive_client room create --api-base-url https://jido-hive-server-test.app.nsai.online/api --payload-file room.json
-./jido_hive_client room run --api-base-url https://jido-hive-server-test.app.nsai.online/api --room-id <room-id> --max-assignments 1 --assignment-timeout-ms 60000
-./jido_hive_client room run-status --api-base-url https://jido-hive-server-test.app.nsai.online/api --room-id <room-id> --operation-id <operation-id>
-./jido_hive_client room publish-plan --api-base-url https://jido-hive-server-test.app.nsai.online/api --room-id <room-id>
-./jido_hive_client room publish --api-base-url https://jido-hive-server-test.app.nsai.online/api --room-id <room-id> --payload-file publish.json
-./jido_hive_client room submit --api-base-url https://jido-hive-server-test.app.nsai.online/api --room-id <room-id> --participant-id alice --text "hello"
-./jido_hive_client room accept --api-base-url https://jido-hive-server-test.app.nsai.online/api --room-id <room-id> --participant-id alice --context-id <context-id>
-./jido_hive_client room resolve --api-base-url https://jido-hive-server-test.app.nsai.online/api --room-id <room-id> --participant-id alice --left <ctx-a> --right <ctx-b> --text "resolution"
-```
-
-### Connector auth and install
-
-Validated manual-install tokens:
-
-- GitHub: `GITHUB_TOKEN`
-- Notion: `NOTION_TOKEN`
-
-Do not default to these unless revalidated:
-
-- `GITHUB_OAUTH_ACCESS_TOKEN`
-- `NOTION_OAUTH_ACCESS_TOKEN`
-
-Typical production-safe flow:
-
-```bash
-./jido_hive_client auth install start --api-base-url https://jido-hive-server-test.app.nsai.online/api --channel github --subject alice
-./jido_hive_client auth install complete --api-base-url https://jido-hive-server-test.app.nsai.online/api --install-id <install-id> --subject alice --access-token "$GITHUB_TOKEN"
-./jido_hive_client auth install start --api-base-url https://jido-hive-server-test.app.nsai.online/api --channel notion --subject alice
-./jido_hive_client auth install complete --api-base-url https://jido-hive-server-test.app.nsai.online/api --install-id <install-id> --subject alice --access-token "$NOTION_TOKEN"
-```
-
-```bash
-./jido_hive_client auth state --api-base-url https://jido-hive-server-test.app.nsai.online/api --subject alice
-./jido_hive_client auth install start --api-base-url https://jido-hive-server-test.app.nsai.online/api --channel github --subject alice --scope repo
-./jido_hive_client auth install complete --api-base-url https://jido-hive-server-test.app.nsai.online/api --install-id <install-id> --subject alice --access-token "$GITHUB_TOKEN"
-```
-
-### Output contract
-
-- read commands return JSON-ready room/auth/config data
-- mutating commands return JSON with an explicit `operation_id`
-- session snapshot/refresh commands return both `snapshot` and `sync_health`
-- `JIDO_HIVE_CLIENT_LOG_LEVEL=debug` emits structured trace lines to stderr while JSON stays on stdout
-
-This is the preferred way to reproduce or debug client behavior without involving the TUI.
-
-## Live debugging and `iex`
-
-### Fastest real-world order
-
-1. inspect the server route directly
-2. reproduce with `jido_hive_client` headlessly
-3. only then open the TUI
-4. only after the headless path is understood should you drop into `iex`
-
-### Local client `iex`
-
-```bash
-cd jido_hive_client
-iex -S mix
-```
-
-Useful examples:
-
-```elixir
-JidoHiveClient.Operator.fetch_room("https://jido-hive-server-test.app.nsai.online/api", "<room-id>")
-JidoHiveClient.Operator.fetch_room_timeline("https://jido-hive-server-test.app.nsai.online/api", "<room-id>")
-
-{:ok, session} =
-  JidoHiveClient.RoomSession.start_link(
-    room_id: "<room-id>",
-    participant_id: "alice",
-    participant_role: "coordinator",
-    participant_kind: "human",
-    api_base_url: "https://jido-hive-server-test.app.nsai.online/api"
-  )
-
-JidoHiveClient.RoomSession.snapshot(session)
-JidoHiveClient.RoomSession.submit_chat(session, %{text: "debug probe", authority_level: "binding"})
-```
-
-### Production reality
-
-- quick bash commands are the first-class production debugging path
-- the repo does not yet have a supported production remote `iex --remsh` workflow
-- use direct API calls, the headless client CLI, and Coolify/server logs instead
-
-## RoomSession library API
-
-### Start a session
-
-```elixir
-{:ok, session} =
-  JidoHiveClient.RoomSession.start_link(
-    room_id: "room-123",
-    participant_id: "alice",
-    participant_role: "coordinator",
-    participant_kind: "human",
-    api_base_url: "http://127.0.0.1:4000/api"
-  )
-```
-
-### Submit chat
-
-```elixir
-{:ok, result} =
-  JidoHiveClient.RoomSession.submit_chat(session, %{
-    text: "This contradicts the selected context.",
-    selected_context_id: "ctx-12",
-    selected_context_object_type: "belief",
-    selected_relation: "contradicts",
-    authority_level: "binding",
-    participant_id: "alice",
-    participant_role: "coordinator"
-  })
-```
-
-### Inspect sync health
-
-```elixir
-snapshot = JidoHiveClient.RoomSession.snapshot(session)
-JidoHiveClient.RoomSession.sync_health(snapshot)
-```
-
-## Worker mode
-
-Worker mode is still used by:
-
-- `bin/client-worker`
-- `bin/hive-clients`
-- local and production worker smoke flows
-
-Lifecycle:
-
-1. start runtime
-2. connect to Phoenix relay
-3. identify participant and target
-4. wait for `assignment.start`
-5. execute locally
-6. submit `contribution.submit`
-7. wait for the next assignment
-
-## Developer guide
-
-### Code map
-
-High-value client areas:
-
-- `lib/jido_hive_client/operator.ex`: shared operator boundary
-- `lib/jido_hive_client/room_session.ex`: room-scoped session surface
-- `lib/jido_hive_client/embedded.ex`: session implementation details
-- `lib/jido_hive_client/headless_cli.ex`: scriptable CLI dispatch layer
-- `lib/jido_hive_client/cli.ex`: escript entrypoint and worker/headless dispatch
-- `lib/jido_hive_client/boundary/`: HTTP and relay boundaries
-- `lib/jido_hive_client/runtime/`: worker runtime
-
-### Design rules
-
-Keep the client narrow and explicit:
-
-- do not move room truth into the client
-- do not let the TUI become the only executable path for a room action
-- prefer `Operator` for server workflows and `RoomSession` for local session workflows
-- do not add console-local transport helpers back into the TUI app
-- keep output JSON-ready for shell scripts and operator tooling
-
-### Quality loop
-
-From `jido_hive_client/`:
-
-```bash
+mix format --check-formatted
+mix compile --warnings-as-errors
 mix test
 mix credo --strict
-mix dialyzer --force-check
+mix dialyzer
 mix docs --warnings-as-errors
 ```
 
-Or from the repo root:
+For repo-wide checks:
 
 ```bash
+cd ..
 mix ci
 ```
 
 ## Debugging order
 
-When a bug is reported in the console:
+Always debug in this order:
 
-1. reproduce through the headless CLI first
-2. if it reproduces there, debug `Operator`, `RoomSession`, or server behavior
-3. if it does not, debug the Switchyard TUI or the compatibility launcher
-4. if the client surface is missing the needed headless action, add it before changing more UI code
-5. if you need deeper local introspection, use local `iex`; do not jump straight to production remote-shell assumptions
+1. server truth
+2. this package
+3. worker runtime only if the bug is assignment delivery or execution
+4. the Switchyard-backed TUI
 
-General reproducible workflow:
+Representative sequence:
 
-- `docs/debugging_guide.md`
+```bash
+setup/hive server-info
+curl -sS http://127.0.0.1:4000/api/rooms/<room-id> | jq
+
+cd jido_hive_client
+mix escript.build
+./jido_hive_client room show --api-base-url http://127.0.0.1:4000/api --room-id <room-id>
+./jido_hive_client room submit --api-base-url http://127.0.0.1:4000/api --room-id <room-id> --participant-id alice --text "debug probe"
+```
+
+If it reproduces there, it is not a TUI-only bug.
+
+For the full triage order, read
+[../docs/debugging_guide.md](../docs/debugging_guide.md).
+
+## Code map
+
+- `lib/jido_hive_client/operator.ex`
+  headless operator surface
+- `lib/jido_hive_client/headless_cli.ex`
+  JSON CLI dispatch
+- `lib/jido_hive_client/room_session.ex`
+  public room-session surface
+- `lib/jido_hive_client/embedded.ex`
+  room-session implementation
+- `lib/jido_hive_client/session_state.ex`
+  client-local session bookkeeping
+- `lib/jido_hive_client/session_event_log.ex`
+  client-local session event history
+- `lib/jido_hive_client/room_workflow.ex`
+  workflow summary normalization
+- `lib/jido_hive_client/room_insight.ex`
+  focus queue and provenance derivation
 
 ## Related docs
 
-- Root guide: [README.md](../README.md)
-- General debugging guide: `docs/debugging_guide.md`
-- Server guide: [jido_hive_server/README.md](../jido_hive_server/README.md)
-- Compatibility launcher guide: [examples/jido_hive_console/README.md](../examples/jido_hive_console/README.md)
-- Debugging runbook: `~/jb/docs/20260408/jido_hive_debugging_introspection/jido_hive_debugging_introspection_and_runbook.md`
+- [Workspace README](../README.md)
+- [Jido Hive Worker Runtime README](../jido_hive_worker_runtime/README.md)
+- [Jido Hive Server README](../jido_hive_server/README.md)
+- [Jido Hive Console README](../examples/jido_hive_console/README.md)
+- [Debugging Guide](../docs/debugging_guide.md)

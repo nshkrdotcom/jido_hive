@@ -10,7 +10,7 @@ defmodule JidoHiveClient.Embedded do
   alias JidoHiveClient.Interceptor
   alias JidoHiveClient.Operation
   alias JidoHiveClient.Polling
-  alias JidoHiveClient.Runtime
+  alias JidoHiveClient.{SessionEventLog, SessionState}
   alias JidoHiveClient.Transport.HTTP, as: TransportHTTP
 
   @default_poll_interval_ms Polling.default_interval_ms()
@@ -21,7 +21,7 @@ defmodule JidoHiveClient.Embedded do
   @type snapshot :: %{
           room_id: String.t(),
           participant: map(),
-          runtime: map(),
+          session_state: map(),
           timeline: [map()],
           context_objects: [map()],
           next_cursor: String.t() | nil,
@@ -32,8 +32,8 @@ defmodule JidoHiveClient.Embedded do
         }
 
   defstruct [
-    :runtime,
-    :owned_runtime?,
+    :session_state,
+    :event_log,
     :room_api,
     :room_api_opts,
     :agent_backend,
@@ -114,35 +114,35 @@ defmodule JidoHiveClient.Embedded do
   @impl true
   def init(opts) do
     participant = participant_from_opts(opts)
-    {runtime, owned_runtime?} = ensure_runtime(opts, participant)
+    session_state = new_session_state(opts, participant)
     {room_api, room_api_opts} = normalize_room_api(Keyword.get(opts, :room_api))
     poll_interval_ms = Keyword.get(opts, :poll_interval_ms, @default_poll_interval_ms)
 
     {agent_backend, agent_backend_opts} =
       normalize_agent_backend(Keyword.get(opts, :agent_backend))
 
-    state = %__MODULE__{
-      runtime: runtime,
-      owned_runtime?: owned_runtime?,
-      room_api: room_api,
-      room_api_opts:
-        [base_url: Keyword.get(opts, :api_base_url)]
-        |> Enum.reject(fn {_key, value} -> is_nil(value) end)
-        |> Keyword.merge(room_api_opts),
-      agent_backend: agent_backend,
-      agent_backend_opts: agent_backend_opts,
-      room_id: Keyword.fetch!(opts, :room_id),
-      participant: participant,
-      polling: new_polling_state(poll_interval_ms)
-    }
-
-    :ok = Runtime.connect(runtime, %{"mode" => "embedded", "room_id" => state.room_id})
-    :ok = Runtime.subscribe(runtime)
-
-    :ok =
-      Runtime.record_event(runtime, %{
+    state =
+      %__MODULE__{
+        session_state: session_state,
+        event_log: SessionEventLog.new(limit: Keyword.get(opts, :event_limit, 200)),
+        room_api: room_api,
+        room_api_opts:
+          [base_url: Keyword.get(opts, :api_base_url)]
+          |> Enum.reject(fn {_key, value} -> is_nil(value) end)
+          |> Keyword.merge(room_api_opts),
+        agent_backend: agent_backend,
+        agent_backend_opts: agent_backend_opts,
+        room_id: Keyword.fetch!(opts, :room_id),
+        participant: participant,
+        polling: new_polling_state(poll_interval_ms)
+      }
+      |> update_session_connection(:ready, %{
+        "mode" => "embedded",
+        "room_id" => Keyword.fetch!(opts, :room_id)
+      })
+      |> record_session_event(%{
         type: "embedded.started",
-        room_id: state.room_id,
+        room_id: Keyword.fetch!(opts, :room_id),
         payload: participant
       })
 
@@ -181,17 +181,7 @@ defmodule JidoHiveClient.Embedded do
              room_api_submit_opts(state, operation_id),
              state.room_id,
              contribution
-           ),
-         :ok <-
-           Runtime.record_event(state.runtime, %{
-             type: "embedded.chat.submitted",
-             room_id: state.room_id,
-             payload: %{
-               "operation_id" => operation_id,
-               "summary" => contribution["summary"],
-               "context_count" => length(contribution["context_objects"] || [])
-             }
-           }) do
+           ) do
       DebugTrace.emit(:info, "room_session.submit_chat.completed", %{
         room_id: state.room_id,
         participant_id: state.participant.participant_id,
@@ -200,7 +190,20 @@ defmodule JidoHiveClient.Embedded do
       })
 
       send(self(), {:sync_room_async, true})
-      {:reply, {:ok, contribution}, %{state | last_error: nil}}
+
+      {:reply, {:ok, contribution},
+       state
+       |> Map.put(:last_error, nil)
+       |> clear_session_error()
+       |> record_session_event(%{
+         type: "embedded.chat.submitted",
+         room_id: state.room_id,
+         payload: %{
+           "operation_id" => operation_id,
+           "summary" => contribution["summary"],
+           "context_count" => length(contribution["context_objects"] || [])
+         }
+       })}
     else
       {:error, reason} ->
         DebugTrace.emit(:error, "room_session.submit_chat.failed", %{
@@ -209,14 +212,15 @@ defmodule JidoHiveClient.Embedded do
           reason: inspect(reason)
         })
 
-        :ok =
-          Runtime.record_event(state.runtime, %{
-            type: "embedded.chat.failed",
-            room_id: state.room_id,
-            payload: %{"reason" => inspect(reason)}
-          })
-
-        {:reply, {:error, reason}, %{state | last_error: reason}}
+        {:reply, {:error, reason},
+         state
+         |> Map.put(:last_error, reason)
+         |> put_session_error(reason)
+         |> record_session_event(%{
+           type: "embedded.chat.failed",
+           room_id: state.room_id,
+           payload: %{"reason" => inspect(reason)}
+         })}
     end
   end
 
@@ -241,19 +245,17 @@ defmodule JidoHiveClient.Embedded do
       chars: String.length(text)
     })
 
-    :ok =
-      Runtime.record_event(state.runtime, %{
-        type: "embedded.chat.accepted",
-        room_id: state.room_id,
-        payload: %{
-          "operation_id" => operation_id,
-          "chars" => String.length(text)
-        }
-      })
-
     {:reply, {:ok, operation},
      state
      |> put_submit_operation(operation)
+     |> record_session_event(%{
+       type: "embedded.chat.accepted",
+       room_id: state.room_id,
+       payload: %{
+         "operation_id" => operation_id,
+         "chars" => String.length(text)
+       }
+     })
      |> start_submit_task(operation_id, attrs)}
   end
 
@@ -271,27 +273,30 @@ defmodule JidoHiveClient.Embedded do
 
         contribution = acceptance_contribution(context_object, attrs, state)
 
-        with {:ok, _response} <-
-               state.room_api.submit_contribution(
-                 room_api_submit_opts(state, Operation.new_id("room_accept")),
-                 state.room_id,
-                 contribution
-               ),
-             :ok <-
-               Runtime.record_event(state.runtime, %{
-                 type: "embedded.context.accepted",
-                 room_id: state.room_id,
-                 payload: %{"context_id" => context_id}
-               }) do
-          DebugTrace.emit(:info, "room_session.accept_context.completed", %{
-            room_id: state.room_id,
-            participant_id: state.participant.participant_id,
-            context_id: context_id
-          })
+        case state.room_api.submit_contribution(
+               room_api_submit_opts(state, Operation.new_id("room_accept")),
+               state.room_id,
+               contribution
+             ) do
+          {:ok, _response} ->
+            DebugTrace.emit(:info, "room_session.accept_context.completed", %{
+              room_id: state.room_id,
+              participant_id: state.participant.participant_id,
+              context_id: context_id
+            })
 
-          send(self(), {:sync_room_async, true})
-          {:reply, {:ok, contribution}, %{state | last_error: nil}}
-        else
+            send(self(), {:sync_room_async, true})
+
+            {:reply, {:ok, contribution},
+             state
+             |> Map.put(:last_error, nil)
+             |> clear_session_error()
+             |> record_session_event(%{
+               type: "embedded.context.accepted",
+               room_id: state.room_id,
+               payload: %{"context_id" => context_id}
+             })}
+
           {:error, reason} ->
             DebugTrace.emit(:error, "room_session.accept_context.failed", %{
               room_id: state.room_id,
@@ -300,7 +305,10 @@ defmodule JidoHiveClient.Embedded do
               reason: inspect(reason)
             })
 
-            {:reply, {:error, reason}, %{state | last_error: reason}}
+            {:reply, {:error, reason},
+             state
+             |> Map.put(:last_error, reason)
+             |> put_session_error(reason)}
         end
     end
   end
@@ -384,19 +392,18 @@ defmodule JidoHiveClient.Embedded do
         |> Map.put("error", nil)
       end)
 
-    :ok =
-      Runtime.record_event(state.runtime, %{
-        type: "embedded.chat.completed",
-        room_id: state.room_id,
-        payload: %{
-          "operation_id" => operation_id,
-          "summary" => contribution["summary"],
-          "contribution_type" => contribution["contribution_type"]
-        }
-      })
-
     send(self(), {:sync_room_async, true})
-    {:noreply, next_state}
+
+    {:noreply,
+     record_session_event(next_state, %{
+       type: "embedded.chat.completed",
+       room_id: state.room_id,
+       payload: %{
+         "operation_id" => operation_id,
+         "summary" => contribution["summary"],
+         "contribution_type" => contribution["contribution_type"]
+       }
+     })}
   end
 
   def handle_info(
@@ -414,17 +421,17 @@ defmodule JidoHiveClient.Embedded do
         |> Map.put("error", inspect(reason))
       end)
 
-    :ok =
-      Runtime.record_event(state.runtime, %{
-        type: "embedded.chat.failed",
-        room_id: state.room_id,
-        payload: %{
-          "operation_id" => operation_id,
-          "reason" => inspect(reason)
-        }
-      })
-
-    {:noreply, next_state}
+    {:noreply,
+     next_state
+     |> put_session_error(reason)
+     |> record_session_event(%{
+       type: "embedded.chat.failed",
+       room_id: state.room_id,
+       payload: %{
+         "operation_id" => operation_id,
+         "reason" => inspect(reason)
+       }
+     })}
   end
 
   def handle_info({:DOWN, ref, :process, _pid, reason}, %__MODULE__{} = state) do
@@ -448,23 +455,10 @@ defmodule JidoHiveClient.Embedded do
     end
   end
 
-  def handle_info({:client_runtime_event, event}, %__MODULE__{} = state) do
-    Enum.each(state.subscribers, &send(&1, {:client_runtime_event, event}))
-    {:noreply, state}
-  end
-
   @impl true
-  def terminate(
-        _reason,
-        %__MODULE__{
-          runtime: runtime,
-          owned_runtime?: owned_runtime?,
-          sync_task_pid: sync_task_pid
-        }
-      ) do
+  def terminate(_reason, %__MODULE__{sync_task_pid: sync_task_pid} = state) do
     if is_pid(sync_task_pid), do: Process.exit(sync_task_pid, :shutdown)
-    _ = Runtime.disconnect(runtime)
-    if owned_runtime? and is_pid(runtime), do: GenServer.stop(runtime)
+    _state = update_session_connection(state, :stopped, %{})
     :ok
   end
 
@@ -487,7 +481,7 @@ defmodule JidoHiveClient.Embedded do
     |> normalize_room_snapshot()
     |> Map.put("room_id", state.room_id)
     |> Map.put("participant", state.participant)
-    |> Map.put("runtime", Runtime.snapshot(state.runtime))
+    |> Map.put("session_state", SessionState.snapshot(state.session_state))
     |> Map.put("timeline", state.timeline)
     |> Map.put("context_objects", state.context_objects)
     |> Map.put("next_cursor", state.next_cursor)
@@ -593,18 +587,10 @@ defmodule JidoHiveClient.Embedded do
   end
 
   defp complete_sync(%__MODULE__{} = state, {:error, reason}, record_event?, waiters) do
-    if record_event? do
-      :ok =
-        Runtime.record_event(state.runtime, %{
-          type: "embedded.sync.failed",
-          room_id: state.room_id,
-          payload: %{"reason" => inspect(reason)}
-        })
-    end
-
     next_state =
       state
       |> Map.put(:last_error, reason)
+      |> put_session_error(reason)
       |> put_polling(
         failure_count: state.polling.failure_count + 1,
         idle_count: 0,
@@ -615,6 +601,7 @@ defmodule JidoHiveClient.Embedded do
           )
       )
       |> maybe_halt_polling(reason)
+      |> maybe_record_sync_failure(record_event?)
 
     broadcast_snapshot(next_state)
     reply_sync_waiters(waiters, {:error, reason})
@@ -679,6 +666,7 @@ defmodule JidoHiveClient.Embedded do
           last_sync_at: DateTime.utc_now(),
           last_error: nil
       }
+      |> clear_session_error()
       |> put_polling(
         failure_count: 0,
         next_delay_ms: next_poll_delay_ms,
@@ -686,9 +674,9 @@ defmodule JidoHiveClient.Embedded do
         halted_reason: nil
       )
 
-    if changed? and record_event? do
-      :ok =
-        Runtime.record_event(state.runtime, %{
+    next_state =
+      if changed? and record_event? do
+        record_session_event(next_state, %{
           type: "embedded.sync.updated",
           room_id: state.room_id,
           payload: %{
@@ -696,7 +684,9 @@ defmodule JidoHiveClient.Embedded do
             "context_count" => length(sync_result.context_objects)
           }
         })
-    end
+      else
+        next_state
+      end
 
     {next_state, changed?}
   end
@@ -855,30 +845,55 @@ defmodule JidoHiveClient.Embedded do
     }
   end
 
-  defp ensure_runtime(opts, participant) do
-    runtime_opts = [
+  defp new_session_state(opts, participant) do
+    session_opts = [
       workspace_id: Keyword.get(opts, :workspace_id, "workspace-local"),
       user_id: Keyword.get(opts, :user_id, participant.participant_id),
       participant_id: participant.participant_id,
       participant_role: participant.participant_role,
+      participant_kind: participant.participant_kind,
       target_id: Keyword.get(opts, :target_id, "embedded-#{participant.participant_id}"),
       capability_id: Keyword.get(opts, :capability_id, "human.chat"),
       workspace_root: Keyword.get(opts, :workspace_root, File.cwd!()),
-      executor:
-        Keyword.get(opts, :executor, {JidoHiveClient.Executor.Scripted, [provider: :codex]}),
-      runtime_id: :embedded
+      room_id: Keyword.fetch!(opts, :room_id)
     ]
 
-    case Keyword.get(opts, :runtime) do
-      nil ->
-        {:ok, runtime} = Runtime.start_link(runtime_opts)
-        {runtime, true}
-
-      runtime ->
-        :ok = Runtime.configure(runtime, runtime_opts)
-        {runtime, false}
-    end
+    SessionState.new(session_opts)
   end
+
+  defp update_session_connection(%__MODULE__{} = state, status, payload) do
+    %{
+      state
+      | session_state: SessionState.connection_changed(state.session_state, status, payload)
+    }
+  end
+
+  defp record_session_event(%__MODULE__{} = state, attrs) when is_map(attrs) do
+    {event_log, entry} = SessionEventLog.append(state.event_log, attrs)
+    next_session_state = SessionState.record_event(state.session_state, entry)
+
+    Enum.each(state.subscribers, &send(&1, {:client_runtime_event, entry}))
+
+    %{state | event_log: event_log, session_state: next_session_state}
+  end
+
+  defp put_session_error(%__MODULE__{} = state, reason) do
+    %{state | session_state: SessionState.put_error(state.session_state, reason)}
+  end
+
+  defp clear_session_error(%__MODULE__{} = state) do
+    %{state | session_state: SessionState.clear_error(state.session_state)}
+  end
+
+  defp maybe_record_sync_failure(%__MODULE__{} = state, true) do
+    record_session_event(state, %{
+      type: "embedded.sync.failed",
+      room_id: state.room_id,
+      payload: %{"reason" => inspect(state.last_error)}
+    })
+  end
+
+  defp maybe_record_sync_failure(%__MODULE__{} = state, false), do: state
 
   defp normalize_room_api(nil), do: {HttpRoomApi, []}
 

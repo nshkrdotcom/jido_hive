@@ -4,11 +4,14 @@ defmodule JidoHiveConsole.WorkflowScript do
   alias JidoHiveClient.{EscriptBootstrap, HeadlessCLI}
 
   @default_api_base_url "http://127.0.0.1:4000/api"
+  @prod_api_base_url "https://jido-hive-server-test.app.nsai.online/api"
   @default_brief "Workflow smoke room"
   @default_participant_role "coordinator"
   @default_authority_level "binding"
 
   @switches [
+    local: :boolean,
+    prod: :boolean,
     api_base_url: :string,
     room_id: :string,
     brief: :string,
@@ -28,9 +31,7 @@ defmodule JidoHiveConsole.WorkflowScript do
     :ok = bootstrap_module.start_cli_dependencies()
 
     with {:ok, parsed} <- parse_args(argv) do
-      api_base_url =
-        Keyword.get(parsed, :api_base_url) || Keyword.get(opts, :api_base_url) ||
-          @default_api_base_url
+      api_base_url = resolve_api_base_url(parsed, opts)
 
       room_id = Keyword.get(parsed, :room_id) || generated_room_id()
       brief = Keyword.get(parsed, :brief, @default_brief)
@@ -239,6 +240,25 @@ defmodule JidoHiveConsole.WorkflowScript do
 
   defp generated_room_id do
     "room-smoke-#{System.unique_integer([:positive])}"
+  end
+
+  defp resolve_api_base_url(parsed, opts) do
+    cond do
+      api_base_url = Keyword.get(parsed, :api_base_url) ->
+        api_base_url
+
+      Keyword.get(parsed, :prod, false) ->
+        @prod_api_base_url
+
+      Keyword.get(parsed, :local, false) ->
+        @default_api_base_url
+
+      api_base_url = Keyword.get(opts, :api_base_url) ->
+        api_base_url
+
+      true ->
+        @default_api_base_url
+    end
   end
 
   defp maybe_append_integer_flag(args, _flag, nil), do: args
