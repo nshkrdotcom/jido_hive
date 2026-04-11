@@ -10,22 +10,37 @@ defmodule JidoHiveClient.Build.DependencyResolver do
   def jido_signal(opts \\ []) do
     resolve(
       :jido_signal,
-      ["../jido_signal"],
+      ["../jido_signal", "../../jido_signal"],
       [github: "nshkrdotcom/jido_signal", branch: "main"],
       opts
     )
   end
 
   def jido_harness(opts \\ []) do
-    resolve(:jido_harness, ["../jido_harness"], [github: "nshkrdotcom/jido_harness", branch: "main"], opts)
+    resolve(
+      :jido_harness,
+      ["../jido_harness", "../../jido_harness"],
+      [github: "nshkrdotcom/jido_harness", branch: "main"],
+      opts
+    )
   end
 
   def jido_shell(opts \\ []) do
-    resolve(:jido_shell, ["../jido_shell"], [github: "nshkrdotcom/jido_shell", branch: "main"], opts)
+    resolve(
+      :jido_shell,
+      ["../jido_shell", "../../jido_shell"],
+      [github: "nshkrdotcom/jido_shell", branch: "main"],
+      opts
+    )
   end
 
   def jido_vfs(opts \\ []) do
-    resolve(:jido_vfs, ["../jido_vfs"], [github: "nshkrdotcom/jido_vfs", branch: "main"], opts)
+    resolve(
+      :jido_vfs,
+      ["../jido_vfs", "../../jido_vfs"],
+      [github: "nshkrdotcom/jido_vfs", branch: "main"],
+      opts
+    )
   end
 
   def sprites(opts \\ []) do
@@ -35,7 +50,7 @@ defmodule JidoHiveClient.Build.DependencyResolver do
   def external_runtime_transport(opts \\ []) do
     resolve(
       :external_runtime_transport,
-      ["../external_runtime_transport"],
+      ["../external_runtime_transport", "../../external_runtime_transport"],
       [github: "nshkrdotcom/external_runtime_transport", branch: "main"],
       opts
     )
@@ -44,10 +59,13 @@ defmodule JidoHiveClient.Build.DependencyResolver do
   def jido_integration_runtime_asm_bridge(opts \\ []) do
     resolve(
       :jido_integration_v2_runtime_asm_bridge,
-      ["../jido_integration/core/runtime_asm_bridge"],
+      [
+        "../jido_integration/core/runtime_asm_bridge",
+        "../../jido_integration/core/runtime_asm_bridge"
+      ],
       [
         git: @jido_integration_repo,
-        branch: "bridge/jido_os_compose",
+        branch: "main",
         subdir: "core/runtime_asm_bridge"
       ],
       opts
