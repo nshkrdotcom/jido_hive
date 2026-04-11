@@ -1,5 +1,0 @@
-JidoHive.Switchyard.Site.Client.md
-JidoHive.Switchyard.Site.md
-api-reference.md
-llms.txt
-readme.md
