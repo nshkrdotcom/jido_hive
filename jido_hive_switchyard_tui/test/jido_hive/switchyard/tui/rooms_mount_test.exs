@@ -1,8 +1,8 @@
-defmodule JidoHive.Switchyard.TUI.RoomsMountTest do
+defmodule JidoHive.Switchyard.TUI.RoomsComponentTest do
   use ExUnit.Case, async: true
 
-  alias JidoHive.Switchyard.TUI.RoomsMount
-  alias Switchyard.TUI.Model
+  alias JidoHive.Switchyard.TUI.RoomsComponent
+  alias Workbench.Context
 
   defmodule ClientStub do
     def list_rooms(_api_base_url, _opts),
@@ -51,55 +51,48 @@ defmodule JidoHive.Switchyard.TUI.RoomsMountTest do
     def publish(_api_base_url, _room_id, _workspace, bindings, _opts), do: {:ok, bindings}
   end
 
-  defp mount_state do
-    RoomsMount.init(client_module: ClientStub)
-  end
-
-  defp room_mount_state do
-    %{mount_state() | screen: :room}
-  end
-
-  defp model(opts \\ []) do
-    Model.new(
-      shell: %{
-        Model.new().shell
-        | route: :app,
-          selected_site_id: "jido-hive",
-          selected_app_id: "jido-hive.rooms"
-      },
+  defp props(opts \\ []) do
+    %{
+      app: %{id: "jido-hive.rooms"},
       context:
         %{
           api_base_url: "http://127.0.0.1:4000/api",
           subject: "alice",
           participant_id: "alice",
           participant_role: "coordinator",
-          authority_level: "binding"
+          authority_level: "binding",
+          client_module: ClientStub
         }
         |> Map.merge(Map.new(opts))
-    )
+    }
   end
 
-  test "open loads rooms by default" do
-    {_next_model, next_state, [command]} = RoomsMount.open(model(), mount_state())
+  test "init loads rooms by default" do
+    assert {:ok, next_state, [command]} = RoomsComponent.init(props(), %Context{})
 
     assert next_state.screen == :rooms
     assert command.kind == :async
   end
 
-  test "open with room_id requests the room workspace directly" do
-    {_next_model, next_state, [command]} =
-      RoomsMount.open(model(room_id: "room-1"), mount_state())
+  test "init with room_id requests the room workspace directly" do
+    assert {:ok, next_state, [command]} =
+             RoomsComponent.init(props(room_id: "room-1"), %Context{})
 
     assert next_state.room_id == "room-1"
     assert command.kind == :async
   end
 
-  test "maps room-specific keys while the mount is active" do
-    assert {:msg, :open_publish} =
-             RoomsMount.event_to_msg(
-               %ExRatatui.Event.Key{code: "p", modifiers: ["ctrl"]},
-               model(),
-               room_mount_state()
+  test "maps room-specific bindings while the component is active" do
+    state =
+      elem(RoomsComponent.init(props(), %Context{}), 1)
+      |> Map.put(:screen, :room)
+
+    bindings = RoomsComponent.keymap(state, props(), %Context{})
+
+    assert :open_publish ==
+             Workbench.Keymap.match_event(
+               bindings,
+               %ExRatatui.Event.Key{code: "p", modifiers: ["ctrl"]}
              )
   end
 end

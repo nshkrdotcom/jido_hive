@@ -1,30 +1,27 @@
 # Jido Hive Switchyard TUI
 
 `jido_hive_switchyard_tui` hosts the Jido Hive operator workflow on top of the
-generic Switchyard TUI shell.
+generic Switchyard Workbench runtime.
 
-It owns Jido-specific screen logic, not generic terminal platform behavior.
+It owns Jido-specific room workflow state and views, not generic terminal
+platform behavior.
 
 ## Responsibilities
 
-- mount the Jido Hive operator workflow into the generic Switchyard TUI host
-- own Jido-specific room, provenance, and publication interaction state
-- render the Jido Hive workflow without re-owning room truth
-- keep generic shell, daemon, and host concerns in Switchyard
+- expose Jido Hive app components for the Switchyard TUI
+- own room, provenance, and publication interaction state
+- render the Jido Hive workflow with Workbench widgets
+- keep generic shell, runtime, and renderer concerns in Switchyard core
 
 ## Dependencies
 
 - `jido_hive_surface`
 - `jido_hive_switchyard_site`
-- generic Switchyard TUI and local-site packages
-
-This package uses `jido_hive_surface` for reusable room and publication
-workflows.
+- `switchyard_tui`
+- `workbench_tui_framework`
+- `workbench_widgets`
 
 This package must not depend on `jido_hive_worker_runtime`.
-
-`ex_ratatui` is owned by the Switchyard host dependency chain, not by the
-example console package.
 
 ## Quick Start
 
@@ -40,9 +37,6 @@ bin/client-worker --worker-index 1
 bin/client-worker --worker-index 2
 ```
 
-Those worker scripts launch `jido_hive_worker_runtime`; they are intentionally
-outside this package boundary.
-
 Then, from this package:
 
 ```bash
@@ -51,7 +45,7 @@ mix deps.get
 iex -S mix
 ```
 
-Launch the mounted Jido Hive workflow directly:
+Launch the Jido Hive workflow directly:
 
 ```elixir
 JidoHive.Switchyard.TUI.run(
@@ -64,9 +58,9 @@ JidoHive.Switchyard.TUI.run(
 
 ## Current Internal Split
 
-- the public entry module for mounting the Jido Hive workflow into Switchyard
-- a private state module for screen-local room and publication state
-- a private mount/update module for event mapping and app callbacks
+- the public entry module for launching the Jido Hive workflow through Switchyard
+- a private component module for room interaction behavior
+- a private state module for room and publication workflow state
 - a private runtime module for async commands over `jido_hive_surface`
 - a private view module for room, graph, and overlay rendering
 
@@ -79,7 +73,7 @@ JidoHive.Switchyard.TUI.run(
 
 ## Examples
 
-- [test/jido_hive/switchyard/tui/rooms_mount_test.exs](test/jido_hive/switchyard/tui/rooms_mount_test.exs) covers room loading, room-open behavior, and room-specific key handling.
+- [test/jido_hive/switchyard/tui/rooms_mount_test.exs](test/jido_hive/switchyard/tui/rooms_mount_test.exs) covers room loading, room-open behavior, and room-specific key handling through the component seam.
 - [test/jido_hive/switchyard/tui/state_test.exs](test/jido_hive/switchyard/tui/state_test.exs) covers cursor bounds and selected-context state transitions.
 
 ## Developer Workflow
@@ -100,19 +94,6 @@ For repo-wide validation:
 ```bash
 cd ..
 mix ci
-```
-
-## Quality
-
-From this directory:
-
-```bash
-mix format --check-formatted
-mix compile --warnings-as-errors
-mix test
-mix credo --strict
-mix dialyzer
-mix docs --warnings-as-errors
 ```
 
 ## Related Reading

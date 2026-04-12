@@ -3,7 +3,7 @@ defmodule JidoHive.Switchyard.TUITest do
 
   alias JidoHive.Switchyard.Site
   alias JidoHive.Switchyard.TUI
-  alias JidoHive.Switchyard.TUI.RoomsMount
+  alias JidoHive.Switchyard.TUI.RoomsComponent
 
   defmodule BootstrapStub do
     def start_tui_dependencies do
@@ -34,8 +34,7 @@ defmodule JidoHive.Switchyard.TUITest do
     assert opts[:api_base_url] == "http://127.0.0.1:4000/api"
     assert opts[:participant_id] == "alice"
     assert opts[:site_modules] == [Switchyard.Site.Local, Site]
-    assert opts[:mount_modules] == [RoomsMount]
-    assert opts[:open_app] == RoomsMount.id()
+    assert opts[:open_app] == RoomsComponent.app_id()
     refute Keyword.has_key?(opts, :bootstrap_module)
     refute Keyword.has_key?(opts, :switchyard_tui_module)
   end

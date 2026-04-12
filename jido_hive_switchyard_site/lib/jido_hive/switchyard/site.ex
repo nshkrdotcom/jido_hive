@@ -30,7 +30,8 @@ defmodule JidoHive.Switchyard.Site do
         title: "Rooms",
         provider: __MODULE__,
         resource_kinds: [:room],
-        route_kind: :workspace
+        route_kind: :workspace,
+        tui_component: JidoHive.Switchyard.TUI.RoomsComponent
       }),
       AppDescriptor.new!(%{
         id: "jido-hive.publications",

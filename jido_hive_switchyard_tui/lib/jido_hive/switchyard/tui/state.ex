@@ -16,7 +16,9 @@ defmodule JidoHive.Switchyard.TUI.State do
             overlay: nil,
             publication_workspace: nil,
             publish_bindings: %{},
-            publish_field_cursor: 0
+            publish_field_cursor: 0,
+            status_line: "Ready",
+            status_severity: :info
 
   @type overlay :: %{kind: atom(), payload: map()} | nil
 
@@ -33,7 +35,9 @@ defmodule JidoHive.Switchyard.TUI.State do
           overlay: overlay(),
           publication_workspace: map() | nil,
           publish_bindings: map(),
-          publish_field_cursor: non_neg_integer()
+          publish_field_cursor: non_neg_integer(),
+          status_line: String.t(),
+          status_severity: :info | :warn | :error
         }
 
   @spec new(keyword()) :: t()
@@ -90,6 +94,12 @@ defmodule JidoHive.Switchyard.TUI.State do
 
   @spec set_draft(t(), String.t()) :: t()
   def set_draft(%__MODULE__{} = state, draft) when is_binary(draft), do: %{state | draft: draft}
+
+  @spec set_status(t(), String.t(), :info | :warn | :error) :: t()
+  def set_status(%__MODULE__{} = state, line, severity)
+      when is_binary(line) and severity in [:info, :warn, :error] do
+    %{state | status_line: line, status_severity: severity}
+  end
 
   @spec append_draft(t(), String.t()) :: t()
   def append_draft(%__MODULE__{} = state, text) when is_binary(text) do

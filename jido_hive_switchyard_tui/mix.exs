@@ -43,6 +43,8 @@ defmodule JidoHive.Switchyard.TUI.MixProject do
       {:jido_hive_surface, path: "../jido_hive_surface"},
       {:jido_hive_switchyard_site, path: "../jido_hive_switchyard_site"},
       DependencyResolver.switchyard_tui(),
+      DependencyResolver.switchyard_tui_framework(),
+      DependencyResolver.switchyard_widgets(),
       DependencyResolver.switchyard_site_local(),
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
       {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false},

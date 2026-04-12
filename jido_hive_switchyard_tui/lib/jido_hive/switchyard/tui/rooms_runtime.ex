@@ -2,14 +2,14 @@ defmodule JidoHive.Switchyard.TUI.RoomsRuntime do
   @moduledoc false
 
   alias JidoHive.Switchyard.TUI.State
-  alias Switchyard.TUI.{Command, Model}
+  alias Workbench.Cmd
 
-  @spec load_rooms(Model.t(), State.t()) :: ExRatatui.Command.t()
-  def load_rooms(%Model{} = model, %State{} = state) do
-    Command.async(
+  @spec load_rooms(map(), State.t()) :: Workbench.Cmd.t()
+  def load_rooms(props, %State{} = state) do
+    Cmd.async(
       fn ->
-        state.client_module.list_rooms(Map.fetch!(model.context, :api_base_url),
-          operator_module: Map.get(model.context, :operator_module)
+        state.client_module.list_rooms(Map.fetch!(props.context, :api_base_url),
+          operator_module: Map.get(props.context, :operator_module)
         )
       end,
       fn
@@ -19,14 +19,14 @@ defmodule JidoHive.Switchyard.TUI.RoomsRuntime do
     )
   end
 
-  @spec load_room_workspace(Model.t(), State.t(), String.t()) :: ExRatatui.Command.t()
-  def load_room_workspace(%Model{} = model, %State{} = state, room_id) when is_binary(room_id) do
-    Command.async(
+  @spec load_room_workspace(map(), State.t(), String.t()) :: Workbench.Cmd.t()
+  def load_room_workspace(props, %State{} = state, room_id) when is_binary(room_id) do
+    Cmd.async(
       fn ->
-        state.client_module.load_room_workspace(Map.fetch!(model.context, :api_base_url), room_id,
-          operator_module: Map.get(model.context, :operator_module),
+        state.client_module.load_room_workspace(Map.fetch!(props.context, :api_base_url), room_id,
+          operator_module: Map.get(props.context, :operator_module),
           selected_context_id: state.selected_context_id,
-          participant_id: Map.get(model.context, :participant_id)
+          participant_id: Map.get(props.context, :participant_id)
         )
       end,
       fn
@@ -36,16 +36,16 @@ defmodule JidoHive.Switchyard.TUI.RoomsRuntime do
     )
   end
 
-  @spec load_provenance(Model.t(), State.t(), String.t(), String.t()) :: ExRatatui.Command.t()
-  def load_provenance(%Model{} = model, %State{} = state, room_id, context_id)
+  @spec load_provenance(map(), State.t(), String.t(), String.t()) :: Workbench.Cmd.t()
+  def load_provenance(props, %State{} = state, room_id, context_id)
       when is_binary(room_id) and is_binary(context_id) do
-    Command.async(
+    Cmd.async(
       fn ->
         state.client_module.load_provenance(
-          Map.fetch!(model.context, :api_base_url),
+          Map.fetch!(props.context, :api_base_url),
           room_id,
           context_id,
-          operator_module: Map.get(model.context, :operator_module)
+          operator_module: Map.get(props.context, :operator_module)
         )
       end,
       fn
@@ -55,16 +55,16 @@ defmodule JidoHive.Switchyard.TUI.RoomsRuntime do
     )
   end
 
-  @spec load_publication_workspace(Model.t(), State.t(), String.t()) :: ExRatatui.Command.t()
-  def load_publication_workspace(%Model{} = model, %State{} = state, room_id)
+  @spec load_publication_workspace(map(), State.t(), String.t()) :: Workbench.Cmd.t()
+  def load_publication_workspace(props, %State{} = state, room_id)
       when is_binary(room_id) do
-    Command.async(
+    Cmd.async(
       fn ->
         state.client_module.load_publication_workspace(
-          Map.fetch!(model.context, :api_base_url),
+          Map.fetch!(props.context, :api_base_url),
           room_id,
-          Map.fetch!(model.context, :subject),
-          operator_module: Map.get(model.context, :operator_module)
+          Map.fetch!(props.context, :subject),
+          operator_module: Map.get(props.context, :operator_module)
         )
       end,
       fn
@@ -74,40 +74,40 @@ defmodule JidoHive.Switchyard.TUI.RoomsRuntime do
     )
   end
 
-  @spec submit_draft(Model.t(), State.t(), String.t()) :: ExRatatui.Command.t()
-  def submit_draft(%Model{} = model, %State{} = state, draft) when is_binary(draft) do
+  @spec submit_draft(map(), State.t(), String.t()) :: Workbench.Cmd.t()
+  def submit_draft(props, %State{} = state, draft) when is_binary(draft) do
     identity = %{
-      participant_id: Map.fetch!(model.context, :participant_id),
-      participant_role: Map.fetch!(model.context, :participant_role),
-      authority_level: Map.fetch!(model.context, :authority_level)
+      participant_id: Map.fetch!(props.context, :participant_id),
+      participant_role: Map.fetch!(props.context, :participant_role),
+      authority_level: Map.fetch!(props.context, :authority_level)
     }
 
-    Command.async(
+    Cmd.async(
       fn ->
         state.client_module.submit_steering(
-          Map.fetch!(model.context, :api_base_url),
+          Map.fetch!(props.context, :api_base_url),
           state.room_id,
           identity,
           draft,
-          room_session_module: Map.get(model.context, :room_session_module)
+          room_session_module: Map.get(props.context, :room_session_module)
         )
       end,
       &{:steering_submitted, &1}
     )
   end
 
-  @spec publish(Model.t(), State.t()) :: ExRatatui.Command.t()
-  def publish(%Model{} = model, %State{} = state) do
-    Command.async(
+  @spec publish(map(), State.t()) :: Workbench.Cmd.t()
+  def publish(props, %State{} = state) do
+    Cmd.async(
       fn ->
         state.client_module.publish(
-          Map.fetch!(model.context, :api_base_url),
+          Map.fetch!(props.context, :api_base_url),
           state.room_id,
           state.publication_workspace || %{},
           state.publish_bindings,
-          operator_module: Map.get(model.context, :operator_module),
-          tenant_id: Map.get(model.context, :tenant_id, "workspace-local"),
-          actor_id: Map.get(model.context, :actor_id, "operator-1")
+          operator_module: Map.get(props.context, :operator_module),
+          tenant_id: Map.get(props.context, :tenant_id, "workspace-local"),
+          actor_id: Map.get(props.context, :actor_id, "operator-1")
         )
       end,
       &{:published, &1}

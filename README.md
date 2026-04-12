@@ -37,7 +37,8 @@ This repo currently contains:
 - `jido_hive_switchyard_site`
   Jido Hive resource/action mapping over generic Switchyard contracts
 - `jido_hive_switchyard_tui`
-  Jido Hive operator workflow mounted on the generic Switchyard host
+  Jido Hive operator workflow integrated through the generic Switchyard
+  component runtime
 - `jido_hive_web`
   Phoenix LiveView browser UI over the same shared operator surface
 - `examples/jido_hive_console`
@@ -214,7 +215,7 @@ combination of:
 - [jido_hive_switchyard_site/README.md](jido_hive_switchyard_site/README.md)
   Jido Hive site adapter for Switchyard
 - [jido_hive_switchyard_tui/README.md](jido_hive_switchyard_tui/README.md)
-  Jido Hive operator workflow mounted on Switchyard
+  Jido Hive operator workflow on the Switchyard component runtime
 - [jido_hive_web/README.md](jido_hive_web/README.md)
   Phoenix LiveView browser UI over the shared operator surface
 - [examples/jido_hive_console/README.md](examples/jido_hive_console/README.md)

@@ -2,69 +2,112 @@ defmodule JidoHive.Switchyard.TUI.RoomsView do
   @moduledoc false
 
   alias JidoHive.Switchyard.TUI.State
-  alias Switchyard.TUI.{Model, ScreenUI}
+  alias ExRatatui.Style
+  alias Workbench.Node
+  alias Workbench.Widgets.{Detail, Help, LogStream, Modal, Pane, StatusBar}
 
-  @spec widgets(Model.t(), ExRatatui.Frame.t(), State.t()) :: list()
-  def widgets(%Model{} = model, %ExRatatui.Frame{} = frame, %State{} = state) do
-    area = ScreenUI.root_area(frame)
-
-    [header_area, workflow_area, main_area, input_area, footer_area, status_area] =
-      ExRatatui.Layout.split(area, :vertical, [
-        {:length, 3},
-        {:length, 8},
-        {:min, 10},
-        {:length, 5},
-        {:length, 2},
-        {:length, 1}
-      ])
-
-    [left_area, center_area, right_area] =
-      ExRatatui.Layout.split(main_area, :horizontal, [
-        {:percentage, 34},
-        {:percentage, 28},
-        {:percentage, 38}
-      ])
-
-    [conversation_area, events_area] =
-      ExRatatui.Layout.split(left_area, :vertical, [{:min, 8}, {:length, 7}])
-
+  @spec node(State.t()) :: Workbench.Node.t()
+  def node(%State{} = state) do
     panes = workspace_panes(state)
 
-    widgets = [
-      {ScreenUI.pane(header_title(state), header_lines(state), border_fg: :cyan), header_area},
-      {ScreenUI.pane("Workflow", panes.workflow, border_fg: :cyan), workflow_area},
-      {ScreenUI.pane("Conversation", panes.conversation, border_fg: :cyan), conversation_area},
-      {ScreenUI.pane("Events", panes.events, border_fg: :green), events_area},
-      {ScreenUI.pane(center_title(state), panes.graph, border_fg: :yellow), center_area},
-      {ScreenUI.pane("Selected Detail", panes.detail, border_fg: :green), right_area},
-      {ScreenUI.pane("Compose Steering Message", String.split(state.draft, "\n"),
-         border_fg: :yellow
-       ), input_area},
-      {ScreenUI.text_widget(footer_text(state), style: ScreenUI.meta_style()), footer_area},
-      {ScreenUI.text_widget(model.status_line,
-         style: ScreenUI.status_style(model.status_severity),
-         wrap: false
-       ), status_area}
-    ]
+    base =
+      Node.vstack(
+        :rooms_root,
+        [
+          Pane.new(
+            id: :header,
+            title: header_title(state),
+            lines: header_lines(state),
+            border_fg: :cyan
+          ),
+          Pane.new(id: :workflow, title: "Workflow", lines: panes.workflow, border_fg: :cyan),
+          Node.hstack(
+            :main,
+            [
+              Node.vstack(
+                :left,
+                [
+                  LogStream.new(
+                    id: :conversation,
+                    title: "Conversation",
+                    lines: panes.conversation,
+                    border_fg: :cyan
+                  ),
+                  Pane.new(id: :events, title: "Events", lines: panes.events, border_fg: :green)
+                ],
+                constraints: [{:min, 8}, {:length, 7}]
+              ),
+              Pane.new(
+                id: :graph,
+                title: center_title(state),
+                lines: panes.graph,
+                border_fg: :yellow
+              ),
+              Detail.new(
+                id: :detail,
+                title: "Selected Detail",
+                lines: panes.detail,
+                border_fg: :green
+              )
+            ],
+            constraints: [{:percentage, 34}, {:percentage, 28}, {:percentage, 38}]
+          ),
+          Pane.new(
+            id: :input,
+            title: "Compose Steering Message",
+            lines: String.split(state.draft, "\n"),
+            border_fg: :yellow
+          ),
+          Help.new(id: :help, title: "Keys", lines: [footer_text(state)], border_fg: :dark_gray),
+          StatusBar.new(
+            id: :status,
+            text: state.status_line,
+            style: status_style(state.status_severity)
+          )
+        ],
+        constraints: [
+          {:length, 3},
+          {:length, 8},
+          {:min, 10},
+          {:length, 5},
+          {:length, 2},
+          {:length, 1}
+        ]
+      )
 
     case state.overlay do
       %{kind: :provenance, payload: provenance} ->
-        widgets ++
-          [ScreenUI.popup("Provenance", provenance_lines(provenance), frame, border_fg: :yellow)]
-
-      %{kind: :publish} ->
-        widgets ++
-          [
-            ScreenUI.popup(
-              "Publish",
-              publication_lines(state.publication_workspace || %{}, state),
-              frame,
+        %Node{
+          id: :overlay,
+          kind: :portal,
+          children: [
+            base,
+            Modal.new(
+              id: :provenance,
+              title: "Provenance",
+              lines: provenance_lines(provenance),
               border_fg: :yellow
             )
           ]
+        }
+
+      %{kind: :publish} ->
+        %Node{
+          id: :overlay,
+          kind: :portal,
+          children: [
+            base,
+            Modal.new(
+              id: :publish,
+              title: "Publish",
+              lines: publication_lines(state.publication_workspace || %{}, state),
+              border_fg: :yellow
+            )
+          ]
+        }
 
       _other ->
-        widgets
+        base
     end
   end
 
@@ -99,6 +142,10 @@ defmodule JidoHive.Switchyard.TUI.RoomsView do
   defp footer_text(_state),
     do:
       "Up/Down select context  ·  Enter send  ·  Ctrl+E provenance  ·  Ctrl+P publish  ·  Ctrl+R refresh  ·  Ctrl+C clear draft  ·  Esc back  ·  Ctrl+Q quit"
+
+  defp status_style(:error), do: %Style{fg: :red, modifiers: [:bold]}
+  defp status_style(:warn), do: %Style{fg: :yellow}
+  defp status_style(_severity), do: %Style{fg: :green}
 
   defp workspace_panes(%State{screen: :rooms} = state) do
     %{

@@ -158,6 +158,24 @@ defmodule JidoHive.Build.DependencyResolver do
     )
   end
 
+  def switchyard_tui_framework(opts \\ []) do
+    resolve(
+      :workbench_tui_framework,
+      ["../switchyard/core/workbench_tui_framework"],
+      [git: @switchyard_repo, branch: "main", sparse: "core/workbench_tui_framework"],
+      opts
+    )
+  end
+
+  def switchyard_widgets(opts \\ []) do
+    resolve(
+      :workbench_widgets,
+      ["../switchyard/core/workbench_widgets"],
+      [git: @switchyard_repo, branch: "main", sparse: "core/workbench_widgets"],
+      opts
+    )
+  end
+
   defp resolve(app, local_paths, fallback_opts, opts) do
     case workspace_path(local_paths) do
       nil -> {app, Keyword.merge(fallback_opts, opts)}

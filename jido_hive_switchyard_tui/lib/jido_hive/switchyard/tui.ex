@@ -4,10 +4,10 @@ defmodule JidoHive.Switchyard.TUI do
   """
 
   alias JidoHive.Switchyard.Site
-  alias JidoHive.Switchyard.TUI.RoomsMount
   alias Switchyard.TUI.EscriptBootstrap
 
   @default_local_api_base_url "http://127.0.0.1:4000/api"
+  @rooms_app_id "jido-hive.rooms"
 
   @spec run(keyword()) :: :ok | {:error, term()}
   def run(opts \\ []) do
@@ -21,8 +21,7 @@ defmodule JidoHive.Switchyard.TUI do
       |> Keyword.drop([:bootstrap_module, :switchyard_tui_module])
       |> Keyword.merge(
         site_modules: [Switchyard.Site.Local, Site],
-        mount_modules: [RoomsMount],
-        open_app: RoomsMount.id(),
+        open_app: @rooms_app_id,
         api_base_url: Keyword.get(opts, :api_base_url, @default_local_api_base_url),
         subject: Keyword.get(opts, :subject, Keyword.get(opts, :participant_id, "alice")),
         participant_id: Keyword.get(opts, :participant_id, "alice"),

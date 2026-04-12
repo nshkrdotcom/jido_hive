@@ -8,7 +8,7 @@ This repo has six relevant Mix apps:
 - `jido_hive_client` – reusable operator/session client and headless CLI
 - `jido_hive_worker_runtime` – relay worker runtime and worker CLI
 - `jido_hive_switchyard_site` – Jido Hive site adapter over Switchyard contracts
-- `jido_hive_switchyard_tui` – Jido Hive operator workflow mounted on Switchyard
+- `jido_hive_switchyard_tui` – Jido Hive operator workflow on the Switchyard component runtime
 - `examples/jido_hive_console` – runnable composition layer and smoke helper
 
 Architecture rule:
