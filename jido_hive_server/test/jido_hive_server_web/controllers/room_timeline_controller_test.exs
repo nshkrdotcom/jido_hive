@@ -123,8 +123,8 @@ defmodule JidoHiveServerWeb.RoomTimelineControllerTest do
     assert %{
              "data" => [
                %{"kind" => "room.created"},
-               %{"kind" => "context.contradiction.detected"},
-               %{"kind" => "context.downstream.invalidated"}
+               %{"kind" => "contradiction.detected"},
+               %{"kind" => "downstream.invalidated"}
              ]
            } = json_response(timeline_conn, 200)
   end

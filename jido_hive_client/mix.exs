@@ -50,6 +50,7 @@ defmodule JidoHiveClient.MixProject do
   defp deps do
     [
       {:jason, "~> 1.4"},
+      {:jido_hive_context_graph, path: "../jido_hive_context_graph"},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
       {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false},
       {:ex_doc, "~> 0.40", only: [:dev, :test], runtime: false}

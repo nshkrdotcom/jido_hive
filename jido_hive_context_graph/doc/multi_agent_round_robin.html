@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta http-equiv="x-ua-compatible" content="ie=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="generator" content="ExDoc v0.40.1">
+    <meta name="project" content="jido_hive_context_graph v0.1.0">
+
+
+    <title>Developer Guide: Multi-Agent Round Robin — jido_hive_context_graph v0.1.0</title>
+
+    <link rel="stylesheet" href="dist/html-elixir-YJO4MOOW.css" />
+
+    <script defer src="dist/sidebar_items-376F0662.js"></script>
+    <script defer src="docs_config.js"></script>
+    <script defer src="dist/html-YU4BZFVS.js"></script>
+
+  </head>
+  <body>
+    <script>(()=>{var t="ex_doc:settings",e="dark";var o="dark",s="light";var E="sidebar_state",n="closed";var r="sidebar_width";var a="sidebar-open";var i=new URLSearchParams(window.location.search),S=i.get("theme")||JSON.parse(localStorage.getItem(t)||"{}").theme;(S===o||S!==s&&window.matchMedia("(prefers-color-scheme: dark)").matches)&&document.body.classList.add(e);var d=sessionStorage.getItem(E),A=d!==n&&!window.matchMedia(`screen and (max-width: ${768}px)`).matches;document.body.classList.toggle(a,A);var c=sessionStorage.getItem(r);c&&document.body.style.setProperty("--sidebarWidth",`${c}px`);var p=/(Macintosh|iPhone|iPad|iPod)/.test(window.navigator.userAgent);document.documentElement.classList.toggle("apple-os",p);})();
+</script>
+
+<div class="body-wrapper">
+
+<button id="sidebar-menu" class="sidebar-button sidebar-toggle" aria-label="toggle sidebar" aria-controls="sidebar">
+  <i class="ri-menu-line ri-lg" title="Collapse/expand sidebar"></i>
+</button>
+
+<nav id="sidebar" class="sidebar">
+
+  <div class="sidebar-header">
+    <div class="sidebar-projectInfo">
+
+      <div>
+        <a href="https://github.com/nshkrdotcom/jido_hive" class="sidebar-projectName" translate="no">
+jido_hive_context_graph
+        </a>
+        <div class="sidebar-projectVersion" translate="no">
+          v0.1.0
+        </div>
+      </div>
+    </div>
+    <ul id="sidebar-list-nav" class="sidebar-list-nav" role="tablist" data-extras="Pages"></ul>
+  </div>
+</nav>
+
+<output role="status" id="toast"></output>
+
+<main class="content page-extra" id="main" data-type="extras">
+  <div id="content" class="content-inner">
+    <div class="top-search">
+      <div class="search-settings">
+        <form class="search-bar" action="search.html">
+          <label class="search-label">
+            <span class="sr-only">Search documentation of jido_hive_context_graph</span>
+            <div class="search-input-wrapper">
+              <input name="q" type="text" class="search-input" placeholder="Press / to search" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" />
+              <button type="button" tabindex="-1" class="search-close-button" aria-hidden="true">
+                <i class="ri-close-line ri-lg" title="Cancel search"></i>
+              </button>
+            </div>
+          </label>
+        </form>
+        <div class="autocomplete">
+        </div>
+        <div class="engine-selector" data-multiple="false">
+          <button type="button" class="engine-button" aria-label="Select search engine" aria-haspopup="true" aria-expanded="false">
+            <i class="ri-search-2-line" aria-hidden="true"></i>
+            <span class="engine-name">Default</span>
+            <i class="ri-arrow-down-s-line" aria-hidden="true"></i>
+          </button>
+          <div class="engine-dropdown" hidden role="menu">
+
+              <button type="button"
+                      class="engine-option"
+                      data-engine-url="search.html?q="
+                      role="menuitemradio"
+                      aria-checked="true">
+                <span class="name">Default</span>
+                <span class="help">In-browser search</span>
+              </button>
+
+          </div>
+        </div>
+        <button class="icon-settings display-settings">
+          <i class="ri-settings-3-line"></i>
+          <span class="sr-only">Settings</span>
+        </button>
+      </div>
+    </div>
+
+<div id="top-content">
+  <div class="heading-with-actions top-heading">
+    <h1>Developer Guide: Multi-Agent Round Robin</h1>
+
+<a href="multi_agent_round_robin.md" title="Copy Markdown (hold Ctrl/Cmd and click it to open as Markdown)" class="copy-markdown icon-action" rel="help">
+  <i class="ri-markdown-line" aria-hidden="true"></i>
+  <span class="sr-only">Copy Markdown</span>
+</a>
+
+
+      <a href="https://github.com/nshkrdotcom/jido_hive/blob/main/../docs/developer/multi_agent_round_robin.md#L1" title="View Source" class="icon-action" rel="help">
+        <i class="ri-code-s-slash-line" aria-hidden="true"></i>
+        <span class="sr-only">View Source</span>
+      </a>
+
+  </div>
+
+
+<h2 id="why-this-exists" class="section-heading"><a href="#why-this-exists" class="hover-link"><i class="ri-link-m" aria-hidden="true"></i></a><span class="text">Why This Exists</span></h2><p>The original demo proved the relay and local execution path, but it still
+encoded a two-client story in too many places:</p><ul><li>room payloads hardcoded <code class="inline">architect</code> and <code class="inline">skeptic</code></li><li>default turn counts were fixed</li><li>the operator tooling assumed exactly two client wrappers</li><li>the docs described a specialized protocol instead of the underlying runtime</li></ul><p>This guide describes the incremental change that generalized the demo without
+turning it into a larger protocol framework.</p><h2 id="design-goal" class="section-heading"><a href="#design-goal" class="hover-link"><i class="ri-link-m" aria-hidden="true"></i></a><span class="text">Design Goal</span></h2><p>The target was an incremental architectural step:</p><ul><li>keep the coordinator authoritative</li><li>keep clients generic</li><li>distribute work across 1 to 39 connected workers</li><li>keep the algorithm intentionally simple</li><li>preserve a clean upgrade path for future coordinator strategies</li></ul><p>The current demo is therefore a generalized workload distributor, not a
+peer-to-peer collaboration fabric.</p><h2 id="feature-changes-vs-configuration-changes" class="section-heading"><a href="#feature-changes-vs-configuration-changes" class="hover-link"><i class="ri-link-m" aria-hidden="true"></i></a><span class="text">Feature Changes vs Configuration Changes</span></h2><p>The implementation deliberately separates feature changes from configuration and
+operator changes.</p><h3 id="feature-changes" class="section-heading"><a href="#feature-changes" class="hover-link"><i class="ri-link-m" aria-hidden="true"></i></a><span class="text">Feature Changes</span></h3><p>These changed the runtime model:</p><ul><li>added <code class="inline">execution_plan</code> to room state</li><li>locked the selected worker set at room creation</li><li>derived the default turn budget from the locked participant count</li><li>changed coordinator assignment from fixed roles to round-robin worker
+selection plus coordinator-assigned turn roles</li><li>added room-local exclusion for abandoned workers</li><li>ignored late results from abandoned turns</li></ul><h3 id="configuration-and-operator-changes" class="section-heading"><a href="#configuration-and-operator-changes" class="hover-link"><i class="ri-link-m" aria-hidden="true"></i></a><span class="text">Configuration And Operator Changes</span></h3><p>These changed how the demo is run:</p><ul><li>added <code class="inline">bin/client-worker</code></li><li>updated <code class="inline">bin/client</code> defaults to a generic worker identity</li><li>changed <code class="inline">bin/hive-clients</code> from role launchers to generic worker fan-out</li><li>changed <code class="inline">setup/hive create-room</code> and <code class="inline">live-demo</code> to discover connected relay
+targets</li><li>changed <code class="inline">run-room</code> to use the locked plan by default when <code class="inline">max_assignments</code> is not
+specified</li></ul><p>Keeping those concerns separate made it possible to test the runtime logic
+directly while letting the shell tooling stay thin.</p><h2 id="execution-plan" class="section-heading"><a href="#execution-plan" class="hover-link"><i class="ri-link-m" aria-hidden="true"></i></a><span class="text">Execution Plan</span></h2><p>The execution plan struct defined in
+<code class="inline">lib/jido_hive_server/collaboration/execution_plan.ex</code> is the core of the
+change.</p><p>It currently stores:</p><ul><li><code class="inline">strategy</code></li><li><code class="inline">participant_count</code></li><li><code class="inline">planned_turn_count</code></li><li><code class="inline">completed_turn_count</code></li><li><code class="inline">round_robin_index</code></li><li><code class="inline">excluded_target_ids</code></li><li><code class="inline">locked_participants</code></li></ul><p>The current strategy is intentionally minimal:</p><p><code class="inline">planned_turn_count = participant_count * 3</code></p><p>The stage mapping is fixed:</p><ul><li>pass 1 through all workers: <code class="inline">proposal</code></li><li>pass 2 through all workers: <code class="inline">critique</code></li><li>pass 3 through all workers: <code class="inline">resolution</code></li></ul><p>That gives the demo a visible buildup while remaining predictable enough for
+tests and operator tooling.</p><h2 id="coordinator-role-assignment" class="section-heading"><a href="#coordinator-role-assignment" class="hover-link"><i class="ri-link-m" aria-hidden="true"></i></a><span class="text">Coordinator Role Assignment</span></h2><p>Workers no longer imply room roles.</p><p>Each worker registers as a generic participant with a generic target. The
+coordinator assigns a turn role at dispatch time:</p><ul><li><code class="inline">proposer</code></li><li><code class="inline">critic</code></li><li><code class="inline">resolver</code></li></ul><p>That assignment is embedded in the collaboration envelope and echoed back in the
+job payload. The worker logs now show both:</p><ul><li>the local client identity</li><li>the assigned role for the current turn</li></ul><p>This keeps the worker runtime generic while preserving a structured collaboration
+shape for the demo.</p><h2 id="locked-budget-semantics" class="section-heading"><a href="#locked-budget-semantics" class="hover-link"><i class="ri-link-m" aria-hidden="true"></i></a><span class="text">Locked Budget Semantics</span></h2><p>The important semantic change is that the room budget is logical, not merely a
+count of job attempts.</p><p>Example:</p><ul><li>10 workers selected at room creation</li><li>default plan is 30 completed turns</li><li>one worker drops on turn 7</li><li>the room still targets 30 completed turns, but the remaining workers absorb
+the rest of the schedule</li></ul><p>That is why <code class="inline">abandon_turn</code> does not increment <code class="inline">completed_turn_count</code>.</p><p>The room loop now drives toward a target completed-turn count instead of a raw
+attempt counter.</p><h2 id="drop-off-handling" class="section-heading"><a href="#drop-off-handling" class="hover-link"><i class="ri-link-m" aria-hidden="true"></i></a><span class="text">Drop-Off Handling</span></h2><p>Two failure classes mattered for the generalized flow.</p><h3 id="offline-before-assignment" class="section-heading"><a href="#offline-before-assignment" class="hover-link"><i class="ri-link-m" aria-hidden="true"></i></a><span class="text">Offline Before Assignment</span></h3><p>If a target is already offline when the coordinator is choosing the next worker,
+the room simply skips it because <code class="inline">select_next_participant/2</code> only considers live
+targets.</p><h3 id="drop-off-or-timeout-after-turn-open" class="section-heading"><a href="#drop-off-or-timeout-after-turn-open" class="hover-link"><i class="ri-link-m" aria-hidden="true"></i></a><span class="text">Drop-Off Or Timeout After Turn Open</span></h3><p>If the room has already opened a turn and the worker disappears or never
+responds in time:</p><ul><li>the turn is marked <code class="inline">abandoned</code></li><li>the target is added to <code class="inline">execution_plan.excluded_target_ids</code></li><li>the room continues with the remaining workers</li></ul><p>That room-local exclusion is important even if the target is still globally
+visible for a brief moment, because it prevents a single bad worker from being
+selected repeatedly inside the same room.</p><h2 id="timeout-and-late-result-handling" class="section-heading"><a href="#timeout-and-late-result-handling" class="hover-link"><i class="ri-link-m" aria-hidden="true"></i></a><span class="text">Timeout And Late Result Handling</span></h2><p>Two correctness fixes were required to make the generalized budget safe.</p><h3 id="deadline-aware-polling" class="section-heading"><a href="#deadline-aware-polling" class="hover-link"><i class="ri-link-m" aria-hidden="true"></i></a><span class="text">Deadline-Aware Polling</span></h3><p>The original polling loop only checked for timeout before sleeping. If the poll
+interval exceeded the requested timeout, a late completion could arrive and
+still be accepted.</p><p>The fix was to:</p><ul><li>compute the remaining deadline on each poll</li><li>sleep for <code class="inline">min(poll_interval, remaining_deadline)</code></li><li>fail immediately when the remaining budget reaches zero</li></ul><h3 id="ignoring-late-results" class="section-heading"><a href="#ignoring-late-results" class="hover-link"><i class="ri-link-m" aria-hidden="true"></i></a><span class="text">Ignoring Late Results</span></h3><p>Once a turn is abandoned, any later <code class="inline">job.result</code> for that job must be ignored.</p><p><code class="inline">ApplyResult</code> now only mutates room state when the incoming result matches the
+currently running turn. If the room has already advanced past that turn, the
+result becomes a no-op.</p><p>Without that guard, timed-out workers could still increment the completed-turn
+count later and corrupt the room history.</p><h2 id="operator-surface" class="section-heading"><a href="#operator-surface" class="hover-link"><i class="ri-link-m" aria-hidden="true"></i></a><span class="text">Operator Surface</span></h2><p>The shell tooling now mirrors the runtime model:</p><ul><li><code class="inline">bin/client-worker --worker-index N</code> launches one generic worker</li><li><code class="inline">bin/hive-clients</code> launches 1, 2, or a custom 1..39 worker set in one terminal</li><li><code class="inline">setup/hive wait-targets --count N</code> waits for enough workers</li><li><code class="inline">setup/hive create-room --participant-count N</code> locks a subset of the live
+workers</li><li><code class="inline">setup/hive live-demo</code> defaults to all connected workers when no explicit
+count is provided</li></ul><p>This means the control terminal and the server no longer need to know anything
+about <code class="inline">architect</code> or <code class="inline">skeptic</code>.</p><p>Legacy wrappers still exist for compatibility, but they are no longer the
+primary story.</p><h2 id="why-the-coordinator-still-chooses-roles" class="section-heading"><a href="#why-the-coordinator-still-chooses-roles" class="hover-link"><i class="ri-link-m" aria-hidden="true"></i></a><span class="text">Why The Coordinator Still Chooses Roles</span></h2><p>The coordinator remains authoritative for this slice because it keeps the model
+simple:</p><ul><li>workers stay stateless beyond the current prompt plus shared history</li><li>the room can serialize collaboration cleanly</li><li>the operator can reason about the exact planned turn budget</li><li>tests stay deterministic</li></ul><p>This is a good midpoint between a toy two-client demo and a more open-ended
+multi-agent protocol.</p><h2 id="clean-extension-paths" class="section-heading"><a href="#clean-extension-paths" class="hover-link"><i class="ri-link-m" aria-hidden="true"></i></a><span class="text">Clean Extension Paths</span></h2><p>The current architecture is intentionally prepared for future strategies.</p><p>Clean next steps include:</p><ul><li>new <code class="inline">execution_plan.strategy</code> values</li><li>dynamic stage counts</li><li>specialized worker capability filters</li><li>coordinator policies that choose subsets by capability or prior output quality</li><li>richer room blocking and recovery policies</li></ul><p>Those can now be added without rewriting the operator flow or reverting to
+hardcoded participant identities.</p>
+
+</div>
+
+<div class="bottom-actions" id="bottom-actions">
+  <div class="bottom-actions-item">
+
+      <a href="setup_toolkit.html" class="bottom-actions-button" rel="prev">
+        <span class="subheader">
+          ← Previous Page
+        </span>
+        <span class="title">
+Setup Toolkit
+        </span>
+      </a>
+
+  </div>
+  <div class="bottom-actions-item">
+
+  </div>
+</div>
+    <footer class="footer">
+
+        <p>
+
+          <span class="line">
+            <button class="a-main footer-button display-quick-switch" title="Go to package docs">
+              Go to package docs
+            </button>
+
+              <a href="llms.txt" target="_blank">
+                View llms.txt
+              </a>
+
+
+              <a href="jido_hive_context_graph.epub">
+                Download ePub version
+              </a>
+
+          </span>
+        </p>
+
+        <p class="built-using">
+          Built using
+          <a href="https://github.com/elixir-lang/ex_doc" title="ExDoc" target="_blank" rel="help noopener" translate="no">ExDoc</a> (v0.40.1) for the
+
+            <a href="https://elixir-lang.org" title="Elixir" target="_blank" translate="no">Elixir programming language</a>
+
+        </p>
+
+
+    </footer>
+  </div>
+</main>
+</div>
+
+  </body>
+</html>

@@ -8,10 +8,10 @@ defmodule JidoHiveServer.Collaboration.CommandHandler do
     event_type =
       case command.type do
         :create_room -> :room_created
-        :open_assignment -> :assignment_opened
-        :record_contribution -> :contribution_recorded
-        :abandon_assignment -> :assignment_abandoned
-        :set_runtime_state -> :runtime_state_changed
+        :open_assignment -> :assignment_created
+        :record_contribution -> :contribution_submitted
+        :abandon_assignment -> :assignment_expired
+        :set_runtime_state -> :room_status_changed
       end
 
     with {:ok, event} <- room_event(command, event_type) do

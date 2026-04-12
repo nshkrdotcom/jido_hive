@@ -2,7 +2,7 @@ defmodule JidoHiveServer.Publications do
   @moduledoc false
 
   alias Jido.Integration.V2
-  alias JidoHiveServer.Collaboration.ContextDeduper
+  alias JidoHiveContextGraph.ContextDeduper
   alias JidoHiveServer.Persistence
 
   defmodule Gateway do

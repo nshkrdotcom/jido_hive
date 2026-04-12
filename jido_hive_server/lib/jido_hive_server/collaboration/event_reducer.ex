@@ -2,7 +2,7 @@ defmodule JidoHiveServer.Collaboration.EventReducer do
   @moduledoc false
 
   alias JidoHiveServer.Collaboration.DispatchPolicy.Registry, as: PolicyRegistry
-  alias JidoHiveServer.Collaboration.Schema.{Assignment, ContextObject, Contribution, RoomEvent}
+  alias JidoHiveServer.Collaboration.Schema.{Assignment, Contribution, RoomEvent}
   alias JidoHiveServer.Collaboration.SnapshotProjection
 
   @max_tracked_event_ids 256
@@ -28,8 +28,49 @@ defmodule JidoHiveServer.Collaboration.EventReducer do
     Map.merge(snapshot, payload)
   end
 
-  defp reduce_event(snapshot, %RoomEvent{type: :assignment_opened, payload: payload}) do
+  defp reduce_event(snapshot, %RoomEvent{type: :room_status_changed, payload: payload}) do
+    %{snapshot | status: value(payload, "status") || snapshot.status}
+  end
+
+  defp reduce_event(snapshot, %RoomEvent{type: :room_phase_changed, payload: payload}) do
+    Map.put(snapshot, :phase, value(payload, "phase"))
+  end
+
+  defp reduce_event(snapshot, %RoomEvent{type: :participant_joined, payload: payload}) do
+    participant = map_value(payload, "participant")
+    participant_id = value(participant, "participant_id") || value(participant, "id")
+
+    participants =
+      snapshot
+      |> Map.get(:participants, [])
+      |> Enum.reject(fn existing ->
+        value(existing, "participant_id") == participant_id or
+          value(existing, "id") == participant_id
+      end)
+      |> Kernel.++([participant])
+
+    Map.put(snapshot, :participants, participants)
+  end
+
+  defp reduce_event(snapshot, %RoomEvent{type: :participant_left, payload: payload}) do
+    participant_id = value(payload, "participant_id") || value(payload, "id")
+
+    participants =
+      snapshot
+      |> Map.get(:participants, [])
+      |> Enum.reject(fn existing ->
+        value(existing, "participant_id") == participant_id or
+          value(existing, "id") == participant_id
+      end)
+
+    Map.put(snapshot, :participants, participants)
+  end
+
+  defp reduce_event(snapshot, %RoomEvent{type: :assignment_created, payload: payload}) do
     assignment_payload = map_value(payload, "assignment")
+
+    assignment_payload =
+      if assignment_payload == %{}, do: payload, else: assignment_payload
 
     case Assignment.new(assignment_payload) do
       {:ok, assignment} ->
@@ -38,7 +79,7 @@ defmodule JidoHiveServer.Collaboration.EventReducer do
         %{
           snapshot
           | current_assignment: assignment_map,
-            assignments: snapshot.assignments ++ [assignment_map],
+            assignments: upsert_assignment(snapshot.assignments, assignment_map),
             next_assignment_seq: snapshot.next_assignment_seq + 1,
             status: "running"
         }
@@ -48,39 +89,124 @@ defmodule JidoHiveServer.Collaboration.EventReducer do
     end
   end
 
-  defp reduce_event(snapshot, %RoomEvent{} = event) when event.type == :contribution_recorded do
+  defp reduce_event(snapshot, %RoomEvent{type: :assignment_opened, payload: payload}) do
+    reduce_event(snapshot, %RoomEvent{type: :assignment_created, payload: payload})
+  end
+
+  defp reduce_event(snapshot, %RoomEvent{type: :contribution_submitted, payload: payload}) do
     contribution_payload =
-      event.payload
+      payload
       |> map_value("contribution")
+      |> case do
+        %{} = nested when map_size(nested) > 0 ->
+          nested
+
+        _other ->
+          payload
+      end
       |> Map.put_new("contribution_id", "contrib-#{snapshot.next_contribution_seq}")
 
     case Contribution.new(contribution_payload) do
       {:ok, contribution} ->
         contribution_map = Map.from_struct(contribution)
 
-        {context_objects, next_context_seq} =
-          materialize_context_objects(snapshot, contribution_map, event)
-
-        assignments = complete_assignment(snapshot.assignments, contribution_map)
-
-        updated =
-          snapshot
-          |> Map.put(
-            :current_assignment,
-            clear_current_assignment(snapshot.current_assignment, contribution_map.assignment_id)
-          )
-          |> Map.put(:assignments, assignments)
-          |> Map.put(:contributions, snapshot.contributions ++ [contribution_map])
-          |> Map.put(:context_objects, snapshot.context_objects ++ context_objects)
-          |> Map.put(:next_context_seq, next_context_seq)
-          |> Map.put(:next_contribution_seq, snapshot.next_contribution_seq + 1)
-          |> increment_completed_slots(contribution_map.assignment_id)
-
-        %{updated | status: policy_status(updated)}
+        snapshot
+        |> Map.put(:contributions, snapshot.contributions ++ [contribution_map])
+        |> Map.put(:next_contribution_seq, snapshot.next_contribution_seq + 1)
 
       {:error, _reason} ->
         snapshot
     end
+  end
+
+  defp reduce_event(snapshot, %RoomEvent{type: :contribution_recorded, payload: payload}) do
+    contribution_payload =
+      payload
+      |> map_value("contribution")
+      |> case do
+        %{} = nested when map_size(nested) > 0 ->
+          nested
+
+        _other ->
+          payload
+      end
+      |> Map.put_new("contribution_id", "contrib-#{snapshot.next_contribution_seq}")
+
+    case Contribution.new(contribution_payload) do
+      {:ok, contribution} ->
+        contribution_map = Map.from_struct(contribution)
+        assignment_id = contribution.assignment_id
+
+        updated =
+          snapshot
+          |> Map.put(:contributions, snapshot.contributions ++ [contribution_map])
+          |> Map.put(:next_contribution_seq, snapshot.next_contribution_seq + 1)
+
+        if is_binary(assignment_id) and assignment_id != "" do
+          updated =
+            updated
+            |> Map.put(
+              :current_assignment,
+              clear_current_assignment(snapshot.current_assignment, assignment_id)
+            )
+            |> Map.put(
+              :assignments,
+              update_assignment_status(
+                snapshot.assignments,
+                assignment_id,
+                contribution.status,
+                contribution.summary
+              )
+            )
+            |> increment_completed_slots(assignment_id)
+
+          %{updated | status: policy_status(updated)}
+        else
+          updated
+        end
+
+      {:error, _reason} ->
+        snapshot
+    end
+  end
+
+  defp reduce_event(snapshot, %RoomEvent{type: :assignment_completed, payload: payload}) do
+    assignment_id = value(payload, "assignment_id")
+    result_summary = value(payload, "result_summary")
+    status = value(payload, "status") || "completed"
+
+    updated =
+      snapshot
+      |> Map.put(
+        :current_assignment,
+        clear_current_assignment(snapshot.current_assignment, assignment_id)
+      )
+      |> Map.put(
+        :assignments,
+        update_assignment_status(snapshot.assignments, assignment_id, status, result_summary)
+      )
+      |> increment_completed_slots(assignment_id)
+
+    %{updated | status: policy_status(updated)}
+  end
+
+  defp reduce_event(snapshot, %RoomEvent{type: :assignment_expired, payload: payload}) do
+    assignment_id = value(payload, "assignment_id")
+    reason = value(payload, "reason")
+
+    updated =
+      snapshot
+      |> Map.put(
+        :current_assignment,
+        clear_current_assignment(snapshot.current_assignment, assignment_id)
+      )
+      |> Map.put(
+        :assignments,
+        update_assignment_status(snapshot.assignments, assignment_id, "expired", reason)
+      )
+      |> increment_completed_slots(assignment_id)
+
+    %{updated | status: policy_status(updated)}
   end
 
   defp reduce_event(snapshot, %RoomEvent{type: :assignment_abandoned, payload: payload}) do
@@ -93,74 +219,32 @@ defmodule JidoHiveServer.Collaboration.EventReducer do
         :current_assignment,
         clear_current_assignment(snapshot.current_assignment, assignment_id)
       )
-      |> Map.put(:assignments, abandon_assignment(snapshot.assignments, assignment_id, reason))
+      |> Map.put(
+        :assignments,
+        update_assignment_status(snapshot.assignments, assignment_id, "abandoned", reason)
+      )
       |> increment_completed_slots(assignment_id)
 
     %{updated | status: policy_status(updated)}
   end
 
-  defp reduce_event(snapshot, %RoomEvent{type: :runtime_state_changed, payload: payload}) do
-    %{snapshot | status: value(payload, "status") || snapshot.status}
-  end
-
   defp reduce_event(snapshot, _event), do: snapshot
 
-  defp materialize_context_objects(snapshot, contribution, event) do
-    drafts = Map.get(contribution, :context_objects, [])
+  defp upsert_assignment(assignments, assignment) do
+    assignment_id = Map.get(assignment, :assignment_id)
 
-    Enum.map_reduce(drafts, snapshot.next_context_seq, fn draft, seq ->
-      attrs = %{
-        context_id: "ctx-#{seq}",
-        authored_by: %{
-          participant_id: contribution.participant_id,
-          participant_role: contribution.participant_role,
-          target_id: contribution.target_id,
-          capability_id: contribution.capability_id
-        },
-        provenance: %{
-          contribution_id: contribution.contribution_id,
-          assignment_id: contribution.assignment_id,
-          consumed_context_ids: contribution.consumed_context_ids,
-          source_event_ids: [event.event_id],
-          authority_level: contribution.authority_level,
-          contribution_type: contribution.contribution_type
-        },
-        inserted_at: event.recorded_at
-      }
-
-      context_object =
-        case ContextObject.from_draft(draft, attrs) do
-          {:ok, context_object} -> Map.from_struct(context_object)
-          {:error, _reason} -> nil
-        end
-
-      {context_object, seq + 1}
-    end)
-    |> then(fn {context_objects, next_seq} ->
-      {Enum.reject(context_objects, &is_nil/1), next_seq}
-    end)
+    assignments
+    |> Enum.reject(&(Map.get(&1, :assignment_id) == assignment_id))
+    |> Kernel.++([assignment])
   end
 
-  defp complete_assignment(assignments, contribution) do
-    Enum.map(assignments, fn assignment ->
-      if assignment.assignment_id == contribution.assignment_id do
-        assignment
-        |> Map.put(:status, contribution.status || "completed")
-        |> Map.put(:completed_at, DateTime.utc_now())
-        |> Map.put(:result_summary, contribution.summary)
-      else
-        assignment
-      end
-    end)
-  end
-
-  defp abandon_assignment(assignments, assignment_id, reason) do
+  defp update_assignment_status(assignments, assignment_id, status, result_summary) do
     Enum.map(assignments, fn assignment ->
       if assignment.assignment_id == assignment_id do
         assignment
-        |> Map.put(:status, "abandoned")
+        |> Map.put(:status, status)
         |> Map.put(:completed_at, DateTime.utc_now())
-        |> Map.put(:result_summary, reason)
+        |> Map.put(:result_summary, result_summary)
       else
         assignment
       end

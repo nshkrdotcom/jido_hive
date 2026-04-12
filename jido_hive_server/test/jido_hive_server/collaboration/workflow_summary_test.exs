@@ -1,7 +1,8 @@
 defmodule JidoHiveServer.Collaboration.WorkflowSummaryTest do
   use ExUnit.Case, async: true
 
-  alias JidoHiveServer.Collaboration.{SnapshotProjection, WorkflowSummary}
+  alias JidoHiveContextGraph.WorkflowSummary
+  alias JidoHiveServer.Collaboration.SnapshotProjection
 
   test "builds a deterministic room workflow summary with contradiction and duplicate pressure" do
     snapshot =

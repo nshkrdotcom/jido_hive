@@ -52,39 +52,37 @@ defmodule JidoHiveServer.Collaboration.RoomTimeline do
   end
 
   defp classify(:room_created, payload) do
-    {"room.created", "Room created", payload["brief"], payload, "completed"}
+    {"room.created", "Room created", payload["brief"] || payload["name"], payload, "completed"}
   end
 
-  defp classify(:assignment_opened, payload) do
+  defp classify(:assignment_created, payload) do
     assignment = payload["assignment"] || %{}
 
     {"assignment.started", "Assignment started", assignment["objective"], assignment, "running"}
   end
 
-  defp classify(:contribution_recorded, payload) do
+  defp classify(:contribution_submitted, payload) do
     contribution = payload["contribution"] || %{}
 
     {"contribution.recorded", "Contribution recorded", contribution["summary"], contribution,
      contribution["status"] || "completed"}
   end
 
-  defp classify(:contradiction_detected, payload) do
-    {"context.contradiction.detected", "Contradiction detected",
-     "#{payload["left_context_id"]} contradicts #{payload["right_context_id"]}", payload,
-     "attention"}
+  defp classify(:assignment_completed, payload) do
+    {"assignment.completed", "Assignment completed", payload["result_summary"], payload,
+     payload["status"] || "completed"}
   end
 
-  defp classify(:downstream_invalidated, payload) do
-    {"context.downstream.invalidated", "Downstream invalidated",
-     Enum.join(payload["invalidated_context_ids"] || [], ", "), payload, "attention"}
+  defp classify(:assignment_expired, payload) do
+    {"assignment.expired", "Assignment expired", payload["reason"], payload, "expired"}
   end
 
-  defp classify(:assignment_abandoned, payload) do
-    {"assignment.abandoned", "Assignment abandoned", payload["reason"], payload, "abandoned"}
-  end
-
-  defp classify(:runtime_state_changed, payload) do
+  defp classify(:room_status_changed, payload) do
     {"room.status.changed", "Room status changed", payload["status"], payload, payload["status"]}
+  end
+
+  defp classify(:room_phase_changed, payload) do
+    {"room.phase.changed", "Room phase changed", payload["phase"], payload, "completed"}
   end
 
   defp classify(type, payload) do

@@ -12,6 +12,7 @@ defmodule JidoHiveClient.RoomInsight do
 
   @spec control_plane(map()) :: map()
   def control_plane(snapshot) when is_map(snapshot) do
+    snapshot = JidoHiveContextGraph.project(snapshot)
     summary = RoomWorkflow.summary(snapshot)
 
     %{
@@ -33,6 +34,7 @@ defmodule JidoHiveClient.RoomInsight do
 
   @spec provenance_trace(map(), String.t()) :: {:ok, map()} | {:error, :not_found}
   def provenance_trace(snapshot, context_id) when is_map(snapshot) and is_binary(context_id) do
+    snapshot = JidoHiveContextGraph.project(snapshot)
     objects = context_objects(snapshot)
     index = Map.new(objects, fn object -> {object_context_id(object), object} end)
 

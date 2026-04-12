@@ -20,7 +20,7 @@ defmodule JidoHiveServer.Collaboration.CommandHandlerTest do
     assert event.causation_id == "cmd-create-1"
   end
 
-  test "maps record_contribution commands to contribution_recorded events" do
+  test "maps record_contribution commands to contribution_submitted events" do
     {:ok, command} =
       RoomCommand.new(%{
         command_id: "cmd-contrib-1",
@@ -31,7 +31,7 @@ defmodule JidoHiveServer.Collaboration.CommandHandlerTest do
       })
 
     assert {:ok, [%RoomEvent{} = event]} = CommandHandler.handle(command)
-    assert event.type == :contribution_recorded
+    assert event.type == :contribution_submitted
     assert event.payload.summary == "Added a contribution."
   end
 end

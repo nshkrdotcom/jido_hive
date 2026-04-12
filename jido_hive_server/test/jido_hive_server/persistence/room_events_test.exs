@@ -32,6 +32,6 @@ defmodule JidoHiveServer.Persistence.RoomEventsTest do
     assert listed_first.event_id == "evt-room-1"
     assert listed_first.type == :room_created
     assert listed_second.event_id == "evt-room-2"
-    assert listed_second.type == :assignment_opened
+    assert listed_second.type == :assignment_created
   end
 end

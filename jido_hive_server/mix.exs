@@ -69,6 +69,7 @@ defmodule JidoHiveServer.MixProject do
       {:bandit, "~> 1.5"},
       {:ecto_sql, "~> 3.13"},
       {:ecto_sqlite3, "~> 0.20"},
+      {:jido_hive_context_graph, path: "../jido_hive_context_graph"},
       DependencyResolver.jido(override: true),
       DependencyResolver.jido_action(override: true),
       DependencyResolver.jido_signal(override: true),

@@ -73,6 +73,7 @@ defmodule JidoHiveClient.RoomWorkspace do
   def build(snapshot, opts \\ [])
 
   def build(snapshot, opts) when is_map(snapshot) do
+    snapshot = project_snapshot(snapshot)
     selected_context_id = Keyword.get(opts, :selected_context_id)
     control_plane = RoomInsight.control_plane(snapshot)
     display_objects = display_context_objects(snapshot)
@@ -106,11 +107,13 @@ defmodule JidoHiveClient.RoomWorkspace do
   def build(_snapshot, _opts), do: build(%{})
 
   @spec provenance(map(), String.t()) :: {:ok, map()} | {:error, :not_found}
-  def provenance(snapshot, context_id), do: RoomInsight.provenance_trace(snapshot, context_id)
+  def provenance(snapshot, context_id),
+    do: snapshot |> project_snapshot() |> RoomInsight.provenance_trace(context_id)
 
   @spec display_context_objects(map()) :: [map()]
   def display_context_objects(snapshot) do
     snapshot
+    |> project_snapshot()
     |> context_objects()
     |> Enum.reject(&duplicate_hidden?/1)
     |> Enum.sort_by(fn object ->
@@ -261,6 +264,9 @@ defmodule JidoHiveClient.RoomWorkspace do
   end
 
   defp pending_conversation_entries(_entries, _participant_id, _pending_submit), do: []
+
+  defp project_snapshot(snapshot) when is_map(snapshot),
+    do: JidoHiveContextGraph.project(snapshot)
 
   defp conversation_matches?(entry, participant_id, normalized_text) do
     conversation_participant_id(entry) == participant_id and

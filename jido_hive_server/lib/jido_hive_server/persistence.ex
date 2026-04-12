@@ -34,8 +34,11 @@ defmodule JidoHiveServer.Persistence do
         conflict_target: :room_id
       )
       |> case do
-        {:ok, record} -> rehydrate_room_snapshot(record.snapshot)
-        {:error, changeset} -> Repo.rollback(changeset)
+        {:ok, record} ->
+          record.snapshot |> rehydrate_room_snapshot() |> SnapshotProjection.project()
+
+        {:error, changeset} ->
+          Repo.rollback(changeset)
       end
     end)
     |> case do
@@ -55,16 +58,22 @@ defmodule JidoHiveServer.Persistence do
       conflict_target: :room_id
     )
     |> case do
-      {:ok, record} -> {:ok, rehydrate_room_snapshot(record.snapshot)}
-      {:error, _} = error -> error
+      {:ok, record} ->
+        {:ok, record.snapshot |> rehydrate_room_snapshot() |> SnapshotProjection.project()}
+
+      {:error, _} = error ->
+        error
     end
   end
 
   @spec fetch_room_snapshot(String.t()) :: {:ok, map()} | {:error, :room_not_found}
   def fetch_room_snapshot(room_id) when is_binary(room_id) do
     case Repo.get(RoomSnapshotRecord, room_id) do
-      %RoomSnapshotRecord{snapshot: snapshot} -> {:ok, rehydrate_room_snapshot(snapshot)}
-      nil -> {:error, :room_not_found}
+      %RoomSnapshotRecord{snapshot: snapshot} ->
+        {:ok, snapshot |> rehydrate_room_snapshot() |> SnapshotProjection.project()}
+
+      nil ->
+        {:error, :room_not_found}
     end
   end
 
@@ -275,9 +284,12 @@ defmodule JidoHiveServer.Persistence do
   defp rehydrate_room_snapshot(snapshot) when is_map(snapshot) do
     %{
       room_id: snapshot_value(snapshot, "room_id"),
+      name: snapshot_value(snapshot, "name"),
       session_id: snapshot_value(snapshot, "session_id"),
       brief: snapshot_value(snapshot, "brief"),
       rules: snapshot_list(snapshot, "rules"),
+      phase: snapshot_value(snapshot, "phase"),
+      config: snapshot_map(snapshot, "config", & &1),
       participants: snapshot_list(snapshot, "participants", &rehydrate_participant/1),
       current_assignment: snapshot_map(snapshot, "current_assignment", &rehydrate_assignment/1),
       assignments: snapshot_list(snapshot, "assignments", &rehydrate_assignment/1),
@@ -332,23 +344,28 @@ defmodule JidoHiveServer.Persistence do
 
   defp rehydrate_assignment(assignment) do
     %{
-      assignment_id: assignment["assignment_id"],
-      room_id: assignment["room_id"],
-      participant_id: assignment["participant_id"],
-      participant_role: assignment["participant_role"],
-      target_id: assignment["target_id"],
-      capability_id: assignment["capability_id"],
-      phase: assignment["phase"],
-      objective: assignment["objective"],
-      contribution_contract: assignment["contribution_contract"] || %{},
-      context_view: assignment["context_view"] || %{},
-      plan_slot_index: assignment["plan_slot_index"] || 0,
-      status: assignment["status"],
-      task_context: assignment["task_context"] || %{},
-      opened_at: datetime_value(assignment["opened_at"]),
-      completed_at: datetime_value(assignment["completed_at"]),
-      session: assignment["session"] || %{},
-      result_summary: assignment["result_summary"]
+      id: first_field(assignment, ["id", "assignment_id"]),
+      assignment_id: field(assignment, "assignment_id"),
+      room_id: field(assignment, "room_id"),
+      participant_id: field(assignment, "participant_id"),
+      participant_role: field(assignment, "participant_role"),
+      target_id: field(assignment, "target_id"),
+      capability_id: field(assignment, "capability_id"),
+      phase: field(assignment, "phase"),
+      objective: field(assignment, "objective"),
+      payload: map_field(assignment, "payload"),
+      contribution_contract: map_field(assignment, "contribution_contract"),
+      context_view: map_field(assignment, "context_view"),
+      plan_slot_index: field_or(assignment, "plan_slot_index", 0),
+      status: field(assignment, "status"),
+      deadline: datetime_field(assignment, "deadline"),
+      task_context: map_field(assignment, "task_context"),
+      opened_at: datetime_field(assignment, "opened_at"),
+      inserted_at: first_datetime_field(assignment, ["inserted_at", "opened_at"]),
+      completed_at: datetime_field(assignment, "completed_at"),
+      session: map_field(assignment, "session"),
+      meta: map_field(assignment, "meta"),
+      result_summary: field(assignment, "result_summary")
     }
   end
 
@@ -370,26 +387,31 @@ defmodule JidoHiveServer.Persistence do
 
   defp rehydrate_contribution(contribution) do
     %{
-      contribution_id: contribution["contribution_id"],
-      room_id: contribution["room_id"],
-      assignment_id: contribution["assignment_id"],
-      participant_id: contribution["participant_id"],
-      participant_role: contribution["participant_role"],
-      participant_kind: contribution["participant_kind"],
-      target_id: contribution["target_id"],
-      capability_id: contribution["capability_id"],
-      contribution_type: contribution["contribution_type"],
-      authority_level: contribution["authority_level"],
-      summary: contribution["summary"],
-      consumed_context_ids: contribution["consumed_context_ids"] || [],
-      context_objects: contribution["context_objects"] || [],
-      artifacts: contribution["artifacts"] || [],
-      events: contribution["events"] || [],
-      tool_events: contribution["tool_events"] || [],
-      approvals: contribution["approvals"] || [],
-      execution: contribution["execution"] || %{},
-      status: contribution["status"],
-      schema_version: contribution["schema_version"]
+      id: first_field(contribution, ["id", "contribution_id"]),
+      contribution_id: field(contribution, "contribution_id"),
+      room_id: field(contribution, "room_id"),
+      assignment_id: field(contribution, "assignment_id"),
+      participant_id: field(contribution, "participant_id"),
+      participant_role: field(contribution, "participant_role"),
+      participant_kind: field(contribution, "participant_kind"),
+      target_id: field(contribution, "target_id"),
+      capability_id: field(contribution, "capability_id"),
+      kind: first_field(contribution, ["kind", "contribution_type"]),
+      payload: map_field(contribution, "payload"),
+      meta: map_field(contribution, "meta"),
+      inserted_at: datetime_field(contribution, "inserted_at"),
+      contribution_type: field(contribution, "contribution_type"),
+      authority_level: field(contribution, "authority_level"),
+      summary: field(contribution, "summary"),
+      consumed_context_ids: list_field(contribution, "consumed_context_ids"),
+      context_objects: list_field(contribution, "context_objects"),
+      artifacts: list_field(contribution, "artifacts"),
+      events: list_field(contribution, "events"),
+      tool_events: list_field(contribution, "tool_events"),
+      approvals: list_field(contribution, "approvals"),
+      execution: map_field(contribution, "execution"),
+      status: field(contribution, "status"),
+      schema_version: field(contribution, "schema_version")
     }
   end
 
@@ -503,4 +525,27 @@ defmodule JidoHiveServer.Persistence do
 
   defp normalize_key(key) when is_atom(key), do: Atom.to_string(key)
   defp normalize_key(key), do: key
+
+  defp field(map, key), do: Map.get(map, key)
+
+  defp field_or(map, key, default), do: Map.get(map, key) || default
+
+  defp map_field(map, key), do: field_or(map, key, %{})
+
+  defp list_field(map, key), do: field_or(map, key, [])
+
+  defp first_field(map, keys) do
+    Enum.find_value(keys, fn key -> Map.get(map, key) end)
+  end
+
+  defp datetime_field(map, key), do: map |> field(key) |> datetime_value()
+
+  defp first_datetime_field(map, keys) do
+    keys
+    |> Enum.find_value(fn key ->
+      map
+      |> field(key)
+      |> datetime_value()
+    end)
+  end
 end

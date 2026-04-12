@@ -6,7 +6,6 @@ defmodule JidoHiveClient.RoomWorkflow do
   the server contract and provides conservative fallbacks when older snapshots do
   not yet include `workflow_summary`.
   """
-
   @type summary :: %{
           objective: String.t(),
           stage: String.t(),
@@ -21,7 +20,7 @@ defmodule JidoHiveClient.RoomWorkflow do
   @spec summary(map()) :: summary()
   def summary(snapshot) when is_map(snapshot) do
     case value(snapshot, "workflow_summary") do
-      %{} = workflow_summary ->
+      workflow_summary when is_map(workflow_summary) and map_size(workflow_summary) > 0 ->
         normalize_summary(workflow_summary, snapshot)
 
       _other ->
@@ -76,19 +75,12 @@ defmodule JidoHiveClient.RoomWorkflow do
 
   defp normalize_summary(workflow_summary, snapshot) do
     %{
-      objective:
-        value(workflow_summary, "objective") || value(snapshot, "brief") ||
-          "No room objective available",
+      objective: summary_objective(workflow_summary, snapshot),
       stage:
         value(workflow_summary, "stage") || humanize_status(value(snapshot, "status") || "idle"),
       next_action: value(workflow_summary, "next_action") || "Refresh room data",
       blockers: normalize_blockers(value(workflow_summary, "blockers")),
-      publish_ready:
-        case value(workflow_summary, "publish_ready") do
-          true -> true
-          false -> false
-          _other -> value(snapshot, "status") == "publication_ready"
-        end,
+      publish_ready: summary_publish_ready(workflow_summary, snapshot),
       publish_blockers: normalize_strings(value(workflow_summary, "publish_blockers")),
       graph_counts: normalize_map(value(workflow_summary, "graph_counts")),
       focus_candidates: normalize_list_of_maps(value(workflow_summary, "focus_candidates"))
@@ -99,7 +91,7 @@ defmodule JidoHiveClient.RoomWorkflow do
     publish_ready = value(snapshot, "status") == "publication_ready"
 
     %{
-      objective: value(snapshot, "brief") || "No room objective available",
+      objective: snapshot_objective(snapshot),
       stage: humanize_status(value(snapshot, "status") || "unavailable"),
       next_action: "Refresh room data",
       blockers: [],
@@ -148,6 +140,22 @@ defmodule JidoHiveClient.RoomWorkflow do
   defp normalize_value(value) when is_map(value), do: normalize_map(value)
   defp normalize_value(value) when is_list(value), do: Enum.map(value, &normalize_value/1)
   defp normalize_value(value), do: value
+
+  defp summary_objective(workflow_summary, snapshot) do
+    value(workflow_summary, "objective") || snapshot_objective(snapshot)
+  end
+
+  defp snapshot_objective(snapshot) do
+    value(snapshot, "name") || value(snapshot, "brief") || "No room objective available"
+  end
+
+  defp summary_publish_ready(workflow_summary, snapshot) do
+    case value(workflow_summary, "publish_ready") do
+      true -> true
+      false -> false
+      _other -> value(snapshot, "status") == "publication_ready"
+    end
+  end
 
   defp normalize_key(key) when is_atom(key), do: key
 

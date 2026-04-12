@@ -99,7 +99,8 @@ defmodule JidoHiveWorkerRuntime.ExecutionContract do
   end
 
   defp provider_from_job(job) when is_map(job) do
-    case session_value(job, "provider") || Map.get(job, "provider") do
+    case session_value(job, "provider") || payload_field(job, "provider") ||
+           Map.get(job, "provider") do
       value when is_binary(value) and value != "" -> String.to_atom(value)
       value when is_atom(value) -> value
       _other -> :codex
@@ -191,8 +192,15 @@ defmodule JidoHiveWorkerRuntime.ExecutionContract do
   defp payload_value(_key, value), do: value
 
   defp session_value(job, key) when is_map(job) do
-    case Map.get(job, "session") || Map.get(job, :session) do
+    case Map.get(job, "session") || Map.get(job, :session) || payload_field(job, "session") do
       %{} = session -> value_from_map(session, key)
+      _other -> nil
+    end
+  end
+
+  defp payload_field(job, key) when is_map(job) do
+    case Map.get(job, "payload") || Map.get(job, :payload) do
+      %{} = payload -> value_from_map(payload, key)
       _other -> nil
     end
   end

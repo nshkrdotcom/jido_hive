@@ -3,7 +3,8 @@ defmodule JidoHiveServer.Collaboration.DispatchPolicies.RoundRobin do
 
   @behaviour JidoHiveServer.Collaboration.DispatchPolicy
 
-  alias JidoHiveServer.Collaboration.{ContextView, DispatchPhaseConfig}
+  alias JidoHiveContextGraph
+  alias JidoHiveServer.Collaboration.DispatchPhaseConfig
 
   @policy_id "round_robin/v2"
 
@@ -138,7 +139,7 @@ defmodule JidoHiveServer.Collaboration.DispatchPolicies.RoundRobin do
         format: "json_object"
       },
       task_context: task_context,
-      context_view: ContextView.build(snapshot, participant, task_context),
+      context_view: JidoHiveContextGraph.build_context_view(snapshot, participant, task_context),
       plan_slot_index: slot_index
     }
   end

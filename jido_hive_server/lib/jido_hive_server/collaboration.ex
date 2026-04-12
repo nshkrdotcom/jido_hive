@@ -1,7 +1,7 @@
 defmodule JidoHiveServer.Collaboration do
   @moduledoc false
 
-  alias JidoHiveServer.Collaboration.ContextGraph
+  alias JidoHiveContextGraph.ContextGraph
   alias JidoHiveServer.Collaboration.DispatchPolicy.Registry, as: PolicyRegistry
   alias JidoHiveServer.Collaboration.RoomServer
   alias JidoHiveServer.Collaboration.RoomTimeline
@@ -13,11 +13,13 @@ defmodule JidoHiveServer.Collaboration do
 
   def create_room(attrs) when is_map(attrs) do
     room_id = value(attrs, "room_id")
-    brief = value(attrs, "brief")
+    name = value(attrs, "name") || value(attrs, "brief")
+    brief = name
     rules = list_value(attrs, "rules")
-    dispatch_policy_id = value(attrs, "dispatch_policy_id") || "round_robin/v2"
-    dispatch_policy_config = map_value(attrs, "dispatch_policy_config")
-    context_config = map_value(attrs, "context_config")
+    config = normalize_room_config(attrs)
+    dispatch_policy_id = Map.get(config, "dispatch_policy", "round_robin/v2")
+    dispatch_policy_config = Map.get(config, "dispatch_policy_opts", %{})
+    context_config = Map.get(config, "context_graph", %{})
 
     with true <-
            (is_binary(room_id) and String.trim(room_id) != "") or {:error, :room_id_required},
@@ -28,16 +30,18 @@ defmodule JidoHiveServer.Collaboration do
            ),
          {:ok, policy_module} <- PolicyRegistry.fetch_module(dispatch_policy_id),
          snapshot <-
-           base_snapshot(
-             room_id,
-             brief,
-             rules,
-             participants,
-             context_config,
-             dispatch_policy_id,
-             dispatch_policy_config,
-             policy_module
-           ),
+           base_snapshot(%{
+             room_id: room_id,
+             name: name,
+             brief: brief,
+             rules: rules,
+             participants: participants,
+             config: config,
+             context_config: context_config,
+             dispatch_policy_id: dispatch_policy_id,
+             dispatch_policy_config: dispatch_policy_config,
+             policy_module: policy_module
+           }),
          :ok <- replace_room_server(room_id),
          :ok <- Persistence.delete_room_events(room_id),
          :ok <- persist_room_created(snapshot),
@@ -124,16 +128,18 @@ defmodule JidoHiveServer.Collaboration do
 
   def list_context_objects(room_id) when is_binary(room_id) do
     with {:ok, snapshot} <- fetch_room(room_id) do
-      {:ok, Enum.map(snapshot.context_objects, &decorate_context_object(&1, snapshot))}
+      projected = SnapshotProjection.project(snapshot)
+      {:ok, Enum.map(projected.context_objects, &decorate_context_object(&1, projected))}
     end
   end
 
   def fetch_context_object(room_id, context_id)
       when is_binary(room_id) and is_binary(context_id) do
     with {:ok, snapshot} <- fetch_room(room_id),
+         projected <- SnapshotProjection.project(snapshot),
          context_object when not is_nil(context_object) <-
-           Enum.find(snapshot.context_objects, &(&1.context_id == context_id)) do
-      {:ok, decorate_context_object(context_object, snapshot)}
+           Enum.find(projected.context_objects, &(&1.context_id == context_id)) do
+      {:ok, decorate_context_object(context_object, projected)}
     else
       nil -> {:error, :context_object_not_found}
       {:error, _} = error -> error
@@ -144,6 +150,8 @@ defmodule JidoHiveServer.Collaboration do
     after_cursor = Keyword.get(opts, :after)
 
     with {:ok, snapshot} <- fetch_room(room_id) do
+      projected = SnapshotProjection.project(snapshot)
+
       timeline =
         room_id
         |> Persistence.list_room_events()
@@ -155,7 +163,9 @@ defmodule JidoHiveServer.Collaboration do
          timeline: timeline,
          next_cursor: RoomTimeline.next_cursor(timeline),
          context_objects:
-           Enum.map(snapshot.context_objects, &decorate_context_object(&1, snapshot))
+           projected
+           |> Map.get(:context_objects, [])
+           |> Enum.map(&decorate_context_object(&1, projected))
        }}
     end
   end
@@ -321,22 +331,27 @@ defmodule JidoHiveServer.Collaboration do
     end)
   end
 
-  defp base_snapshot(
-         room_id,
-         brief,
-         rules,
-         participants,
-         context_config,
-         dispatch_policy_id,
-         dispatch_policy_config,
-         policy_module
-       ) do
+  defp base_snapshot(%{
+         room_id: room_id,
+         name: name,
+         brief: brief,
+         rules: rules,
+         participants: participants,
+         config: config,
+         context_config: context_config,
+         dispatch_policy_id: dispatch_policy_id,
+         dispatch_policy_config: dispatch_policy_config,
+         policy_module: policy_module
+       }) do
     snapshot = %{
       room_id: room_id,
+      name: name,
       session_id: "room-session-#{room_id}",
       brief: brief,
       rules: rules,
       status: "idle",
+      phase: initial_phase(dispatch_policy_config),
+      config: config,
       participants: participants,
       current_assignment: %{},
       assignments: [],
@@ -463,4 +478,42 @@ defmodule JidoHiveServer.Collaboration do
 
     Map.put(decorated, :adjacency, ContextGraph.adjacency(snapshot, context_object.context_id))
   end
+
+  defp normalize_room_config(attrs) do
+    config = map_value(attrs, "config")
+
+    dispatch_policy_id =
+      value(attrs, "dispatch_policy_id") || Map.get(config, "dispatch_policy") || "round_robin/v2"
+
+    dispatch_policy_opts =
+      case map_value(attrs, "dispatch_policy_config") do
+        %{} = opts when map_size(opts) > 0 -> opts
+        _other -> map_value(config, "dispatch_policy_opts")
+      end
+
+    context_graph =
+      case map_value(attrs, "context_config") do
+        %{} = opts when map_size(opts) > 0 -> opts
+        _other -> map_value(config, "context_graph")
+      end
+
+    config
+    |> Map.put_new("dispatch_policy", dispatch_policy_id)
+    |> Map.put_new("dispatch_policy_opts", dispatch_policy_opts)
+    |> Map.put_new("context_graph", context_graph)
+  end
+
+  defp initial_phase(dispatch_policy_config) when is_map(dispatch_policy_config) do
+    dispatch_policy_config
+    |> Map.get("phases", [])
+    |> List.first()
+    |> case do
+      %{} = phase -> Map.get(phase, "phase") || Map.get(phase, :phase)
+      phase when is_binary(phase) -> phase
+      phase when is_atom(phase) -> Atom.to_string(phase)
+      _other -> nil
+    end
+  end
+
+  defp initial_phase(_dispatch_policy_config), do: nil
 end

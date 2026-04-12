@@ -1,6 +1,8 @@
 defmodule JidoHiveWorkerRuntime.CollaborationPrompt do
   @moduledoc false
 
+  @behaviour JidoHiveWorkerRuntime.AssignmentBuilder
+
   alias Jido.Harness.RunRequest
   alias JidoHiveWorkerRuntime.ExecutionContract
 
@@ -8,6 +10,11 @@ defmodule JidoHiveWorkerRuntime.CollaborationPrompt do
 
   @spec to_run_request(map(), keyword()) :: RunRequest.t()
   def to_run_request(assignment, opts \\ []) when is_map(assignment) and is_list(opts) do
+    build(assignment, opts)
+  end
+
+  @impl true
+  def build(assignment, opts) when is_map(assignment) and is_list(opts) do
     RunRequest.new!(%{
       prompt: render_prompt(assignment),
       cwd: Keyword.get(opts, :cwd, workspace_root(assignment)),
@@ -31,6 +38,12 @@ defmodule JidoHiveWorkerRuntime.CollaborationPrompt do
   @spec to_repair_run_request(String.t(), map(), keyword()) :: RunRequest.t()
   def to_repair_run_request(text, assignment, opts \\ [])
       when is_binary(text) and is_map(assignment) and is_list(opts) do
+    repair(text, assignment, opts)
+  end
+
+  @impl true
+  def repair(text, assignment, opts)
+      when is_binary(text) and is_map(assignment) and is_list(opts) do
     RunRequest.new!(%{
       prompt: render_repair_prompt(text),
       cwd: Keyword.get(opts, :cwd, workspace_root(assignment)),
@@ -51,16 +64,81 @@ defmodule JidoHiveWorkerRuntime.CollaborationPrompt do
 
   @spec render_system_prompt(map()) :: String.t()
   def render_system_prompt(assignment) when is_map(assignment) do
-    allowed_contribution_types =
-      contract_types(assignment, "allowed_contribution_types", ["reasoning"])
+    prompt_config = prompt_config(assignment)
 
-    allowed_object_types = contract_types(assignment, "allowed_object_types", ["belief", "note"])
+    case prompt_config_value(prompt_config, "system_prompt") do
+      value when is_binary(value) and value != "" ->
+        value
+
+      _other ->
+        render_default_system_prompt(assignment, prompt_config)
+    end
+  end
+
+  @spec render_prompt(map()) :: String.t()
+  def render_prompt(assignment) when is_map(assignment) do
+    prompt_config = prompt_config(assignment)
+
+    case prompt_config_value(prompt_config, "user_prompt") do
+      value when is_binary(value) and value != "" ->
+        value
+
+      _other ->
+        render_default_prompt(assignment, assignment_payload(assignment))
+    end
+  end
+
+  defp workspace_root(assignment) do
+    ExecutionContract.workspace_root(assignment)
+  end
+
+  defp render_repair_system_prompt(assignment) do
+    prompt_config = prompt_config(assignment)
+
+    case prompt_config_value(prompt_config, "repair_system_prompt") do
+      value when is_binary(value) and value != "" ->
+        value
+
+      _other ->
+        render_default_repair_system_prompt(assignment, prompt_config)
+    end
+  end
+
+  defp render_repair_prompt(text) do
+    """
+    Convert this assistant response into the required JSON contract:
+    - Return exactly one JSON object.
+    - Do not use markdown fences.
+    - Do not return wrapper keys like schema_version, room_id, participant_id, participant_role, target_id, capability_id, assignment_id, phase, objective, status, execution, tool_events, or events.
+
+    #{text}
+    """
+    |> String.trim()
+  end
+
+  defp render_default_system_prompt(assignment, prompt_config) do
+    allowed_contribution_types =
+      prompt_config_types(prompt_config, "allowed_contribution_types") ||
+        contract_types(assignment, "allowed_contribution_types", ["reasoning"])
+
+    allowed_object_types =
+      prompt_config_types(prompt_config, "allowed_object_types") ||
+        contract_types(assignment, "allowed_object_types", ["belief", "note"])
 
     allowed_relation_types =
-      contract_types(assignment, "allowed_relation_types", ["derives_from", "references"])
+      prompt_config_types(prompt_config, "allowed_relation_types") ||
+        contract_types(assignment, "allowed_relation_types", ["derives_from", "references"])
 
     relation_target_ids = available_relation_target_ids(assignment)
     relation_target_guidance = relation_target_guidance(relation_target_ids)
+
+    output_schema =
+      output_schema(
+        assignment,
+        allowed_contribution_types,
+        allowed_object_types,
+        allowed_relation_types
+      )
 
     """
     You are #{Map.get(assignment, "participant_role", "worker")} in room #{Map.get(assignment, "room_id", "unknown")}.
@@ -77,34 +155,7 @@ defmodule JidoHiveWorkerRuntime.CollaborationPrompt do
     Return the JSON object only.
 
     Required JSON contract:
-    {
-      "summary": "string",
-      "contribution_type": "#{Enum.join(allowed_contribution_types, "|")}",
-      "authority_level": "advisory|binding",
-      "context_objects": [
-        {
-          "object_type": "#{Enum.join(allowed_object_types, "|")}",
-          "title": "string",
-          "body": "string",
-          "data": {},
-          "scope": {"read": ["room"], "write": ["author"]},
-          "uncertainty": {"status": "provisional", "confidence": 0.0},
-          "relations": [
-            {
-              "relation": "#{Enum.join(allowed_relation_types, "|")}",
-              "target_id": "ctx-1"
-            }
-          ]
-        }
-      ],
-      "artifacts": [
-        {
-          "artifact_type": "note|tool_output|prompt",
-          "title": "string",
-          "body": "string"
-        }
-      ]
-    }
+    #{output_schema}
 
     Use [] for empty context_objects or artifacts.
     Do not return wrapper keys like schema_version, room_id, participant_id, participant_role, target_id, capability_id, assignment_id, phase, objective, status, execution, tool_events, or events.
@@ -112,18 +163,26 @@ defmodule JidoHiveWorkerRuntime.CollaborationPrompt do
     |> String.trim()
   end
 
-  @spec render_prompt(map()) :: String.t()
-  def render_prompt(assignment) when is_map(assignment) do
-    packet = %{
-      "assignment_id" => Map.get(assignment, "assignment_id"),
-      "room_id" => Map.get(assignment, "room_id"),
-      "participant_id" => Map.get(assignment, "participant_id"),
-      "participant_role" => Map.get(assignment, "participant_role"),
-      "phase" => Map.get(assignment, "phase"),
-      "objective" => Map.get(assignment, "objective"),
-      "contribution_contract" => Map.get(assignment, "contribution_contract", %{}),
-      "context_view" => Map.get(assignment, "context_view", %{})
-    }
+  defp render_default_prompt(assignment, payload) do
+    packet =
+      if map_size(payload) > 0 do
+        payload
+        |> Map.put_new("assignment_id", Map.get(assignment, "assignment_id"))
+        |> Map.put_new("room_id", Map.get(assignment, "room_id"))
+        |> Map.put_new("participant_id", Map.get(assignment, "participant_id"))
+        |> Map.put_new("participant_role", Map.get(assignment, "participant_role"))
+      else
+        %{
+          "assignment_id" => Map.get(assignment, "assignment_id"),
+          "room_id" => Map.get(assignment, "room_id"),
+          "participant_id" => Map.get(assignment, "participant_id"),
+          "participant_role" => Map.get(assignment, "participant_role"),
+          "phase" => Map.get(assignment, "phase"),
+          "objective" => Map.get(assignment, "objective"),
+          "contribution_contract" => Map.get(assignment, "contribution_contract", %{}),
+          "context_view" => Map.get(assignment, "context_view", %{})
+        }
+      end
 
     """
     Execute the current assignment.
@@ -136,43 +195,32 @@ defmodule JidoHiveWorkerRuntime.CollaborationPrompt do
     |> String.trim()
   end
 
-  defp workspace_root(assignment) do
-    ExecutionContract.workspace_root(assignment)
-  end
-
-  defp render_repair_system_prompt(assignment) do
+  defp render_default_repair_system_prompt(assignment, prompt_config) do
     allowed_contribution_types =
-      contract_types(assignment, "allowed_contribution_types", ["reasoning"])
+      prompt_config_types(prompt_config, "allowed_contribution_types") ||
+        contract_types(assignment, "allowed_contribution_types", ["reasoning"])
 
-    allowed_object_types = contract_types(assignment, "allowed_object_types", ["belief", "note"])
+    allowed_object_types =
+      prompt_config_types(prompt_config, "allowed_object_types") ||
+        contract_types(assignment, "allowed_object_types", ["belief", "note"])
+
+    allowed_relation_types =
+      prompt_config_types(prompt_config, "allowed_relation_types") ||
+        contract_types(assignment, "allowed_relation_types", ["derives_from", "references"])
+
+    output_schema =
+      output_schema(
+        assignment,
+        allowed_contribution_types,
+        allowed_object_types,
+        allowed_relation_types
+      )
 
     """
     Convert the provided assistant response into strict JSON only.
 
     Required JSON contract:
-    {
-      "summary": "string",
-      "contribution_type": "#{Enum.join(allowed_contribution_types, "|")}",
-      "authority_level": "advisory|binding",
-      "context_objects": [
-        {
-          "object_type": "#{Enum.join(allowed_object_types, "|")}",
-          "title": "string",
-          "body": "string",
-          "data": {},
-          "scope": {"read": ["room"], "write": ["author"]},
-          "uncertainty": {"status": "provisional", "confidence": 0.0},
-          "relations": []
-        }
-      ],
-      "artifacts": [
-        {
-          "artifact_type": "note|tool_output|prompt",
-          "title": "string",
-          "body": "string"
-        }
-      ]
-    }
+    #{output_schema}
 
     Preserve meaning. Return JSON only.
     Do not return wrapper keys like schema_version, room_id, participant_id, participant_role, target_id, capability_id, assignment_id, phase, objective, status, execution, tool_events, or events.
@@ -180,20 +228,9 @@ defmodule JidoHiveWorkerRuntime.CollaborationPrompt do
     |> String.trim()
   end
 
-  defp render_repair_prompt(text) do
-    """
-    Convert this assistant response into the required JSON contract:
-    - Return exactly one JSON object.
-    - Do not use markdown fences.
-    - Do not return wrapper keys like schema_version, room_id, participant_id, participant_role, target_id, capability_id, assignment_id, phase, objective, status, execution, tool_events, or events.
-
-    #{text}
-    """
-    |> String.trim()
-  end
-
   defp contract_types(assignment, key, default) do
-    case get_in(assignment, ["contribution_contract", key]) do
+    case get_in(assignment_payload(assignment), ["contribution_contract", key]) ||
+           get_in(assignment, ["contribution_contract", key]) do
       values when is_list(values) and values != [] -> values
       _other -> default
     end
@@ -201,7 +238,7 @@ defmodule JidoHiveWorkerRuntime.CollaborationPrompt do
 
   defp available_relation_target_ids(assignment) do
     assignment
-    |> get_in(["context_view", "context_objects"])
+    |> context_view()
     |> case do
       objects when is_list(objects) ->
         objects
@@ -214,6 +251,12 @@ defmodule JidoHiveWorkerRuntime.CollaborationPrompt do
     end
   end
 
+  defp context_view(assignment) do
+    get_in(assignment_payload(assignment), ["context_view", "context_objects"]) ||
+      get_in(assignment, ["context_view", "context_objects"]) ||
+      []
+  end
+
   defp relation_target_guidance([]) do
     "There are no valid existing relation targets in this assignment. Use relations: [] for every context object."
   end
@@ -224,5 +267,86 @@ defmodule JidoHiveWorkerRuntime.CollaborationPrompt do
     Only use target_id values from that list. Never invent ids. If none apply, use relations: [].
     """
     |> String.trim()
+  end
+
+  defp assignment_payload(assignment) when is_map(assignment) do
+    case Map.get(assignment, "payload") || Map.get(assignment, :payload) do
+      %{} = payload -> payload
+      _other -> %{}
+    end
+  end
+
+  defp prompt_config(assignment) do
+    payload = assignment_payload(assignment)
+
+    case Map.get(payload, "prompt_config") || Map.get(payload, :prompt_config) do
+      %{} = config -> config
+      _other -> %{}
+    end
+  end
+
+  defp prompt_config_value(config, key) when is_map(config) do
+    Map.get(config, key) || Map.get(config, existing_atom_key(key))
+  end
+
+  defp prompt_config_types(config, key) when is_map(config) do
+    case prompt_config_value(config, key) do
+      values when is_list(values) and values != [] -> values
+      _other -> nil
+    end
+  end
+
+  defp output_schema(
+         assignment,
+         allowed_contribution_types,
+         allowed_object_types,
+         allowed_relation_types
+       ) do
+    case prompt_config_value(prompt_config(assignment), "output_schema") do
+      value when is_binary(value) and value != "" ->
+        value
+
+      %{} = schema ->
+        Jason.encode!(schema, pretty: true)
+
+      _other ->
+        """
+        {
+          "summary": "string",
+          "contribution_type": "#{Enum.join(allowed_contribution_types, "|")}",
+          "authority_level": "advisory|binding",
+          "context_objects": [
+            {
+              "object_type": "#{Enum.join(allowed_object_types, "|")}",
+              "title": "string",
+              "body": "string",
+              "data": {},
+              "scope": {"read": ["room"], "write": ["author"]},
+              "uncertainty": {"status": "provisional", "confidence": 0.0},
+              "relations": [
+                {
+                  "relation": "#{Enum.join(allowed_relation_types, "|")}",
+                  "target_id": "ctx-1"
+                }
+              ]
+            }
+          ],
+          "artifacts": [
+            {
+              "artifact_type": "note|tool_output|prompt",
+              "title": "string",
+              "body": "string"
+            }
+          ]
+        }
+        """
+        |> String.trim()
+    end
+  end
+
+  defp existing_atom_key(key) when is_binary(key) do
+    String.to_existing_atom(key)
+  rescue
+    ArgumentError -> nil
   end
 end

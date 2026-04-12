@@ -24,9 +24,10 @@ defmodule JidoHiveWorkerRuntime.Executor.Session do
     provider = Keyword.get(opts, :provider, provider(assignment))
     model = Keyword.get(opts, :model) || default_model(provider)
     reasoning_effort = Keyword.get(opts, :reasoning_effort, :low)
+    assignment_builder = assignment_builder(opts)
 
     request =
-      CollaborationPrompt.to_run_request(
+      assignment_builder.build(
         assignment,
         run_request_opts(assignment, Keyword.put(opts, :model, model))
       )
@@ -207,13 +208,20 @@ defmodule JidoHiveWorkerRuntime.Executor.Session do
   defp default_model(:codex), do: "gpt-5.4"
   defp default_model(_provider), do: nil
 
+  defp assignment_builder(opts) do
+    case Keyword.get(opts, :assignment_builder, CollaborationPrompt) do
+      module when is_atom(module) -> module
+      _other -> CollaborationPrompt
+    end
+  end
+
   defp repair_response(session, assignment, run, opts, text) do
     case RepairPolicy.attempt_repair?(opts, text) do
       true ->
         Status.repair_started(assignment, :invalid_contribution_json, text)
 
         request =
-          CollaborationPrompt.to_repair_run_request(
+          assignment_builder(opts).repair(
             text,
             assignment,
             RepairPolicy.request_opts(assignment, opts)

@@ -20,7 +20,7 @@ defmodule JidoHiveServer.Collaboration.RoomTimelineTest do
       RoomEvent.new(%{
         event_id: "evt-assignment-opened-1",
         room_id: "room-1",
-        type: :assignment_opened,
+        type: :assignment_created,
         payload: %{
           assignment: %{
             assignment_id: "asn-1",
@@ -38,7 +38,7 @@ defmodule JidoHiveServer.Collaboration.RoomTimelineTest do
       RoomEvent.new(%{
         event_id: "evt-contribution-recorded-1",
         room_id: "room-1",
-        type: :contribution_recorded,
+        type: :contribution_submitted,
         payload: %{
           contribution: %{
             contribution_id: "contrib-1",

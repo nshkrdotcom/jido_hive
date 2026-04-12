@@ -252,7 +252,7 @@ defmodule JidoHiveServer.Collaboration.RoomServerTest do
     assert current.contributions == []
   end
 
-  test "persists derived contradiction and downstream invalidation events after accepted appends" do
+  test "projects stale annotations after accepted appends without persisting derived graph events" do
     room =
       start_supervised!(
         {RoomServer,
@@ -339,11 +339,7 @@ defmodule JidoHiveServer.Collaboration.RoomServerTest do
 
     event_types = Persistence.list_room_events("room-effects-1") |> Enum.map(& &1.type)
 
-    assert event_types == [
-             :contribution_recorded,
-             :contradiction_detected,
-             :downstream_invalidated
-           ]
+    assert event_types == [:contribution_submitted]
   end
 
   test "treats repeated assignment contributions from the same participant as idempotent" do
@@ -422,8 +418,9 @@ defmodule JidoHiveServer.Collaboration.RoomServerTest do
     assert length(second.context_objects) == 1
 
     assert Enum.map(Persistence.list_room_events("room-idempotent-1"), & &1.type) == [
-             :assignment_opened,
-             :contribution_recorded
+             :assignment_created,
+             :contribution_submitted,
+             :assignment_completed
            ]
   end
 

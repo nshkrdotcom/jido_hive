@@ -11,6 +11,7 @@ defmodule JidoHiveWorkerRuntime.Boundary.ProtocolCodec do
   def normalize_assignment_start(payload) when is_map(payload) do
     with {:ok, assignment} <- unwrap_assignment(payload),
          assignment <- normalize_value(assignment),
+         :ok <- validate_map_field(assignment, "payload"),
          :ok <- validate_map_field(assignment, "session"),
          :ok <- validate_map_field(assignment, "contribution_contract"),
          :ok <- validate_map_field(assignment, "context_view"),
@@ -18,6 +19,7 @@ defmodule JidoHiveWorkerRuntime.Boundary.ProtocolCodec do
          :ok <- require_fields(assignment, @required_assignment_fields) do
       {:ok,
        assignment
+       |> merge_payload_defaults()
        |> Map.put_new("session", %{})
        |> Map.put_new("contribution_contract", %{})
        |> Map.put_new("context_view", %{})
@@ -117,7 +119,7 @@ defmodule JidoHiveWorkerRuntime.Boundary.ProtocolCodec do
   end
 
   defp validate_nested_session(assignment) do
-    session = Map.get(assignment, "session", %{})
+    session = Map.get(assignment, "session") || get_in(assignment, ["payload", "session"]) || %{}
 
     validate_map_fields(session, [
       "execution_surface",
@@ -179,6 +181,21 @@ defmodule JidoHiveWorkerRuntime.Boundary.ProtocolCodec do
     map
     |> Enum.reject(fn {_key, value} -> is_nil(value) end)
     |> Map.new()
+  end
+
+  defp merge_payload_defaults(assignment) do
+    case Map.get(assignment, "payload") do
+      %{} = payload ->
+        assignment
+        |> Map.put_new("phase", Map.get(payload, "phase"))
+        |> Map.put_new("objective", Map.get(payload, "objective"))
+        |> Map.put_new("session", Map.get(payload, "session"))
+        |> Map.put_new("contribution_contract", Map.get(payload, "contribution_contract"))
+        |> Map.put_new("context_view", Map.get(payload, "context_view"))
+
+      _other ->
+        assignment
+    end
   end
 
   defp sanitize_contribution(contribution, relation_target_filter) when is_map(contribution) do
