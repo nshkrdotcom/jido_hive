@@ -20,7 +20,7 @@ defmodule JidoHiveServer.MixProject do
       aliases: aliases(),
       deps: deps(),
       listeners: [Phoenix.CodeReloader],
-      dialyzer: [plt_add_apps: [:ex_unit]]
+      dialyzer: [plt_add_apps: [:ex_unit, :mix]]
     ]
   end
 

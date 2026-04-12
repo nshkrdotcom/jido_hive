@@ -27,9 +27,6 @@ defmodule JidoHiveServerWeb.RoomRunsController do
 
       {:error, :room_run_not_found} ->
         render_error(conn, :not_found, "room_run_not_found", "Run not found")
-
-      {:error, reason} ->
-        render_error(conn, :unprocessable_entity, "invalid_room_run", inspect(reason))
     end
   end
 

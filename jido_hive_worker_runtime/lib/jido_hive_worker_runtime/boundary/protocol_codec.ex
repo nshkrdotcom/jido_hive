@@ -159,10 +159,14 @@ defmodule JidoHiveWorkerRuntime.Boundary.ProtocolCodec do
         value -> value
       end)
 
-    %URI{scheme: scheme, host: uri.host, port: uri.port, path: path}
-    |> URI.to_string()
+    host = uri.host || "127.0.0.1"
+
+    "#{scheme}://#{host}#{port_suffix(uri.port)}#{path}"
     |> String.trim_trailing("/")
   end
+
+  defp port_suffix(nil), do: ""
+  defp port_suffix(port) when is_integer(port), do: ":#{port}"
 
   defp unwrap_assignment(payload) when is_map(payload) do
     payload = normalize_value(payload)
