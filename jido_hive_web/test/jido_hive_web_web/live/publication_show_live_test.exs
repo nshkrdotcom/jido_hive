@@ -29,7 +29,7 @@ defmodule JidoHiveWebWeb.PublicationShowLiveTest do
   end
 
   test "renders publication workspace and publishes bindings", %{conn: conn} do
-    {:ok, view, html} = live(conn, ~p"/rooms/room-1/publish")
+    {:ok, view, html} = live(conn, ~p"/rooms/room-1/publications")
 
     assert html =~ "data-screen=\"publication-show\""
     assert html =~ "Draft"
@@ -37,12 +37,13 @@ defmodule JidoHiveWebWeb.PublicationShowLiveTest do
     assert html =~ "rich_text"
     assert html =~ "Repository name"
     assert html =~ "Publish Controls"
+    assert html =~ "publication-run-1"
 
     assert view
            |> element("#publish-form")
            |> render_submit(%{"publish" => %{"github" => %{"repo" => "nshkrdotcom/jido_hive"}}})
 
-    assert_receive {:publish_room, "room-1", payload}
+    assert_receive {:publish_publication, "room-1", payload}
     assert payload["bindings"]["github"]["repo"] == "nshkrdotcom/jido_hive"
   end
 end

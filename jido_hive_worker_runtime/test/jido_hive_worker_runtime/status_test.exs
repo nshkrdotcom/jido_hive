@@ -99,11 +99,13 @@ defmodule JidoHiveWorkerRuntime.StatusTest do
             "phase" => "analysis"
           },
           %{
-            "status" => "failed",
-            "context_objects" => [],
-            "execution" => %{
-              "text" =>
-                ~s({"summary":"bad json path","contribution_type":"reasoning","context_objects":[],"extra":"still visible"})
+            "kind" => "reasoning",
+            "meta" => %{
+              "status" => "failed",
+              "execution" => %{
+                "text" =>
+                  ~s({"summary":"bad json path","contribution_type":"reasoning","context_objects":[],"extra":"still visible"})
+              }
             }
           }
         )
@@ -111,6 +113,6 @@ defmodule JidoHiveWorkerRuntime.StatusTest do
 
     assert output =~ "response preview room=room-1 phase=analysis"
     assert output =~ ~s(preview="{\\\"summary\\\":\\\"bad json path\\\")
-    assert output =~ "completed room=room-1 phase=analysis status=failed contribution=none"
+    assert output =~ "completed room=room-1 phase=analysis status=failed contribution=reasoning"
   end
 end

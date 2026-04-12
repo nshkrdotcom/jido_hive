@@ -541,12 +541,16 @@ defmodule JidoHiveWorkerRuntime.RelayWorker do
   defp failed_contribution(assignment, reason) do
     ProtocolCodec.normalize_contribution(
       %{
-        "summary" => "runtime execution failed",
         "kind" => "reasoning",
         "status" => "failed",
-        "execution" => %{
-          "status" => "failed",
-          "error" => %{"reason" => inspect(reason)}
+        "payload" => %{
+          "summary" => "runtime execution failed"
+        },
+        "meta" => %{
+          "execution" => %{
+            "status" => "failed",
+            "error" => %{"reason" => inspect(reason)}
+          }
         }
       },
       assignment

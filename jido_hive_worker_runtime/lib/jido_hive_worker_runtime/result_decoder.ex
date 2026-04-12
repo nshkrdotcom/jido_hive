@@ -12,65 +12,40 @@ defmodule JidoHiveWorkerRuntime.ResultDecoder do
   end
 
   defp normalize(%{} = decoded) do
-    contribution = contribution_payload(decoded)
-    contribution_type = contribution_type(contribution, decoded)
+    kind = normalize_text(value(decoded, "kind"))
+    payload = map_value(decoded, "payload")
+    meta = map_value(decoded, "meta")
 
-    if is_binary(contribution_type) and String.trim(contribution_type) != "" do
+    if valid_text?(kind) do
       {:ok,
        %{
-         "summary" => normalize_summary(value(contribution, "summary"), contribution_type),
-         "contribution_type" => contribution_type,
-         "authority_level" => value(contribution, "authority_level") || "advisory",
-         "context_objects" =>
-           normalize_context_objects(context_object_source(contribution, decoded)),
-         "artifacts" => normalize_artifacts(value(contribution, "artifacts"))
+         "kind" => kind,
+         "payload" => normalize_payload(payload, kind),
+         "meta" => normalize_meta(meta)
        }}
     else
       {:error, :invalid_contract}
     end
   end
 
-  defp contribution_payload(%{} = decoded) do
-    case value(decoded, "contribution") do
-      %{} = contribution -> contribution
-      _other -> decoded
-    end
+  defp normalize_payload(payload, kind) when is_map(payload) do
+    %{}
+    |> Map.put("summary", normalize_summary(value(payload, "summary"), kind))
+    |> Map.put("context_objects", normalize_context_objects(value(payload, "context_objects")))
+    |> Map.put("artifacts", normalize_artifacts(value(payload, "artifacts")))
+    |> maybe_put("text", normalize_text(value(payload, "text")))
+    |> maybe_put("title", normalize_text(value(payload, "title")))
+    |> maybe_put("extension", map_value(payload, "extension"))
   end
 
-  defp contribution_type(contribution, decoded) do
-    value(contribution, "contribution_type") || infer_contribution_type(contribution, decoded)
+  defp normalize_meta(meta) when is_map(meta) do
+    %{}
+    |> maybe_put("authority_level", normalize_text(value(meta, "authority_level")))
+    |> maybe_put("status", normalize_text(value(meta, "status")))
   end
 
-  defp infer_contribution_type(contribution, decoded) do
-    contribution
-    |> context_object_source(decoded)
-    |> Enum.map(&legacy_object_type/1)
-    |> infer_from_object_types()
-  end
-
-  defp infer_from_object_types(object_types) do
-    cond do
-      Enum.any?(object_types, &(&1 == "decision")) -> "decision"
-      Enum.any?(object_types, &(&1 == "artifact")) -> "artifact"
-      Enum.any?(object_types, &(&1 == "constraint")) -> "constraint"
-      object_types != [] -> "reasoning"
-      true -> nil
-    end
-  end
-
-  defp context_object_source(contribution, decoded) do
-    cond do
-      is_list(value(contribution, "context_objects")) -> value(contribution, "context_objects")
-      is_list(value(contribution, "objects")) -> value(contribution, "objects")
-      is_list(value(decoded, "contributions")) -> value(decoded, "contributions")
-      true -> []
-    end
-  end
-
-  defp normalize_summary(summary, _contribution_type) when is_binary(summary) and summary != "",
-    do: summary
-
-  defp normalize_summary(_summary, contribution_type), do: "#{contribution_type} contribution"
+  defp normalize_summary(summary, _kind) when is_binary(summary) and summary != "", do: summary
+  defp normalize_summary(_summary, kind), do: "#{kind} contribution"
 
   defp normalize_context_objects(context_objects) when is_list(context_objects) do
     context_objects
@@ -81,17 +56,11 @@ defmodule JidoHiveWorkerRuntime.ResultDecoder do
   defp normalize_context_objects(_other), do: []
 
   defp normalize_context_object(context_object) when is_map(context_object) do
-    nested_object =
-      case value(context_object, "object") do
-        %{} = object -> object
-        _other -> %{}
-      end
-
     %{
-      "object_type" => legacy_object_type(context_object),
-      "title" => legacy_title(context_object, nested_object),
-      "body" => legacy_body(context_object, nested_object),
-      "data" => legacy_data(context_object, nested_object),
+      "object_type" => normalize_text(value(context_object, "object_type")),
+      "title" => normalize_text(value(context_object, "title")),
+      "body" => normalize_text(value(context_object, "body")),
+      "data" => map_value(context_object, "data"),
       "scope" => normalize_scope(value(context_object, "scope")),
       "uncertainty" => normalize_uncertainty(value(context_object, "uncertainty")),
       "relations" => normalize_relations(value(context_object, "relations"))
@@ -113,50 +82,6 @@ defmodule JidoHiveWorkerRuntime.ResultDecoder do
   defp empty_context_object?(%{"object_type" => nil, "title" => nil, "body" => nil}), do: true
   defp empty_context_object?(_context_object), do: false
 
-  defp legacy_object_type(context_object) do
-    nested_object =
-      case value(context_object, "object") do
-        %{} = object -> object
-        _other -> %{}
-      end
-
-    value(context_object, "object_type") ||
-      value(context_object, "type") ||
-      value(nested_object, "object_type") ||
-      value(nested_object, "kind") ||
-      value(nested_object, "type")
-  end
-
-  defp legacy_title(context_object, nested_object) do
-    value(context_object, "title") ||
-      value(nested_object, "title") ||
-      compact_title(legacy_body(context_object, nested_object))
-  end
-
-  defp legacy_body(context_object, nested_object) do
-    body_candidate =
-      first_present([
-        value(context_object, "body"),
-        value(context_object, "text"),
-        value(context_object, "content"),
-        value(nested_object, "body"),
-        value(nested_object, "text"),
-        value(nested_object, "content")
-      ])
-
-    normalize_body(body_candidate)
-  end
-
-  defp legacy_data(context_object, nested_object) do
-    %{}
-    |> merge_map(value(context_object, "data"))
-    |> maybe_put("object_id", value(context_object, "object_id") || value(nested_object, "id"))
-    |> maybe_put(
-      "content",
-      map_content(value(context_object, "content"), value(nested_object, "content"))
-    )
-  end
-
   defp normalize_scope(scope) when is_map(scope) do
     %{
       "read" => list_of_strings(value(scope, "read") || ["room"]),
@@ -177,36 +102,31 @@ defmodule JidoHiveWorkerRuntime.ResultDecoder do
   defp normalize_uncertainty(_other), do: %{"status" => "provisional", "confidence" => nil}
 
   defp normalize_relations(relations) when is_list(relations) do
-    Enum.map(relations, fn relation ->
+    relations
+    |> Enum.map(fn relation ->
       %{
-        "relation" =>
-          value(relation, "relation") || value(relation, "relation_type") ||
-            value(relation, "type"),
-        "target_id" => value(relation, "target_id") || value(relation, "to")
+        "relation" => normalize_text(value(relation, "relation")),
+        "target_id" => normalize_text(value(relation, "target_id"))
       }
     end)
+    |> Enum.reject(&(is_nil(Map.get(&1, "relation")) or is_nil(Map.get(&1, "target_id"))))
   end
 
   defp normalize_relations(_other), do: []
 
   defp normalize_artifacts(artifacts) when is_list(artifacts) do
-    Enum.map(artifacts, fn artifact ->
+    artifacts
+    |> Enum.map(fn artifact ->
       %{
-        "artifact_type" =>
-          value(artifact, "artifact_type") || value(artifact, "object_type") ||
-            value(artifact, "type"),
-        "title" =>
-          value(artifact, "title") || compact_title(normalize_body(value(artifact, "body"))),
-        "body" =>
-          normalize_body(
-            first_present([
-              value(artifact, "body"),
-              value(artifact, "text"),
-              value(artifact, "content")
-            ])
-          )
+        "artifact_type" => normalize_text(value(artifact, "artifact_type")),
+        "title" => normalize_text(value(artifact, "title")),
+        "body" => normalize_text(value(artifact, "body"))
       }
     end)
+    |> Enum.reject(
+      &(is_nil(Map.get(&1, "artifact_type")) and is_nil(Map.get(&1, "title")) and
+          is_nil(Map.get(&1, "body")))
+    )
   end
 
   defp normalize_artifacts(_other), do: []
@@ -214,53 +134,28 @@ defmodule JidoHiveWorkerRuntime.ResultDecoder do
   defp list_of_strings(list) when is_list(list), do: Enum.filter(list, &is_binary/1)
   defp list_of_strings(_other), do: []
 
-  defp normalize_body(value) when is_binary(value), do: value
+  defp maybe_put(map, _key, nil), do: map
+  defp maybe_put(map, _key, %{} = value) when map_size(value) == 0, do: map
+  defp maybe_put(map, key, value), do: Map.put(map, key, value)
 
-  defp normalize_body(value) when is_map(value) do
-    first_present([
-      Map.get(value, "body"),
-      Map.get(value, "text"),
-      Map.get(value, "content"),
-      Map.get(value, "decision"),
-      Map.get(value, "summary"),
-      Map.get(value, "purpose"),
-      Map.get(value, "rationale")
-    ]) || Jason.encode!(value)
-  end
-
-  defp normalize_body(_other), do: nil
-
-  defp compact_title(nil), do: nil
-
-  defp compact_title(body) when is_binary(body) do
-    body
-    |> String.trim()
-    |> String.split(~r/\s+/, trim: true)
-    |> Enum.take(8)
-    |> Enum.join(" ")
-    |> case do
-      "" -> nil
-      title -> title
+  defp map_value(map, key) when is_map(map) and is_binary(key) do
+    case value(map, key) do
+      %{} = value -> value
+      _other -> %{}
     end
   end
 
-  defp first_present(values) when is_list(values) do
-    Enum.find_value(values, fn
-      value when is_binary(value) and value != "" -> value
-      value when is_map(value) and value != %{} -> value
-      _other -> nil
-    end)
+  defp normalize_text(value) when is_binary(value) do
+    case String.trim(value) do
+      "" -> nil
+      normalized -> normalized
+    end
   end
 
-  defp merge_map(map, %{} = incoming), do: Map.merge(map, incoming)
-  defp merge_map(map, _other), do: map
+  defp normalize_text(_other), do: nil
 
-  defp maybe_put(map, _key, nil), do: map
-  defp maybe_put(map, key, value), do: Map.put(map, key, value)
-
-  defp map_content(%{} = content, _fallback), do: content
-  defp map_content(_content, %{} = fallback), do: fallback
-  defp map_content(_content, _fallback), do: nil
+  defp valid_text?(value) when is_binary(value), do: value != ""
+  defp valid_text?(_value), do: false
 
   defp value(map, key) when is_map(map) and is_binary(key) do
     Map.get(map, key) || Map.get(map, existing_atom_key(key))

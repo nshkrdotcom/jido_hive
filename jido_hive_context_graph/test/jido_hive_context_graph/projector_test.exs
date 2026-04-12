@@ -5,12 +5,12 @@ defmodule JidoHiveContextGraph.ProjectorTest do
 
   test "keeps contribution-derived context ids stable across repeated projections" do
     snapshot = %{
-      room_id: "room-1",
-      brief: "Design a substrate.",
-      status: "idle",
+      id: "room-1",
+      name: "Design a substrate.",
+      status: "waiting",
       contributions: [
         %{
-          "contribution_id" => "contrib-1",
+          "id" => "contrib-1",
           "participant_id" => "worker-01",
           "payload" => %{
             "context_objects" => [
@@ -32,8 +32,8 @@ defmodule JidoHiveContextGraph.ProjectorTest do
 
   test "preserves explicit workflow summaries when contributions are absent" do
     snapshot = %{
-      room_id: "room-1",
-      brief: "Stabilize the auth path",
+      id: "room-1",
+      name: "Stabilize the auth path",
       workflow_summary: %{
         "stage" => "Resolve contradictions",
         "next_action" => "Review ctx-2",
@@ -55,7 +55,7 @@ defmodule JidoHiveContextGraph.ProjectorTest do
 
   test "validator enforces participant scope from legacy context_config" do
     room = %{
-      room_id: "room-1",
+      id: "room-1",
       context_config: %{
         participant_scopes: %{
           "worker-01" => %{
@@ -65,14 +65,16 @@ defmodule JidoHiveContextGraph.ProjectorTest do
           }
         }
       },
-      participants: [%{"participant_id" => "worker-01"}]
+      participants: [%{"id" => "worker-01", "kind" => "agent", "meta" => %{"role" => "worker"}}]
     }
 
     contribution = %{
       "participant_id" => "worker-01",
-      "context_objects" => [
-        %{"object_type" => "decision", "title" => "Do not allow"}
-      ]
+      "payload" => %{
+        "context_objects" => [
+          %{"object_type" => "decision", "title" => "Do not allow"}
+        ]
+      }
     }
 
     assert {:error, {:scope_violation, %{kind: :drafted_object_type, object_type: "decision"}}} =

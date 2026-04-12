@@ -8,8 +8,8 @@ It sits above `jido_hive_client` and below presentation packages such as:
 - `jido_hive_switchyard_tui`
 - `jido_hive_web`
 
-This package owns reusable service composition for room and publication
-workflows. It does not own:
+This package owns reusable service composition for core room workflows. It does
+not own:
 
 - authoritative server truth
 - terminal rendering
@@ -39,7 +39,7 @@ JidoHiveSurface.load_room_workspace("http://127.0.0.1:4000/api", "room-1")
 Normalize a create-room form payload:
 
 ```elixir
-JidoHiveSurface.normalize_create_attrs(%{"brief" => "Investigate auth path"})
+JidoHiveSurface.normalize_create_attrs(%{"name" => "Investigate auth path"})
 ```
 
 ## Responsibilities
@@ -50,17 +50,14 @@ JidoHiveSurface.normalize_create_attrs(%{"brief" => "Investigate auth path"})
 - create rooms
 - start and inspect room runs
 - submit steering messages
-- load publication workspaces
-- publish room outputs
-
 ## Package Boundary
 
 Use this package when you need:
 
-- a UI-neutral application seam for room and publication workflows
+- a UI-neutral application seam for core room workflows
 - the same workflow interface from TUI and web packages
-- reusable room create/run/publish orchestration that should not live inside
-  Phoenix or terminal code
+- reusable room create/run orchestration that should not live inside Phoenix or
+  terminal code
 
 Do not use this package for:
 
@@ -93,8 +90,9 @@ The shared surface currently supports:
 - room create
 - room run
 - steering-message submit
-- publication workspace loading
-- publication submit
+
+Publication planning and execution now live in the explicit
+`jido_hive_publications` extension package.
 
 ## Developer Workflow
 

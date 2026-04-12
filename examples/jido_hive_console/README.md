@@ -16,7 +16,8 @@ It now composes:
 
 - `jido_hive_server` owns room truth
 - `jido_hive_client` owns reusable operator and room-session behavior
-- `jido_hive_surface` owns reusable UI-neutral room and publication workflows
+- `jido_hive_surface` owns reusable UI-neutral room workflows
+- `jido_hive_publications` owns explicit publication workflows
 - `jido_hive_switchyard_site` owns the Jido Hive site mapping over Switchyard
   contracts
 - `jido_hive_switchyard_tui` owns the Jido-specific terminal workflow
@@ -65,7 +66,7 @@ Built-in help:
 ```bash
 ./hive workflow room-smoke \
   --local \
-  --brief "local smoke room" \
+  --name "local smoke room" \
   --text "hello from the scripted path" \
   --text "second message"
 ```
@@ -74,7 +75,7 @@ The same helper is available from the repo root:
 
 ```bash
 bin/hive-room-smoke \
-  --brief "local smoke room" \
+  --name "local smoke room" \
   --text "hello from the scripted path"
 ```
 
@@ -119,8 +120,10 @@ mix escript.build
 ./jido_hive_client room workflow --api-base-url https://jido-hive-server-test.app.nsai.online/api --room-id <room-id>
 ./jido_hive_client room workspace --api-base-url https://jido-hive-server-test.app.nsai.online/api --room-id <room-id>
 ./jido_hive_client room provenance --api-base-url https://jido-hive-server-test.app.nsai.online/api --room-id <room-id> --context-id <context-id>
-./jido_hive_client room publish-plan --api-base-url https://jido-hive-server-test.app.nsai.online/api --room-id <room-id>
 ```
+
+Publication workflows are mounted explicitly through `jido_hive_publications`, not
+through the base `jido_hive_client` CLI.
 
 ## Examples
 

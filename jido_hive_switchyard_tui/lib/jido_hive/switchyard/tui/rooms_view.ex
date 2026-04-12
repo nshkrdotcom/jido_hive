@@ -118,7 +118,7 @@ defmodule JidoHive.Switchyard.TUI.RoomsView do
     selected =
       case State.selected_room(state) do
         nil -> "No room selected"
-        room -> room.brief || room.room_id
+        room -> room.name || room.id
       end
 
     ["Select a room workspace to inspect.", "Selected: #{selected}"]
@@ -170,7 +170,7 @@ defmodule JidoHive.Switchyard.TUI.RoomsView do
   defp rooms_lines(rooms, cursor) do
     Enum.with_index(rooms, fn room, index ->
       prefix = if index == cursor, do: "> ", else: "  "
-      "#{prefix}#{room.room_id}  ·  #{room.status}  ·  #{room.brief}"
+      "#{prefix}#{room.id}  ·  #{room.status}  ·  #{room.name}"
     end)
   end
 
@@ -178,9 +178,9 @@ defmodule JidoHive.Switchyard.TUI.RoomsView do
 
   defp rooms_detail_lines(room) do
     [
-      "Room ID: #{room.room_id}",
+      "Room ID: #{room.id}",
       "Status: #{room.status}",
-      "Brief: #{room.brief}",
+      "Name: #{room.name}",
       "Slots: #{room.completed_slots}/#{room.total_slots}"
     ]
   end

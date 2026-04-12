@@ -65,13 +65,13 @@ defmodule JidoHiveClient.Operator do
     end)
   end
 
-  @spec fetch_room_timeline(String.t(), String.t(), keyword()) ::
+  @spec list_room_events(String.t(), String.t(), keyword()) ::
           {:ok, %{entries: list(map()), next_cursor: String.t() | nil}} | {:error, term()}
-  def fetch_room_timeline(api_base_url, room_id, opts \\ [])
+  def list_room_events(api_base_url, room_id, opts \\ [])
       when is_binary(api_base_url) and is_binary(room_id) and is_list(opts) do
     http_opts =
       []
-      |> Keyword.put(:lane, Keyword.get(opts, :lane, :operator_timeline))
+      |> Keyword.put(:lane, Keyword.get(opts, :lane, :operator_events))
       |> maybe_put_option(:operation_id, Keyword.get(opts, :operation_id))
 
     with {:ok, %{"data" => events, "meta" => meta}} when is_list(events) <-
@@ -99,46 +99,6 @@ defmodule JidoHiveClient.Operator do
     end
   end
 
-  @spec fetch_room_sync(String.t(), String.t(), keyword()) ::
-          {:ok,
-           %{
-             room_snapshot: map(),
-             entries: list(map()),
-             next_cursor: String.t() | nil,
-             context_objects: list(map()),
-             operations: list(map())
-           }}
-          | {:error, term()}
-  def fetch_room_sync(api_base_url, room_id, opts \\ [])
-      when is_binary(api_base_url) and is_binary(room_id) and is_list(opts) do
-    http_opts = sync_http_opts(opts)
-
-    with {:ok, room_resource} <- fetch_room_resource(api_base_url, room_id, http_opts),
-         {:ok, assignments} <- fetch_assignments(api_base_url, room_id, http_opts),
-         {:ok, contributions} <- fetch_all_contributions(api_base_url, room_id, http_opts),
-         {:ok, %{"data" => events, "meta" => events_meta}} when is_list(events) <-
-           HTTP.get(api_base_url, "/rooms/#{room_id}/events#{after_query(opts)}", http_opts) do
-      room_snapshot = CanonicalTransport.room_snapshot(room_resource, assignments, contributions)
-      entries = CanonicalTransport.event_entries(events)
-
-      {:ok,
-       %{
-         room_snapshot: room_snapshot,
-         entries: entries,
-         next_cursor: CanonicalTransport.next_cursor(Map.get(events_meta, "next_after_sequence")),
-         context_objects:
-           Map.get(room_snapshot, :context_objects, Map.get(room_snapshot, "context_objects", [])),
-         operations: []
-       }}
-    end
-  end
-
-  @spec fetch_publication_plan(String.t(), String.t()) :: {:ok, map()} | {:error, term()}
-  def fetch_publication_plan(api_base_url, room_id)
-      when is_binary(api_base_url) and is_binary(room_id) do
-    unwrap_data(HTTP.get(api_base_url, "/rooms/#{room_id}/publication_plan"))
-  end
-
   @spec submit_contribution(String.t(), String.t(), map(), keyword()) ::
           {:ok, map()} | {:error, term()}
   def submit_contribution(api_base_url, room_id, payload, opts \\ [])
@@ -155,12 +115,6 @@ defmodule JidoHiveClient.Operator do
     unwrap_data(
       HTTP.post(api_base_url, "/rooms/#{room_id}/contributions", canonical_payload, http_opts)
     )
-  end
-
-  @spec publish_room(String.t(), String.t(), map()) :: {:ok, map()} | {:error, term()}
-  def publish_room(api_base_url, room_id, payload)
-      when is_binary(api_base_url) and is_binary(room_id) and is_map(payload) do
-    unwrap_data(HTTP.post(api_base_url, "/rooms/#{room_id}/publications", payload))
   end
 
   @spec create_room(String.t(), map()) :: {:ok, map()} | {:error, term()}
@@ -409,12 +363,6 @@ defmodule JidoHiveClient.Operator do
   defp maybe_put_option(opts, _key, nil), do: opts
   defp maybe_put_option(opts, key, value), do: Keyword.put(opts, key, value)
 
-  defp sync_http_opts(opts) do
-    []
-    |> Keyword.put(:lane, Keyword.get(opts, :lane, :room_sync))
-    |> maybe_put_option(:operation_id, Keyword.get(opts, :operation_id))
-  end
-
   defp after_query(opts) do
     case Keyword.get(opts, :after) do
       after_cursor when is_binary(after_cursor) and after_cursor != "" ->
@@ -476,16 +424,10 @@ defmodule JidoHiveClient.Operator do
       |> Enum.map(&canonical_participant_payload/1)
 
     %{}
-    |> maybe_put_string("id", Map.get(payload, "id") || Map.get(payload, "room_id"))
-    |> maybe_put_string("name", Map.get(payload, "name") || Map.get(payload, "brief"))
+    |> maybe_put_string("id", Map.get(payload, "id"))
+    |> maybe_put_string("name", Map.get(payload, "name"))
     |> maybe_put_string("phase", Map.get(payload, "phase"))
-    |> Map.put(
-      "config",
-      config
-      |> maybe_put("dispatch_policy", Map.get(payload, "dispatch_policy_id"))
-      |> maybe_put("dispatch_policy_config", map_value(payload, "dispatch_policy_config"))
-      |> maybe_put("rules", list_value(payload, "rules"))
-    )
+    |> Map.put("config", config)
     |> Map.put("participants", participants)
   end
 

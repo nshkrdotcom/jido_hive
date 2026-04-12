@@ -6,7 +6,7 @@ defmodule JidoHive.Switchyard.TUI.RoomsComponentTest do
 
   defmodule ClientStub do
     def list_rooms(_api_base_url, _opts),
-      do: [%{room_id: "room-1", brief: "Brief", status: "running"}]
+      do: [%{id: "room-1", name: "Brief", status: "running"}]
 
     def load_room_workspace(_api_base_url, _room_id, _opts) do
       %{
@@ -35,6 +35,10 @@ defmodule JidoHive.Switchyard.TUI.RoomsComponentTest do
     def load_provenance(_api_base_url, _room_id, _context_id, _opts),
       do: {:ok, %{trace: [%{depth: 0, title: "Question", via: nil}], recommended_actions: []}}
 
+    def submit_steering(_api_base_url, _room_id, _identity, text, _opts), do: {:ok, %{text: text}}
+  end
+
+  defmodule PublicationsStub do
     def load_publication_workspace(_api_base_url, _room_id, _subject, _opts) do
       %{
         channels: [
@@ -47,7 +51,6 @@ defmodule JidoHive.Switchyard.TUI.RoomsComponentTest do
       }
     end
 
-    def submit_steering(_api_base_url, _room_id, _identity, text, _opts), do: {:ok, %{text: text}}
     def publish(_api_base_url, _room_id, _workspace, bindings, _opts), do: {:ok, bindings}
   end
 
@@ -60,8 +63,8 @@ defmodule JidoHive.Switchyard.TUI.RoomsComponentTest do
           subject: "alice",
           participant_id: "alice",
           participant_role: "coordinator",
-          authority_level: "binding",
-          client_module: ClientStub
+          client_module: ClientStub,
+          publications_module: PublicationsStub
         }
         |> Map.merge(Map.new(opts))
     }

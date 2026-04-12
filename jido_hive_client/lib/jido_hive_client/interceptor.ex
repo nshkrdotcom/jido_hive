@@ -32,35 +32,40 @@ defmodule JidoHiveClient.Interceptor do
           raise ArgumentError, "invalid intercepted contribution: #{inspect(reason)}"
       end
 
-    %{
-      "room_id" => value(attrs, :room_id),
-      "assignment_id" => value(attrs, :assignment_id),
-      "participant_id" => value(attrs, :participant_id),
-      "participant_role" => value(attrs, :participant_role) || "collaborator",
-      "participant_kind" => value(attrs, :participant_kind) || "human",
-      "target_id" => value(attrs, :target_id),
-      "capability_id" => value(attrs, :capability_id),
-      "contribution_type" => intercepted.contribution_type,
-      "authority_level" => intercepted.authority_level,
-      "summary" => intercepted.summary,
-      "context_objects" => intercepted.context_objects,
-      "artifacts" => intercepted.evidence_refs,
-      "events" => [
+    payload =
+      %{}
+      |> maybe_put("summary", intercepted.summary)
+      |> maybe_put("context_objects", intercepted.context_objects)
+      |> maybe_put("artifacts", intercepted.evidence_refs)
+
+    meta =
+      %{}
+      |> maybe_put("participant_role", value(attrs, :participant_role) || "collaborator")
+      |> maybe_put("participant_kind", value(attrs, :participant_kind) || "human")
+      |> maybe_put("target_id", value(attrs, :target_id))
+      |> maybe_put("capability_id", value(attrs, :capability_id))
+      |> maybe_put("authority_level", intercepted.authority_level)
+      |> maybe_put("events", [
         %{
           "event_type" => "chat.message",
           "body" => intercepted.chat_text,
           "tags" => intercepted.tags
         }
-      ],
-      "execution" => %{
+      ])
+      |> maybe_put("execution", %{
         "status" => "completed",
         "backend" => backend_name(intercepted.raw_backend_output),
         "interceptor" => "mock_or_local"
-      },
-      "status" => "completed"
-    }
-    |> Enum.reject(fn {_key, value} -> is_nil(value) end)
-    |> Map.new()
+      })
+      |> Map.put("status", "completed")
+
+    %{}
+    |> maybe_put("room_id", value(attrs, :room_id))
+    |> maybe_put("assignment_id", value(attrs, :assignment_id))
+    |> maybe_put("participant_id", value(attrs, :participant_id))
+    |> Map.put("kind", intercepted.contribution_type)
+    |> Map.put("payload", payload)
+    |> Map.put("meta", meta)
   end
 
   defp normalize_backend({module, opts}) when is_atom(module) and is_list(opts),
@@ -72,6 +77,11 @@ defmodule JidoHiveClient.Interceptor do
   defp backend_name(%{"backend" => backend}) when is_binary(backend), do: backend
   defp backend_name(%{backend: backend}) when is_binary(backend), do: backend
   defp backend_name(_other), do: "unknown"
+
+  defp maybe_put(map, _key, nil), do: map
+  defp maybe_put(map, _key, []), do: map
+  defp maybe_put(map, _key, %{} = value) when map_size(value) == 0, do: map
+  defp maybe_put(map, key, value), do: Map.put(map, key, value)
 
   defp value(map, key) when is_map(map) and is_atom(key) do
     Map.get(map, key) || Map.get(map, Atom.to_string(key))

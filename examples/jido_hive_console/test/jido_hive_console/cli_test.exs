@@ -63,7 +63,7 @@ defmodule JidoHiveConsole.CLITest do
   test "help_text documents the workflow room smoke flags" do
     output = CLI.help_text(:workflow_room_smoke)
 
-    assert output =~ "--brief"
+    assert output =~ "--name"
     assert output =~ "--text"
     assert output =~ "--run"
   end

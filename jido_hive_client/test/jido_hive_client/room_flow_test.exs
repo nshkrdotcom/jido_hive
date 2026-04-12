@@ -42,7 +42,7 @@ defmodule JidoHiveClient.RoomFlowTest do
         "status" => "idle",
         "timeline" => [
           %{
-            "kind" => "contribution.recorded",
+            "kind" => "contribution.submitted",
             "body" => "Hello room"
           }
         ],
@@ -100,7 +100,7 @@ defmodule JidoHiveClient.RoomFlowTest do
     flow =
       RoomFlow.ingest_snapshot(flow, %{
         "room_id" => "room-1",
-        "status" => "publication_ready",
+        "status" => "completed",
         "timeline" => [],
         "context_objects" => [],
         "operations" => [

@@ -60,7 +60,6 @@ defmodule JidoHiveContextGraph.Projector do
     snapshot
     |> Map.put(:context_objects, context_objects)
     |> Map.put(:next_context_seq, next_context_seq)
-    |> Map.put(:brief, room_objective(snapshot))
     |> Map.put(:status, room_status(snapshot))
     |> Map.put(:context_config, context_config(snapshot))
   end
@@ -68,7 +67,7 @@ defmodule JidoHiveContextGraph.Projector do
   defp build_derived_context_objects(contributions, existing_by_contribution, start_seq) do
     Enum.map_reduce(contributions, start_seq, fn contribution, seq ->
       existing_objects =
-        Map.get(existing_by_contribution, contribution_value(contribution, "contribution_id"), [])
+        Map.get(existing_by_contribution, contribution_id(contribution), [])
 
       contribution
       |> contribution_projection(existing_objects, seq)
@@ -150,11 +149,8 @@ defmodule JidoHiveContextGraph.Projector do
     payload
     |> Map.get(:context_objects, Map.get(payload, "context_objects"))
     |> case do
-      nil ->
-        Map.get(contribution, :context_objects) || Map.get(contribution, "context_objects", [])
-
-      drafts ->
-        drafts
+      drafts when is_list(drafts) -> drafts
+      _other -> []
     end
   end
 
@@ -183,7 +179,7 @@ defmodule JidoHiveContextGraph.Projector do
 
   defp provenance_attrs(contribution, payload, meta) do
     %{
-      contribution_id: contribution_value(contribution, "contribution_id"),
+      contribution_id: contribution_id(contribution),
       assignment_id: contribution_value(contribution, "assignment_id"),
       consumed_context_ids:
         Map.get(payload, "consumed_context_ids") ||
@@ -194,9 +190,8 @@ defmodule JidoHiveContextGraph.Projector do
     }
   end
 
-  defp contribution_type(contribution, meta) do
-    contribution_value(contribution, "kind") || Map.get(meta, "contribution_type") ||
-      Map.get(meta, :contribution_type)
+  defp contribution_type(contribution, _meta) do
+    contribution_value(contribution, "kind")
   end
 
   defp contribution_inserted_at(contribution) do
@@ -205,14 +200,9 @@ defmodule JidoHiveContextGraph.Projector do
       DateTime.utc_now()
   end
 
-  defp room_objective(snapshot) do
-    Map.get(snapshot, :name) || Map.get(snapshot, "name") || Map.get(snapshot, :brief) ||
-      Map.get(snapshot, "brief")
-  end
-
   defp room_status(snapshot) do
     Map.get(snapshot, :workflow_status) || Map.get(snapshot, "workflow_status") ||
-      Map.get(snapshot, :status) || Map.get(snapshot, "status") || "idle"
+      Map.get(snapshot, :status) || Map.get(snapshot, "status") || "waiting"
   end
 
   defp context_config(snapshot) do
@@ -332,7 +322,11 @@ defmodule JidoHiveContextGraph.Projector do
   defp provenance_contribution_id(%{} = object) do
     object
     |> Map.get(:provenance, Map.get(object, "provenance", %{}))
-    |> contribution_value("contribution_id")
+    |> contribution_id()
+  end
+
+  defp contribution_id(%{} = contribution) do
+    contribution_value(contribution, "id")
   end
 
   defp inserted_at(%{} = object) do

@@ -13,8 +13,7 @@ config :jido_hive_web,
   default_identity: %{
     subject: "alice",
     participant_id: "alice",
-    participant_role: "coordinator",
-    authority_level: "binding"
+    participant_role: "coordinator"
   }
 
 # Configures the endpoint

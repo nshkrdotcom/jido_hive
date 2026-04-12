@@ -109,12 +109,12 @@ defmodule JidoHiveWorkerRuntime.Status do
     emit_preview(
       "response",
       assignment,
-      get_in(contribution, ["execution", "text"]),
+      get_in(contribution, ["meta", "execution", "text"]),
       @response_preview_limit
     )
 
     emit(
-      "completed room=#{assignment["room_id"]} phase=#{phase(assignment)} status=#{contribution["status"]} " <>
+      "completed room=#{assignment["room_id"]} phase=#{phase(assignment)} status=#{contribution_status(contribution)} " <>
         "contribution=#{contribution["kind"] || "none"}#{usage_summary(contribution)}"
     )
   end
@@ -203,7 +203,7 @@ defmodule JidoHiveWorkerRuntime.Status do
   defp provider_label(_other), do: "codex"
 
   defp usage_summary(contribution) do
-    cost = get_in(contribution, ["execution", "cost"]) || %{}
+    cost = get_in(contribution, ["meta", "execution", "cost"]) || %{}
 
     input_tokens = Map.get(cost, "input_tokens")
     output_tokens = Map.get(cost, "output_tokens")
@@ -216,6 +216,6 @@ defmodule JidoHiveWorkerRuntime.Status do
   end
 
   defp contribution_status(contribution) do
-    contribution["status"] || get_in(contribution, ["meta", "status"]) || ""
+    get_in(contribution, ["meta", "status"]) || contribution["status"] || ""
   end
 end

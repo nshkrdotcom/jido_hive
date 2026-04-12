@@ -40,6 +40,7 @@ defmodule JidoHive.Switchyard.TUI.MixProject do
 
   defp deps do
     [
+      {:jido_hive_publications, path: "../jido_hive_publications"},
       {:jido_hive_surface, path: "../jido_hive_surface"},
       {:jido_hive_switchyard_site, path: "../jido_hive_switchyard_site"},
       DependencyResolver.switchyard_tui(),

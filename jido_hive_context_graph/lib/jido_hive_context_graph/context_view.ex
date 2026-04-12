@@ -11,9 +11,9 @@ defmodule JidoHiveContextGraph.ContextView do
   def build(snapshot, participant, task_context)
       when is_map(snapshot) and is_map(participant) and is_map(task_context) do
     %{
-      brief: Map.get(snapshot, :brief),
+      name: Map.get(snapshot, :name),
       rules: Map.get(snapshot, :rules, []),
-      status: Map.get(snapshot, :status, "idle"),
+      status: Map.get(snapshot, :status, "waiting"),
       context_objects:
         ContextManager.build_view(participant, task_context, snapshot)
         |> Enum.map(&normalize_context_object/1),
@@ -41,14 +41,19 @@ defmodule JidoHiveContextGraph.ContextView do
   end
 
   defp normalize_contribution(contribution) do
+    payload = Map.get(contribution, :payload, %{})
+    meta = Map.get(contribution, :meta, %{})
+
     %{
-      contribution_id: Map.get(contribution, :contribution_id),
+      contribution_id: Map.get(contribution, :id),
       participant_id: Map.get(contribution, :participant_id),
-      participant_role: Map.get(contribution, :participant_role),
-      contribution_type: Map.get(contribution, :contribution_type),
-      summary: Map.get(contribution, :summary),
-      authority_level: Map.get(contribution, :authority_level),
-      status: Map.get(contribution, :status)
+      participant_role: Map.get(meta, :participant_role),
+      contribution_type: Map.get(contribution, :kind),
+      summary:
+        Map.get(payload, :summary) || Map.get(payload, :text) || Map.get(payload, :body) ||
+          Map.get(payload, :title),
+      authority_level: Map.get(meta, :authority_level),
+      status: Map.get(meta, :status)
     }
   end
 end

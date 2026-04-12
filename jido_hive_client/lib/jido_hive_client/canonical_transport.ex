@@ -29,10 +29,8 @@ defmodule JidoHiveClient.CanonicalTransport do
 
     snapshot =
       %{
-        "room_id" => Map.get(room, "id"),
         "id" => Map.get(room, "id"),
         "name" => Map.get(room, "name"),
-        "brief" => Map.get(room, "name"),
         "status" => Map.get(room, "status"),
         "phase" => Map.get(room, "phase"),
         "config" => Map.get(room, "config", %{}),
@@ -41,11 +39,6 @@ defmodule JidoHiveClient.CanonicalTransport do
         "participants" => Enum.map(participants, &normalize_participant/1),
         "assignments" => Enum.map(assignments, &normalize_assignment/1),
         "contributions" => contributions,
-        "dispatch_policy_id" => get_in(room, ["config", "dispatch_policy"]) || "",
-        "dispatch_state" => %{
-          "completed_slots" => Map.get(assignment_counts, "completed", 0),
-          "total_slots" => assignment_total(assignment_counts)
-        },
         "assignment_counts" => assignment_counts,
         "contribution_count" => contribution_count
       }
@@ -74,43 +67,15 @@ defmodule JidoHiveClient.CanonicalTransport do
   @spec contribution_payload(map(), String.t() | nil) :: map()
   def contribution_payload(payload, room_id \\ nil) when is_map(payload) do
     payload = stringify_keys(payload)
-    existing_payload = map_value(payload, "payload")
-    existing_meta = map_value(payload, "meta")
-
-    semantic_payload =
-      existing_payload
-      |> maybe_put("summary", Map.get(payload, "summary"))
-      |> maybe_put("text", Map.get(payload, "text") || Map.get(payload, "body"))
-      |> maybe_put("title", Map.get(payload, "title"))
-      |> maybe_put("context_objects", list_value(payload, "context_objects"))
-      |> maybe_put("artifacts", list_value(payload, "artifacts"))
-      |> maybe_put("extension", map_value(payload, "extension"))
-
-    operational_meta =
-      existing_meta
-      |> maybe_put("authority_level", Map.get(payload, "authority_level"))
-      |> maybe_put("participant_role", Map.get(payload, "participant_role"))
-      |> maybe_put("participant_kind", Map.get(payload, "participant_kind"))
-      |> maybe_put("target_id", Map.get(payload, "target_id"))
-      |> maybe_put("capability_id", Map.get(payload, "capability_id"))
-      |> maybe_put("events", list_value(payload, "events"))
-      |> maybe_put("tool_events", list_value(payload, "tool_events"))
-      |> maybe_put("approvals", list_value(payload, "approvals"))
-      |> maybe_put("execution", map_value(payload, "execution"))
-      |> maybe_put("status", Map.get(payload, "status"))
-      |> maybe_put("schema_version", Map.get(payload, "schema_version"))
 
     %{}
-    |> maybe_put("id", Map.get(payload, "id") || Map.get(payload, "contribution_id"))
+    |> maybe_put("id", Map.get(payload, "id"))
     |> maybe_put("room_id", Map.get(payload, "room_id") || room_id)
     |> maybe_put("assignment_id", Map.get(payload, "assignment_id"))
     |> maybe_put("participant_id", Map.get(payload, "participant_id"))
-    |> maybe_put(
-      "kind",
-      Map.get(payload, "kind") || Map.get(payload, "contribution_type") || "chat"
-    )
-    |> Map.put("payload", semantic_payload)
-    |> Map.put("meta", operational_meta)
+    |> maybe_put("kind", Map.get(payload, "kind"))
+    |> Map.put("payload", map_value(payload, "payload"))
+    |> Map.put("meta", map_value(payload, "meta"))
   end
 
   @spec run_operation(room_run(), String.t() | nil) :: map()
@@ -166,15 +131,9 @@ defmodule JidoHiveClient.CanonicalTransport do
 
     %{
       "id" => Map.get(participant, "id"),
-      "participant_id" => Map.get(participant, "id"),
       "room_id" => Map.get(participant, "room_id"),
       "kind" => Map.get(participant, "kind"),
-      "participant_kind" => Map.get(participant, "kind"),
       "handle" => Map.get(participant, "handle"),
-      "participant_role" => Map.get(meta, "role"),
-      "authority_level" => Map.get(meta, "authority_level"),
-      "target_id" => Map.get(meta, "target_id"),
-      "capability_id" => Map.get(meta, "capability_id"),
       "meta" => meta,
       "joined_at" => Map.get(participant, "joined_at")
     }
@@ -186,22 +145,12 @@ defmodule JidoHiveClient.CanonicalTransport do
     assignment = stringify_keys(assignment)
     payload = map_value(assignment, "payload")
     meta = map_value(assignment, "meta")
-    participant_meta = map_value(meta, "participant_meta")
 
     %{
       "id" => Map.get(assignment, "id"),
-      "assignment_id" => Map.get(assignment, "id"),
       "room_id" => Map.get(assignment, "room_id"),
       "participant_id" => Map.get(assignment, "participant_id"),
-      "participant_role" => Map.get(participant_meta, "role"),
-      "target_id" => Map.get(participant_meta, "target_id"),
-      "capability_id" => Map.get(participant_meta, "capability_id"),
       "payload" => payload,
-      "phase" => Map.get(payload, "phase"),
-      "objective" => Map.get(payload, "objective"),
-      "context_view" => Map.get(payload, "context", %{}),
-      "contribution_contract" => Map.get(payload, "output_contract", %{}),
-      "session" => Map.get(payload, "executor", %{}),
       "status" => Map.get(assignment, "status"),
       "deadline" => Map.get(assignment, "deadline"),
       "inserted_at" => Map.get(assignment, "inserted_at"),
@@ -218,25 +167,10 @@ defmodule JidoHiveClient.CanonicalTransport do
 
     %{
       "id" => Map.get(contribution, "id"),
-      "contribution_id" => Map.get(contribution, "id"),
       "room_id" => Map.get(contribution, "room_id"),
       "assignment_id" => Map.get(contribution, "assignment_id"),
       "participant_id" => Map.get(contribution, "participant_id"),
-      "participant_role" => Map.get(meta, "participant_role"),
-      "participant_kind" => Map.get(meta, "participant_kind"),
-      "target_id" => Map.get(meta, "target_id"),
-      "capability_id" => Map.get(meta, "capability_id"),
       "kind" => Map.get(contribution, "kind"),
-      "contribution_type" => Map.get(contribution, "kind"),
-      "authority_level" => Map.get(meta, "authority_level"),
-      "summary" => summary(payload),
-      "context_objects" => list_value(payload, "context_objects"),
-      "artifacts" => list_value(payload, "artifacts"),
-      "events" => list_value(meta, "events"),
-      "tool_events" => list_value(meta, "tool_events"),
-      "approvals" => list_value(meta, "approvals"),
-      "execution" => map_value(meta, "execution"),
-      "status" => Map.get(meta, "status", "completed"),
       "payload" => payload,
       "meta" => meta,
       "inserted_at" => Map.get(contribution, "inserted_at")
@@ -257,10 +191,10 @@ defmodule JidoHiveClient.CanonicalTransport do
   defp event_kind("room_phase_changed"), do: "room.phase_changed"
   defp event_kind("participant_joined"), do: "participant.joined"
   defp event_kind("participant_left"), do: "participant.left"
-  defp event_kind("assignment_created"), do: "assignment.started"
+  defp event_kind("assignment_created"), do: "assignment.created"
   defp event_kind("assignment_completed"), do: "assignment.completed"
   defp event_kind("assignment_expired"), do: "assignment.expired"
-  defp event_kind("contribution_submitted"), do: "contribution.recorded"
+  defp event_kind("contribution_submitted"), do: "contribution.submitted"
   defp event_kind(type), do: type || "room.event"
 
   defp event_participant_id("participant_joined", data), do: get_in(data, ["participant", "id"])
@@ -306,24 +240,10 @@ defmodule JidoHiveClient.CanonicalTransport do
 
   defp event_body(_type, _data), do: nil
 
-  defp assignment_total(assignment_counts) do
-    assignment_counts
-    |> Map.values()
-    |> Enum.filter(&is_integer/1)
-    |> Enum.sum()
-  end
-
   defp map_value(map, key) when is_map(map) do
     case Map.get(map, key) do
       %{} = value -> value
       _other -> %{}
-    end
-  end
-
-  defp list_value(map, key) when is_map(map) do
-    case Map.get(map, key) do
-      values when is_list(values) -> values
-      _other -> []
     end
   end
 

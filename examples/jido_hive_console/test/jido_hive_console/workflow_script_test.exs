@@ -30,12 +30,11 @@ defmodule JidoHiveConsole.WorkflowScriptTest do
     end
 
     defp dispatch_result(["room", "create" | _rest], state) do
-      {{:ok, %{"operation_id" => "room_create-1", "result" => %{"room_id" => state.room_id}}},
-       state}
+      {{:ok, %{"operation_id" => "room_create-1", "result" => %{"id" => state.room_id}}}, state}
     end
 
     defp dispatch_result(["room", "show" | _rest], state) do
-      {{:ok, %{"room_id" => state.room_id, "contributions" => contributions(state)}}, state}
+      {{:ok, %{"id" => state.room_id, "contributions" => contributions(state)}}, state}
     end
 
     defp dispatch_result(["room", "submit" | rest], state) do
@@ -62,8 +61,8 @@ defmodule JidoHiveConsole.WorkflowScriptTest do
       Enum.map(state.submitted, fn text ->
         %{
           "participant_id" => "alice",
-          "contribution_type" => "chat",
-          "summary" => text
+          "kind" => "chat",
+          "payload" => %{"summary" => text}
         }
       end)
     end
@@ -73,7 +72,7 @@ defmodule JidoHiveConsole.WorkflowScriptTest do
       |> Enum.with_index(1)
       |> Enum.map(fn {text, index} ->
         %{
-          "kind" => "contribution.recorded",
+          "kind" => "contribution.submitted",
           "event_id" => "evt-#{index}",
           "body" => text
         }
@@ -96,7 +95,7 @@ defmodule JidoHiveConsole.WorkflowScriptTest do
                  "http://127.0.0.1:4000/api",
                  "--room-id",
                  "room-smoke-1",
-                 "--brief",
+                 "--name",
                  "Smoke workflow room",
                  "--participant-id",
                  "alice",
@@ -112,6 +111,7 @@ defmodule JidoHiveConsole.WorkflowScriptTest do
 
     assert result["workflow"] == "room_smoke"
     assert result["room_id"] == "room-smoke-1"
+    assert result["name"] == "Smoke workflow room"
     assert Enum.map(result["submissions"], & &1["text"]) == ["hello there", "second message"]
     assert get_in(result, ["final_room", "contributions"]) |> length() == 2
     assert get_in(result, ["timeline", "entries"]) |> length() == 2

@@ -3,7 +3,7 @@ defmodule JidoHiveClient.Scenario.RoomWorkflow do
   Non-TUI room workflow harness for integration and regression testing.
   """
 
-  alias JidoHiveClient.RoomWorkflow, as: SharedRoomWorkflow
+  alias JidoHiveContextGraph.RoomWorkflow, as: SharedRoomWorkflow
 
   @default_poll_interval_ms 100
   @default_max_wait_ms 5_000
@@ -12,7 +12,7 @@ defmodule JidoHiveClient.Scenario.RoomWorkflow do
   def run(opts) when is_list(opts) do
     api_base_url = Keyword.fetch!(opts, :api_base_url)
     room_payload = Keyword.fetch!(opts, :room_payload)
-    room_id = Map.fetch!(room_payload, "room_id")
+    room_id = Map.fetch!(room_payload, "id")
     participant_id = Keyword.fetch!(opts, :participant_id)
     participant_role = Keyword.get(opts, :participant_role, "coordinator")
     before_run_text = Keyword.fetch!(opts, :before_run_text)
@@ -64,13 +64,9 @@ defmodule JidoHiveClient.Scenario.RoomWorkflow do
                  poll_interval_ms,
                  max_wait_ms
                ),
-             {:ok, final_sync} <-
-               invoke_operator(operator_module, operator_opts, :fetch_room_sync, [
-                 api_base_url,
-                 room_id,
-                 []
-               ]) do
-          workflow_summary = SharedRoomWorkflow.summary(final_sync.room_snapshot)
+             {:ok, final_room_view} <-
+               load_room_view(operator_module, operator_opts, api_base_url, room_id) do
+          workflow_summary = SharedRoomWorkflow.summary(final_room_view.room_snapshot)
 
           {:ok,
            %{
@@ -78,7 +74,7 @@ defmodule JidoHiveClient.Scenario.RoomWorkflow do
              before_run_submit: before_run_submit,
              during_run_submit: during_run_submit,
              run_operation: completed_run_operation,
-             final_sync: final_sync,
+             final_sync: final_room_view,
              workflow_summary: workflow_summary,
              transitions: [
                :room_created,
@@ -156,6 +152,31 @@ defmodule JidoHiveClient.Scenario.RoomWorkflow do
 
       {:error, reason} ->
         {:error, reason}
+    end
+  end
+
+  defp load_room_view(operator_module, operator_opts, api_base_url, room_id) do
+    with {:ok, room_snapshot} <-
+           invoke_operator(operator_module, operator_opts, :fetch_room, [
+             api_base_url,
+             room_id,
+             []
+           ]),
+         {:ok, %{entries: entries, next_cursor: next_cursor}} <-
+           invoke_operator(operator_module, operator_opts, :list_room_events, [
+             api_base_url,
+             room_id,
+             []
+           ]) do
+      {:ok,
+       %{
+         room_snapshot: room_snapshot,
+         entries: entries,
+         next_cursor: next_cursor,
+         context_objects:
+           Map.get(room_snapshot, :context_objects, Map.get(room_snapshot, "context_objects", [])),
+         operations: Map.get(room_snapshot, :operations, Map.get(room_snapshot, "operations", []))
+       }}
     end
   end
 

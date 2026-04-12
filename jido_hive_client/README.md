@@ -43,7 +43,6 @@ mix escript.build
 ./jido_hive_client room inspect --api-base-url http://127.0.0.1:4000/api --room-id <room-id>
 ./jido_hive_client room provenance --api-base-url http://127.0.0.1:4000/api --room-id <room-id> --context-id <context-id>
 ./jido_hive_client room tail --api-base-url http://127.0.0.1:4000/api --room-id <room-id>
-./jido_hive_client room publish-plan --api-base-url http://127.0.0.1:4000/api --room-id <room-id>
 ```
 
 ### Submit human actions headlessly
@@ -98,11 +97,15 @@ flowchart LR
 
     subgraph Client[jido_hive_client]
       Operator[JidoHiveClient.Operator]
-      Insight[JidoHiveClient.RoomInsight]
-      Workflow[JidoHiveClient.RoomWorkflow]
       Session[JidoHiveClient.RoomSession]
       Embedded[JidoHiveClient.Embedded]
       SessionState[JidoHiveClient.SessionState]
+    end
+
+    subgraph Graph[jido_hive_context_graph]
+      Insight[JidoHiveContextGraph.RoomInsight]
+      Workflow[JidoHiveContextGraph.RoomWorkflow]
+      Workspace[JidoHiveContextGraph.RoomWorkspace]
     end
 
     subgraph Server[jido_hive_server]
@@ -124,7 +127,8 @@ flowchart LR
     Operator --> API
     Embedded --> API
     API --> Rooms
-```
+    Insight --> Workspace
+  ```
 
 ### Boundary rules
 
@@ -147,10 +151,9 @@ Current responsibilities:
 - config/bootstrap under `~/.config/hive`
 - saved-room registry scoped by API base URL
 - connector auth-state loading
-- room fetch, workflow inspection, and timeline fetch
+- room fetch, workflow inspection, and event-feed fetch
 - target and policy listing
 - room creation and run-operation control
-- publication plan fetch and publish submit
 - connector install start and complete
 - direct contribution submission for scriptable conflict resolution
 
@@ -160,17 +163,14 @@ Representative functions:
 - `load_config/0`
 - `list_saved_rooms/1`
 - `fetch_room/2`
-- `fetch_room_sync/3`
-- `fetch_room_timeline/3`
+- `list_room_events/3`
 - `create_room/2`
 - `start_room_run_operation/3`
 - `fetch_room_run_operation/4`
-- `fetch_publication_plan/2`
-- `publish_room/3`
 - `load_auth_state/2`
 - `submit_contribution/4`
 
-### `JidoHiveClient.RoomInsight`
+### `JidoHiveContextGraph.RoomInsight`
 
 Use this when you need reusable operator-facing derivations from room truth.
 
@@ -207,9 +207,9 @@ Snapshot shape now includes:
 
 The old worker-style `runtime` field is gone from this surface.
 
-### `JidoHiveClient.Scenario.RoomWorkflow`
+### `JidoHiveContextGraph.RoomWorkflow`
 
-Use this when you want an executable create/submit/run/wait/sync regression
+Use this when you want an executable create/submit/run/wait/event-feed regression
 without the TUI.
 
 ## Headless CLI
@@ -229,14 +229,18 @@ Representative command groups:
 - `room create`
 - `room run`
 - `room run-status`
-- `room publish-plan`
-- `room publish`
 - `room submit`
 - `room accept`
 - `room resolve`
 - `auth state`
 - `targets list`
 - `policies list`
+
+Publication planning and execution now live in the explicit `jido_hive_publications`
+extension package rather than the base client.
+
+Graph workspace, workflow, and provenance helpers now live in the explicit
+`jido_hive_context_graph` extension package rather than the base client.
 
 ## What is not in this package
 
@@ -312,10 +316,12 @@ For the full triage order, read
   client-local session bookkeeping
 - `lib/jido_hive_client/session_event_log.ex`
   client-local session event history
-- `lib/jido_hive_client/room_workflow.ex`
+- `../jido_hive_context_graph/lib/jido_hive_context_graph/room_workflow.ex`
   workflow summary normalization
-- `lib/jido_hive_client/room_insight.ex`
+- `../jido_hive_context_graph/lib/jido_hive_context_graph/room_insight.ex`
   focus queue and provenance derivation
+- `../jido_hive_context_graph/lib/jido_hive_context_graph/room_workspace.ex`
+  room workspace construction
 
 ## Related docs
 

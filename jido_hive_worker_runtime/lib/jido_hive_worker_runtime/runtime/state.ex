@@ -98,7 +98,7 @@ defmodule JidoHiveWorkerRuntime.Runtime.State do
     |> Map.put(:connection_status, :ready)
     |> Map.put(:current_assignment, nil)
     |> Map.put(:last_error, last_error(assignment, reason))
-    |> put_recent_assignment(recent_assignment(assignment, %{"status" => "failed"}))
+    |> put_recent_assignment(recent_assignment(assignment, %{"meta" => %{"status" => "failed"}}))
     |> touch()
   end
 
@@ -132,7 +132,8 @@ defmodule JidoHiveWorkerRuntime.Runtime.State do
       participant_id: Map.get(assignment, "participant_id"),
       participant_role: Map.get(assignment, "participant_role"),
       phase: Map.get(assignment, "phase"),
-      status: Map.get(contribution, "status", "completed"),
+      status:
+        get_in(contribution, ["meta", "status"]) || Map.get(contribution, "status", "completed"),
       summary: get_in(contribution, ["payload", "summary"]) || Map.get(contribution, "summary"),
       contribution_type: Map.get(contribution, "kind"),
       completed_at: DateTime.utc_now()

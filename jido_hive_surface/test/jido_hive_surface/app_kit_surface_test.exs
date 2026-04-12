@@ -4,23 +4,25 @@ defmodule JidoHiveSurface.AppKitSurfaceTest do
   alias JidoHiveSurface.AppKitSurface
 
   defmodule OperatorStub do
-    def fetch_room_sync(_api_base_url, room_id, _opts) do
+    def fetch_room(_api_base_url, room_id) do
       {:ok,
        %{
-         room_snapshot: %{
-           "room_id" => room_id,
-           "brief" => "Brief",
-           "status" => "running",
-           "workflow_summary" => %{
-             "objective" => "Brief",
-             "stage" => "Review",
-             "next_action" => "Inspect contradiction"
-           },
-           "context_objects" => []
+         "id" => room_id,
+         "name" => "Brief",
+         "status" => "running",
+         "workflow_summary" => %{
+           "objective" => "Brief",
+           "stage" => "Review",
+           "next_action" => "Inspect contradiction"
          },
+         "context_objects" => []
+       }}
+    end
+
+    def list_room_events(_api_base_url, _room_id, _opts) do
+      {:ok,
+       %{
          entries: [],
-         context_objects: [],
-         operations: [%{"operation_id" => "room-run-1", "status" => "running"}],
          next_cursor: nil
        }}
     end
@@ -62,8 +64,7 @@ defmodule JidoHiveSurface.AppKitSurfaceTest do
                "room-1",
                %{
                  participant_id: "alice",
-                 participant_role: "coordinator",
-                 authority_level: "binding"
+                 participant_role: "coordinator"
                },
                "Need a binding decision",
                room_session_module: RoomSessionStub

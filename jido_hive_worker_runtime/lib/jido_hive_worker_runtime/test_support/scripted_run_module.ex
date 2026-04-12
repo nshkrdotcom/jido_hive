@@ -195,30 +195,31 @@ defmodule JidoHiveWorkerRuntime.TestSupport.ScriptedRunModule do
     participant_id = prompt_value(context, "participant_id") || "worker"
 
     %{
-      "summary" => "analysis pass added substrate beliefs and notes from #{participant_id}",
-      "contribution_type" => "reasoning",
-      "authority_level" => "advisory",
-      "context_objects" => [
-        %{
-          "object_type" => "belief",
-          "title" => "Server-owned room state",
-          "body" => "The server should own room state and dispatch explicit assignments.",
-          "data" => %{},
-          "scope" => %{"read" => ["room"], "write" => ["author"]},
-          "uncertainty" => %{"status" => "provisional", "confidence" => 0.8},
-          "relations" => []
-        },
-        %{
-          "object_type" => "note",
-          "title" => "Filtered context views",
-          "body" => "Assignments should include filtered context instead of a mutable packet.",
-          "data" => %{},
-          "scope" => %{"read" => ["room"], "write" => ["author"]},
-          "uncertainty" => %{"status" => "provisional", "confidence" => 0.7},
-          "relations" => []
-        }
-      ],
-      "artifacts" => []
+      "kind" => "reasoning",
+      "payload" => %{
+        "summary" => "analysis pass added substrate beliefs and notes from #{participant_id}",
+        "context_objects" => [
+          %{
+            "object_type" => "belief",
+            "title" => "Server-owned room state",
+            "body" => "The server should own room state and dispatch explicit assignments.",
+            "data" => %{},
+            "scope" => %{"read" => ["room"], "write" => ["author"]},
+            "uncertainty" => %{"status" => "provisional", "confidence" => 0.8},
+            "relations" => []
+          },
+          %{
+            "object_type" => "note",
+            "title" => "Filtered context views",
+            "body" => "Assignments should include filtered context instead of a mutable packet.",
+            "data" => %{},
+            "scope" => %{"read" => ["room"], "write" => ["author"]},
+            "uncertainty" => %{"status" => "provisional", "confidence" => 0.7},
+            "relations" => []
+          }
+        ],
+        "artifacts" => []
+      }
     }
   end
 
@@ -229,41 +230,43 @@ defmodule JidoHiveWorkerRuntime.TestSupport.ScriptedRunModule do
 
   defp response_for(:skeptic, _context) do
     %{
-      "summary" => "critique pass added one open question",
-      "contribution_type" => "reasoning",
-      "authority_level" => "advisory",
-      "context_objects" => [
-        %{
-          "object_type" => "question",
-          "title" => "Human approval path",
-          "body" => "The binding human approval path still needs a crisp contract.",
-          "data" => %{},
-          "scope" => %{"read" => ["room"], "write" => ["author"]},
-          "uncertainty" => %{"status" => "provisional", "confidence" => 0.9},
-          "relations" => []
-        }
-      ],
-      "artifacts" => []
+      "kind" => "reasoning",
+      "payload" => %{
+        "summary" => "critique pass added one open question",
+        "context_objects" => [
+          %{
+            "object_type" => "question",
+            "title" => "Human approval path",
+            "body" => "The binding human approval path still needs a crisp contract.",
+            "data" => %{},
+            "scope" => %{"read" => ["room"], "write" => ["author"]},
+            "uncertainty" => %{"status" => "provisional", "confidence" => 0.9},
+            "relations" => []
+          }
+        ],
+        "artifacts" => []
+      }
     }
   end
 
   defp response_for(:resolver, _context) do
     %{
-      "summary" => "resolution pass added one decision",
-      "contribution_type" => "decision",
-      "authority_level" => "advisory",
-      "context_objects" => [
-        %{
-          "object_type" => "decision",
-          "title" => "Room timeline as system of record",
-          "body" => "The room timeline should be the canonical UI-facing audit trail.",
-          "data" => %{},
-          "scope" => %{"read" => ["room"], "write" => ["author"]},
-          "uncertainty" => %{"status" => "provisional", "confidence" => 0.85},
-          "relations" => []
-        }
-      ],
-      "artifacts" => []
+      "kind" => "decision",
+      "payload" => %{
+        "summary" => "resolution pass added one decision",
+        "context_objects" => [
+          %{
+            "object_type" => "decision",
+            "title" => "Room timeline as system of record",
+            "body" => "The room timeline should be the canonical UI-facing audit trail.",
+            "data" => %{},
+            "scope" => %{"read" => ["room"], "write" => ["author"]},
+            "uncertainty" => %{"status" => "provisional", "confidence" => 0.85},
+            "relations" => []
+          }
+        ],
+        "artifacts" => []
+      }
     }
   end
 

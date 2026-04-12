@@ -9,7 +9,7 @@ platform behavior.
 ## Responsibilities
 
 - expose Jido Hive app components for the Switchyard TUI
-- own room, provenance, and publication interaction state
+- own room, provenance, and explicit publication-extension interaction state
 - render the Jido Hive workflow with Workbench widgets
 - keep generic shell, runtime, and renderer concerns in Switchyard core
 
@@ -51,8 +51,7 @@ Launch the Jido Hive workflow directly:
 JidoHive.Switchyard.TUI.run(
   api_base_url: "http://127.0.0.1:4000/api",
   participant_id: "alice",
-  participant_role: "coordinator",
-  authority_level: "binding"
+  participant_role: "coordinator"
 )
 ```
 
@@ -60,7 +59,7 @@ JidoHive.Switchyard.TUI.run(
 
 - the public entry module for launching the Jido Hive workflow through Switchyard
 - a private component module for room interaction behavior
-- a private state module for room and publication workflow state
+- a private state module for room and publication-extension workflow state
 - a private runtime module for async commands over `jido_hive_surface`
 - a private view module for room, graph, and overlay rendering
 

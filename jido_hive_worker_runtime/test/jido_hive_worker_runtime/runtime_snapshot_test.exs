@@ -52,10 +52,12 @@ defmodule JidoHiveWorkerRuntime.RuntimeSnapshotTest do
     }
 
     contribution = %{
-      "status" => "completed",
       "kind" => "reasoning",
       "payload" => %{"summary" => "completed"},
-      "execution" => %{"status" => "completed"}
+      "meta" => %{
+        "status" => "completed",
+        "execution" => %{"status" => "completed"}
+      }
     }
 
     snapshot =

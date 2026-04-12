@@ -7,34 +7,28 @@ defmodule JidoHiveSurface.RoomsTest do
     def list_saved_rooms(_api_base_url), do: ["room-1"]
 
     def fetch_room(_api_base_url, "room-1") do
-      {:ok, %{"room_id" => "room-1", "brief" => "Brief", "status" => "running"}}
-    end
-
-    def fetch_room_sync(_api_base_url, room_id, _opts) do
       {:ok,
        %{
-         room_snapshot: %{
-           "room_id" => room_id,
-           "brief" => "Brief",
-           "status" => "running",
-           "workflow_summary" => %{
-             "objective" => "Brief",
-             "stage" => "Review",
-             "next_action" => "Inspect contradiction",
-             "publish_ready" => false,
-             "publish_blockers" => [],
-             "blockers" => [],
-             "graph_counts" => %{"total" => 1},
-             "focus_candidates" => []
-           },
-           "context_objects" => []
+         "id" => "room-1",
+         "name" => "Brief",
+         "status" => "running",
+         "assignment_counts" => %{"completed" => 1},
+         "workflow_summary" => %{
+           "objective" => "Brief",
+           "stage" => "Review",
+           "next_action" => "Inspect contradiction",
+           "publish_ready" => false,
+           "publish_blockers" => [],
+           "blockers" => [],
+           "graph_counts" => %{"total" => 1},
+           "focus_candidates" => []
          },
-         entries: [],
-         context_objects: [],
-         operations: [],
-         next_cursor: nil
+         "context_objects" => []
        }}
     end
+
+    def list_room_events(_api_base_url, room_id, _opts),
+      do: {:ok, %{entries: [], next_cursor: "#{room_id}:events"}}
 
     def create_room(_api_base_url, payload), do: {:ok, payload}
     def add_saved_room(_room_id, _api_base_url), do: :ok
@@ -58,7 +52,8 @@ defmodule JidoHiveSurface.RoomsTest do
   test "lists room catalog rows through the shared surface" do
     [room] = Rooms.list("http://127.0.0.1:4000/api", operator_module: OperatorStub)
 
-    assert room.room_id == "room-1"
+    assert room.id == "room-1"
+    assert room.name == "Brief"
     assert room.status == "running"
   end
 
@@ -69,7 +64,8 @@ defmodule JidoHiveSurface.RoomsTest do
         operator_module_fallback: OperatorStub
       )
 
-    assert room.room_id == "room-1"
+    assert room.id == "room-1"
+    assert room.name == "Brief"
     assert room.status == "running"
   end
 
@@ -89,12 +85,12 @@ defmodule JidoHiveSurface.RoomsTest do
   end
 
   test "creates rooms and starts/fetches room run operations" do
-    assert {:ok, %{"room_id" => "room-2", "brief" => "Brief", "participants" => []}} =
+    assert {:ok, %{"id" => "room-2", "name" => "Brief", "participants" => []}} =
              Rooms.create(
                "http://127.0.0.1:4000/api",
                %{
-                 "room_id" => "room-2",
-                 "brief" => "Brief",
+                 "id" => "room-2",
+                 "name" => "Brief",
                  "participants" => []
                },
                operator_module: OperatorStub
@@ -123,8 +119,7 @@ defmodule JidoHiveSurface.RoomsTest do
                "room-1",
                %{
                  participant_id: "alice",
-                 participant_role: "coordinator",
-                 authority_level: "binding"
+                 participant_role: "coordinator"
                },
                "Need a binding decision",
                room_session_module: RoomSessionStub
@@ -138,8 +133,7 @@ defmodule JidoHiveSurface.RoomsTest do
                "room-1",
                %{
                  participant_id: "alice",
-                 participant_role: "coordinator",
-                 authority_level: "binding"
+                 participant_role: "coordinator"
                },
                "Need a binding decision",
                room_session_module: nil,
@@ -148,15 +142,15 @@ defmodule JidoHiveSurface.RoomsTest do
   end
 
   test "normalizes create attrs with generated defaults" do
-    assert {:ok, payload} = Rooms.normalize_create_attrs(%{"brief" => "Review this room"})
-    assert is_binary(payload["room_id"])
-    assert String.starts_with?(payload["room_id"], "room-")
-    assert payload["brief"] == "Review this room"
+    assert {:ok, payload} = Rooms.normalize_create_attrs(%{"name" => "Review this room"})
+    assert is_binary(payload["id"])
+    assert String.starts_with?(payload["id"], "room-")
+    assert payload["name"] == "Review this room"
     assert payload["participants"] == []
   end
 
   test "validates required create attrs" do
-    assert {:error, %{brief: "can't be blank"}} = Rooms.normalize_create_attrs(%{})
+    assert {:error, %{name: "can't be blank"}} = Rooms.normalize_create_attrs(%{})
   end
 
   test "normalizes run attrs from string inputs" do

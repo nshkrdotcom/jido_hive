@@ -76,6 +76,7 @@ defmodule JidoHiveWorkspace.MixProject do
       projects: [
         "jido_hive_client",
         "jido_hive_context_graph",
+        "jido_hive_publications",
         "jido_hive_surface",
         "jido_hive_worker_runtime",
         "jido_hive_server",

@@ -14,7 +14,6 @@ defmodule JidoHiveConsole.CLI do
     room_id: :string,
     participant_id: :string,
     participant_role: :string,
-    authority_level: :string,
     poll_interval_ms: :integer,
     tenant_id: :string,
     actor_id: :string,
@@ -75,7 +74,7 @@ defmodule JidoHiveConsole.CLI do
 
     Commands:
       hive console [--local | --prod | --api-base-url URL] [--participant-id ID] [--room-id ID] [--debug]
-      hive workflow room-smoke [--local | --prod | --api-base-url URL] [--brief TEXT] [--text TEXT]...
+      hive workflow room-smoke [--local | --prod | --api-base-url URL] [--name TEXT] [--text TEXT]...
 
     Help:
       hive help
@@ -93,7 +92,6 @@ defmodule JidoHiveConsole.CLI do
     Important options:
       --participant-id ID
       --participant-role ROLE
-      --authority-level LEVEL
       --room-id ID
       --tenant-id ID
       --actor-id ID
@@ -110,10 +108,9 @@ defmodule JidoHiveConsole.CLI do
 
     Important options:
       --room-id ID
-      --brief TEXT
+      --name TEXT
       --participant-id ID
       --participant-role ROLE
-      --authority-level LEVEL
       --text TEXT
       --run
       --max-assignments N

@@ -13,28 +13,12 @@ defmodule JidoHiveClient.Boundary.RoomApi.Http do
   end
 
   @impl true
-  def fetch_sync(opts, room_id, query_opts \\ []) do
-    Operator.fetch_room_sync(
+  def list_events(opts, room_id, query_opts \\ []) do
+    Operator.list_room_events(
       base_url(opts),
       room_id,
-      operator_opts(opts, :room_sync) ++ Keyword.take(query_opts, [:after, :operation_id])
+      operator_opts(opts, :room_events) ++ Keyword.take(query_opts, [:after, :operation_id])
     )
-  end
-
-  @impl true
-  def fetch_timeline(opts, room_id, query_opts \\ []) do
-    Operator.fetch_room_timeline(
-      base_url(opts),
-      room_id,
-      operator_opts(opts, :room_sync) ++ Keyword.take(query_opts, [:after, :operation_id])
-    )
-  end
-
-  @impl true
-  def fetch_context_objects(opts, room_id) do
-    with {:ok, room_snapshot} <- fetch_room(opts, room_id) do
-      {:ok, Map.get(room_snapshot, "context_objects", [])}
-    end
   end
 
   @impl true

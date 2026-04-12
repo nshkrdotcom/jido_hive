@@ -1,10 +1,12 @@
 defmodule JidoHive.Switchyard.TUI.State do
   @moduledoc false
 
+  alias JidoHivePublications
   alias JidoHiveSurface
 
   @enforce_keys []
   defstruct client_module: JidoHiveSurface,
+            publications_module: JidoHivePublications,
             screen: :rooms,
             rooms: [],
             room_cursor: 0,
@@ -24,6 +26,7 @@ defmodule JidoHive.Switchyard.TUI.State do
 
   @type t :: %__MODULE__{
           client_module: module(),
+          publications_module: module(),
           screen: :rooms | :room,
           rooms: [map()],
           room_cursor: non_neg_integer(),

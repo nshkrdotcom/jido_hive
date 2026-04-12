@@ -20,7 +20,15 @@ defmodule JidoHiveWebWeb.Router do
     get "/", PageController, :home
     live "/rooms", RoomIndexLive
     live "/rooms/:room_id", RoomShowLive
-    live "/rooms/:room_id/publish", PublicationShowLive
+  end
+
+  scope "/" do
+    pipe_through :browser
+
+    live "/rooms/:room_id/publications", JidoHivePublicationsWeb.PublicationShowLive
+
+    live "/rooms/:room_id/publications/:publication_run_id",
+         JidoHivePublicationsWeb.PublicationShowLive
   end
 
   # Other scopes may use custom stacks.

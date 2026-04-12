@@ -6,8 +6,8 @@ defmodule JidoHiveWebWeb.Support.RoomsStub do
   def list(_api_base_url, _opts) do
     [
       %{
-        room_id: "room-1",
-        brief: "Stabilize auth path",
+        id: "room-1",
+        name: "Stabilize auth path",
         status: "running",
         completed_slots: 1,
         total_slots: 2,
@@ -98,7 +98,7 @@ defmodule JidoHiveWebWeb.Support.RoomsStub do
         recommended_actions: [%{label: "Inspect provenance", shortcut: "Ctrl+E"}]
       },
       conversation: [
-        %{participant_id: "alice", contribution_type: "chat", body: "hello", pending?: false}
+        %{participant_id: "alice", kind: "chat", body: "hello", pending?: false}
       ],
       events: [%{body: "event", kind: "event", status: "completed"}]
     }
@@ -114,6 +114,11 @@ defmodule JidoHiveWebWeb.Support.PublicationsStub do
 
   def load_publication_workspace(_api_base_url, _room_id, _subject, _opts), do: workspace()
   def workspace(_api_base_url, _room_id, _subject, _opts), do: workspace()
+  def list_publication_runs("room-1", _opts), do: {:ok, [run()]}
+  def fetch_publication_run("room-1", "publication-run-1"), do: {:ok, run()}
+
+  def fetch_publication_run(_room_id, _publication_run_id),
+    do: {:error, :publication_run_not_found}
 
   def publish(_api_base_url, room_id, _workspace, bindings, _opts) do
     payload = %{
@@ -121,7 +126,7 @@ defmodule JidoHiveWebWeb.Support.PublicationsStub do
       "bindings" => bindings
     }
 
-    send(test_pid(), {:publish_room, room_id, payload})
+    send(test_pid(), {:publish_publication, room_id, payload})
     {:ok, payload}
   end
 
@@ -158,6 +163,16 @@ defmodule JidoHiveWebWeb.Support.PublicationsStub do
       preview_lines: ["Draft", "Body"],
       readiness: ["Selected channel: github"],
       ready?: true
+    }
+  end
+
+  defp run do
+    %{
+      id: "publication-run-1",
+      channel: "github",
+      status: "completed",
+      result: %{"output" => %{"url" => "https://example.test/run"}},
+      error: %{}
     }
   end
 
@@ -204,8 +219,8 @@ defmodule JidoHiveWebWeb.Support.RoomSessionStub do
 
   defp snapshot(latest_text \\ nil) do
     %{
-      "room_id" => "room-1",
-      "brief" => "Stabilize auth path",
+      "id" => "room-1",
+      "name" => "Stabilize auth path",
       "status" => "running",
       "workflow_summary" => %{
         "objective" => "Stabilize auth path",
@@ -230,7 +245,11 @@ defmodule JidoHiveWebWeb.Support.RoomSessionStub do
       "contributions" =>
         Enum.reject(
           [
-            %{"participant_id" => "alice", "contribution_type" => "chat", "body" => "hello"},
+            %{
+              "participant_id" => "alice",
+              "kind" => "chat",
+              "payload" => %{"body" => "hello"}
+            },
             latest_contribution(latest_text)
           ],
           &is_nil/1
@@ -242,7 +261,7 @@ defmodule JidoHiveWebWeb.Support.RoomSessionStub do
   defp latest_contribution(nil), do: nil
 
   defp latest_contribution(text) do
-    %{"participant_id" => "alice", "contribution_type" => "chat", "body" => text}
+    %{"participant_id" => "alice", "kind" => "chat", "payload" => %{"body" => text}}
   end
 
   defp test_pid do

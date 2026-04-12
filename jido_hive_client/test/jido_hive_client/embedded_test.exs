@@ -10,9 +10,9 @@ defmodule JidoHiveClient.EmbeddedTest do
       Agent.start_link(fn ->
         %{
           room_snapshot: %{
-            "room_id" => "room-1",
+            "id" => "room-1",
+            "name" => "Embedded room",
             "status" => "running",
-            "dispatch_state" => %{"completed_slots" => 0, "total_slots" => 2},
             "participants" => []
           },
           timeline: [],
@@ -38,39 +38,9 @@ defmodule JidoHiveClient.EmbeddedTest do
     end
 
     @impl true
-    def fetch_sync(opts, room_id, query_opts) do
+    def list_events(opts, room_id, query_opts) do
       test_pid = Keyword.get(opts, :test_pid)
-      send(test_pid, {:fetch_sync, room_id, query_opts})
-
-      after_cursor = Keyword.get(query_opts, :after)
-
-      {:ok,
-       Agent.get(Keyword.fetch!(opts, :server), fn state ->
-         entries =
-           case after_cursor do
-             nil -> state.timeline
-             cursor -> drop_after(state.timeline, cursor)
-           end
-
-         %{
-           room_snapshot:
-             Map.merge(state.room_snapshot, %{
-               "timeline" => state.timeline,
-               "context_objects" => state.context_objects,
-               "operations" => []
-             }),
-           entries: entries,
-           next_cursor: next_cursor(state.timeline),
-           context_objects: state.context_objects,
-           operations: []
-         }
-       end)}
-    end
-
-    @impl true
-    def fetch_timeline(opts, room_id, query_opts) do
-      test_pid = Keyword.get(opts, :test_pid)
-      send(test_pid, {:fetch_timeline, room_id, query_opts})
+      send(test_pid, {:list_events, room_id, query_opts})
 
       after_cursor = Keyword.get(query_opts, :after)
 
@@ -89,14 +59,6 @@ defmodule JidoHiveClient.EmbeddedTest do
     end
 
     @impl true
-    def fetch_context_objects(opts, room_id) do
-      test_pid = Keyword.get(opts, :test_pid)
-      send(test_pid, {:fetch_context_objects, room_id})
-
-      {:ok, Agent.get(Keyword.fetch!(opts, :server), & &1.context_objects)}
-    end
-
-    @impl true
     def submit_contribution(opts, room_id, payload) do
       test_pid = Keyword.get(opts, :test_pid)
       send(test_pid, {:submit_contribution, room_id, payload})
@@ -106,7 +68,8 @@ defmodule JidoHiveClient.EmbeddedTest do
 
         context_objects =
           payload
-          |> Map.get("context_objects", [])
+          |> get_in(["payload", "context_objects"])
+          |> Kernel.||([])
           |> Enum.with_index(state.next_context)
           |> Enum.map(fn {context_object, index} ->
             context_object
@@ -118,10 +81,10 @@ defmodule JidoHiveClient.EmbeddedTest do
           "entry_id" => event_id,
           "cursor" => event_id,
           "event_id" => event_id,
-          "kind" => "contribution.recorded",
+          "kind" => "contribution.submitted",
           "title" => "Contribution recorded",
-          "body" => payload["summary"],
-          "status" => payload["status"] || "completed",
+          "body" => get_in(payload, ["payload", "summary"]),
+          "status" => get_in(payload, ["meta", "status"]) || "completed",
           "metadata" => payload
         }
 
@@ -157,28 +120,16 @@ defmodule JidoHiveClient.EmbeddedTest do
 
       {:ok,
        %{
-         "room_id" => room_id,
+         "id" => room_id,
+         "name" => "Sync failure room",
          "status" => "running",
-         "dispatch_state" => %{},
          "participants" => []
        }}
     end
 
     @impl true
-    def fetch_sync(opts, room_id, query_opts) do
-      send(Keyword.fetch!(opts, :test_pid), {:sync_fail_fetch_sync, room_id, query_opts})
-      {:error, :sync_failed}
-    end
-
-    @impl true
-    def fetch_timeline(opts, room_id, query_opts) do
-      send(Keyword.fetch!(opts, :test_pid), {:sync_fail_fetch_timeline, room_id, query_opts})
-      {:error, :sync_failed}
-    end
-
-    @impl true
-    def fetch_context_objects(opts, room_id) do
-      send(Keyword.fetch!(opts, :test_pid), {:sync_fail_fetch_context_objects, room_id})
+    def list_events(opts, room_id, query_opts) do
+      send(Keyword.fetch!(opts, :test_pid), {:sync_fail_list_events, room_id, query_opts})
       {:error, :sync_failed}
     end
 
@@ -196,71 +147,25 @@ defmodule JidoHiveClient.EmbeddedTest do
     def fetch_room(_opts, room_id) do
       {:ok,
        %{
-         "room_id" => room_id,
+         "id" => room_id,
+         "name" => "Blocking room",
          "status" => "running",
-         "dispatch_state" => %{},
          "participants" => []
        }}
     end
 
     @impl true
-    def fetch_sync(opts, room_id, query_opts) do
+    def list_events(opts, room_id, query_opts) do
       test_pid = Keyword.fetch!(opts, :test_pid)
-      send(test_pid, {:blocking_fetch_sync, self(), room_id, query_opts})
+      send(test_pid, {:blocking_list_events, self(), room_id, query_opts})
 
       receive do
-        :release_fetch_sync ->
-          {:ok,
-           %{
-             room_snapshot: %{
-               "room_id" => room_id,
-               "status" => "running",
-               "dispatch_state" => %{},
-               "participants" => [],
-               "operations" => []
-             },
-             entries: [],
-             next_cursor: Keyword.get(query_opts, :after),
-             context_objects: [],
-             operations: []
-           }}
-      after
-        5_000 ->
-          {:ok,
-           %{
-             room_snapshot: %{
-               "room_id" => room_id,
-               "status" => "running",
-               "dispatch_state" => %{},
-               "participants" => [],
-               "operations" => []
-             },
-             entries: [],
-             next_cursor: Keyword.get(query_opts, :after),
-             context_objects: [],
-             operations: []
-           }}
-      end
-    end
-
-    @impl true
-    def fetch_timeline(opts, room_id, query_opts) do
-      test_pid = Keyword.fetch!(opts, :test_pid)
-      send(test_pid, {:blocking_fetch_timeline, self(), room_id, query_opts})
-
-      receive do
-        :release_fetch_timeline ->
+        :release_list_events ->
           {:ok, %{entries: [], next_cursor: Keyword.get(query_opts, :after)}}
       after
         5_000 ->
           {:ok, %{entries: [], next_cursor: Keyword.get(query_opts, :after)}}
       end
-    end
-
-    @impl true
-    def fetch_context_objects(opts, room_id) do
-      send(Keyword.fetch!(opts, :test_pid), {:blocking_fetch_context_objects, room_id})
-      {:ok, []}
     end
 
     @impl true
@@ -274,46 +179,27 @@ defmodule JidoHiveClient.EmbeddedTest do
     @behaviour JidoHiveClient.Boundary.RoomApi
 
     def start_link do
-      Agent.start_link(fn -> %{timeline_fetches: 0} end)
+      Agent.start_link(fn -> %{room_fetches: 0} end)
     end
 
     @impl true
-    def fetch_room(_opts, _room_id), do: {:error, :room_not_found}
-
-    @impl true
-    def fetch_sync(opts, room_id, query_opts) do
+    def fetch_room(opts, room_id) do
       server = Keyword.fetch!(opts, :server)
       test_pid = Keyword.fetch!(opts, :test_pid)
 
       count =
         Agent.get_and_update(server, fn state ->
-          next = state.timeline_fetches + 1
-          {next, %{state | timeline_fetches: next}}
+          next = state.room_fetches + 1
+          {next, %{state | room_fetches: next}}
         end)
 
-      send(test_pid, {:missing_fetch_sync, room_id, query_opts, count})
+      send(test_pid, {:missing_fetch_room, room_id, count})
       {:error, :room_not_found}
     end
 
     @impl true
-    def fetch_timeline(opts, room_id, query_opts) do
-      server = Keyword.fetch!(opts, :server)
-      test_pid = Keyword.fetch!(opts, :test_pid)
-
-      count =
-        Agent.get_and_update(server, fn state ->
-          next = state.timeline_fetches + 1
-          {next, %{state | timeline_fetches: next}}
-        end)
-
-      send(test_pid, {:missing_fetch_timeline, room_id, query_opts, count})
-      {:error, :room_not_found}
-    end
-
-    @impl true
-    def fetch_context_objects(_opts, _room_id) do
-      flunk("fetch_context_objects should not run after a room_not_found timeline response")
-    end
+    def list_events(_opts, _room_id, _query_opts),
+      do: flunk("list_events should not run after a room_not_found fetch_room response")
 
     @impl true
     def submit_contribution(_opts, _room_id, _payload), do: {:error, :room_not_found}
@@ -358,34 +244,37 @@ defmodule JidoHiveClient.EmbeddedTest do
   test "refresh snapshot includes room metadata from the room api", %{embedded: embedded} do
     assert {:ok, snapshot} = Embedded.refresh(embedded)
     assert snapshot["status"] == "running"
-    assert snapshot["room_id"] == "room-1"
+    assert snapshot["id"] == "room-1"
+    assert snapshot["name"] == "Embedded room"
   end
 
-  test "poll uses the consolidated room sync fetch when no new timeline entries arrive", %{
+  test "poll uses explicit room fetch and event listing when no new timeline entries arrive", %{
     embedded: embedded
   } do
     Process.sleep(20)
     flush_mailbox()
 
     assert {:ok, _snapshot} = Embedded.refresh(embedded)
-    assert_receive {:fetch_sync, "room-1", [after: nil]}
+    assert_receive {:fetch_room, "room-1"}
+    assert_receive {:list_events, "room-1", [after: nil]}
 
     flush_mailbox()
     send(embedded, :poll)
 
-    assert_receive {:fetch_sync, "room-1", [after: _cursor]}
+    assert_receive {:fetch_room, "room-1"}
+    assert_receive {:list_events, "room-1", [after: _cursor]}
   end
 
   test "subscribe pushes the current snapshot after hydration", %{embedded: embedded} do
     assert {:ok, snapshot} = Embedded.refresh(embedded)
-    assert snapshot["room_id"] == "room-1"
+    assert snapshot["id"] == "room-1"
     assert snapshot["participant"].participant_id == "alice"
     assert snapshot["session_state"].identity.participant_id == "alice"
     flush_mailbox()
 
     assert :ok = Embedded.subscribe(embedded)
     assert_receive {:room_session_snapshot, "room-1", subscribed_snapshot}
-    assert subscribed_snapshot["room_id"] == "room-1"
+    assert subscribed_snapshot["id"] == "room-1"
     assert subscribed_snapshot["last_sync_at"] == snapshot["last_sync_at"]
     assert subscribed_snapshot["status"] == "running"
   end
@@ -400,12 +289,12 @@ defmodule JidoHiveClient.EmbeddedTest do
         poll_interval_ms: 5_000
       )
 
-    assert_receive {:blocking_fetch_sync, blocker, "room-1", [after: nil]}
+    assert_receive {:blocking_list_events, blocker, "room-1", [after: nil]}
 
     assert :ok = Embedded.subscribe(embedded)
     refute_receive {:room_session_snapshot, "room-1", _snapshot}, 80
 
-    send(blocker, :release_fetch_sync)
+    send(blocker, :release_list_events)
 
     assert_receive {:room_session_snapshot, "room-1", hydrated_snapshot}
     assert hydrated_snapshot["status"] == "running"
@@ -419,9 +308,16 @@ defmodule JidoHiveClient.EmbeddedTest do
         text: "I think auth is broken because Redis timed out?"
       })
 
-    assert contribution["summary"] == "I think auth is broken because Redis timed out?"
+    assert get_in(contribution, ["payload", "summary"]) ==
+             "I think auth is broken because Redis timed out?"
+
     assert_receive {:submit_contribution, "room-1", payload}
-    assert Enum.any?(payload["context_objects"], &(&1["object_type"] == "hypothesis"))
+
+    assert Enum.any?(
+             get_in(payload, ["payload", "context_objects"]),
+             &(&1["object_type"] == "hypothesis")
+           )
+
     assert_receive {:client_runtime_event, %{type: "embedded.chat.submitted"}}
 
     wait_until(fn ->
@@ -444,11 +340,18 @@ defmodule JidoHiveClient.EmbeddedTest do
 
     {:ok, contribution} = Embedded.accept_context(embedded, candidate["context_id"])
 
-    assert contribution["authority_level"] == "binding"
+    assert get_in(contribution, ["meta", "authority_level"]) == "binding"
     assert_receive {:submit_contribution, "room-1", acceptance_payload}
-    assert Enum.any?(acceptance_payload["context_objects"], &(&1["object_type"] == "decision"))
 
-    assert Enum.find(acceptance_payload["context_objects"], &(&1["object_type"] == "decision"))[
+    assert Enum.any?(
+             get_in(acceptance_payload, ["payload", "context_objects"]),
+             &(&1["object_type"] == "decision")
+           )
+
+    assert Enum.find(
+             get_in(acceptance_payload, ["payload", "context_objects"]),
+             &(&1["object_type"] == "decision")
+           )[
              "relations"
            ] == [
              %{"relation" => "derives_from", "target_id" => candidate["context_id"]}
@@ -470,7 +373,10 @@ defmodule JidoHiveClient.EmbeddedTest do
 
     assert_receive {:submit_contribution, "room-1", payload}
 
-    assert Enum.find(payload["context_objects"], &(&1["object_type"] == "hypothesis"))[
+    assert Enum.find(
+             get_in(payload, ["payload", "context_objects"]),
+             &(&1["object_type"] == "hypothesis")
+           )[
              "relations"
            ] == [
              %{"relation" => "references", "target_id" => "ctx-root"}
@@ -487,20 +393,9 @@ defmodule JidoHiveClient.EmbeddedTest do
 
     assert_receive {:submit_contribution, "room-1", payload}
 
-    refute Enum.any?(payload["context_objects"], fn object ->
+    refute Enum.any?(get_in(payload, ["payload", "context_objects"]), fn object ->
              Map.has_key?(object, "relations")
            end)
-  end
-
-  test "threads explicit authority_level through the embedded chat path", %{embedded: embedded} do
-    {:ok, _contribution} =
-      Embedded.submit_chat(embedded, %{
-        text: "Binding human direction",
-        authority_level: "binding"
-      })
-
-    assert_receive {:submit_contribution, "room-1", payload}
-    assert payload["authority_level"] == "binding"
   end
 
   test "submit_chat succeeds even when the post-submit sync fails" do
@@ -518,9 +413,9 @@ defmodule JidoHiveClient.EmbeddedTest do
                text: "Acknowledge now, sync later"
              })
 
-    assert contribution["summary"] == "Acknowledge now, sync later"
+    assert get_in(contribution, ["payload", "summary"]) == "Acknowledge now, sync later"
     assert_receive {:submit_contribution, "room-1", payload}
-    assert payload["summary"] == "Acknowledge now, sync later"
+    assert get_in(payload, ["payload", "summary"]) == "Acknowledge now, sync later"
   end
 
   test "submit_chat stays responsive while a poll sync is in flight" do
@@ -533,7 +428,7 @@ defmodule JidoHiveClient.EmbeddedTest do
         poll_interval_ms: 60_000
       )
 
-    assert_receive {:blocking_fetch_sync, blocker, "room-1", _query_opts}
+    assert_receive {:blocking_list_events, blocker, "room-1", _query_opts}
 
     task =
       Task.async(fn ->
@@ -541,11 +436,11 @@ defmodule JidoHiveClient.EmbeddedTest do
       end)
 
     assert {:ok, contribution} = Task.await(task, 500)
-    assert contribution["summary"] == "Submit while sync is blocked"
+    assert get_in(contribution, ["payload", "summary"]) == "Submit while sync is blocked"
     assert_receive {:submit_contribution, "room-1", payload}
-    assert payload["summary"] == "Submit while sync is blocked"
+    assert get_in(payload, ["payload", "summary"]) == "Submit while sync is blocked"
 
-    send(blocker, :release_fetch_sync)
+    send(blocker, :release_list_events)
   end
 
   test "submit_chat_async broadcasts accepted and completed snapshots to subscribers", %{
@@ -638,13 +533,13 @@ defmodule JidoHiveClient.EmbeddedTest do
         poll_interval_ms: 10
       )
 
-    assert_receive {:missing_fetch_sync, "missing-room", _query_opts, 1}, 500
-    assert_receive {:missing_fetch_sync, "missing-room", _query_opts, 2}, 500
-    assert_receive {:missing_fetch_sync, "missing-room", _query_opts, 3}, 500
+    assert_receive {:missing_fetch_room, "missing-room", 1}, 500
+    assert_receive {:missing_fetch_room, "missing-room", 2}, 500
+    assert_receive {:missing_fetch_room, "missing-room", 3}, 500
 
     wait_until(fn -> Embedded.snapshot(embedded)["last_error"] == :room_not_found end)
     Process.sleep(80)
 
-    assert Agent.get(server, & &1.timeline_fetches) == 3
+    assert Agent.get(server, & &1.room_fetches) == 3
   end
 end

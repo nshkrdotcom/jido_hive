@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta http-equiv="x-ua-compatible" content="ie=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="generator" content="ExDoc v0.40.1">
+    <meta name="project" content="jido_hive_publications v0.1.0">
+
+
+    <title>Setup Toolkit — jido_hive_publications v0.1.0</title>
+
+    <link rel="stylesheet" href="dist/html-elixir-YJO4MOOW.css" />
+
+    <script defer src="dist/sidebar_items-715F0EAA.js"></script>
+    <script defer src="docs_config.js"></script>
+    <script defer src="dist/html-YU4BZFVS.js"></script>
+
+  </head>
+  <body>
+    <script>(()=>{var t="ex_doc:settings",e="dark";var o="dark",s="light";var E="sidebar_state",n="closed";var r="sidebar_width";var a="sidebar-open";var i=new URLSearchParams(window.location.search),S=i.get("theme")||JSON.parse(localStorage.getItem(t)||"{}").theme;(S===o||S!==s&&window.matchMedia("(prefers-color-scheme: dark)").matches)&&document.body.classList.add(e);var d=sessionStorage.getItem(E),A=d!==n&&!window.matchMedia(`screen and (max-width: ${768}px)`).matches;document.body.classList.toggle(a,A);var c=sessionStorage.getItem(r);c&&document.body.style.setProperty("--sidebarWidth",`${c}px`);var p=/(Macintosh|iPhone|iPad|iPod)/.test(window.navigator.userAgent);document.documentElement.classList.toggle("apple-os",p);})();
+</script>
+
+<div class="body-wrapper">
+
+<button id="sidebar-menu" class="sidebar-button sidebar-toggle" aria-label="toggle sidebar" aria-controls="sidebar">
+  <i class="ri-menu-line ri-lg" title="Collapse/expand sidebar"></i>
+</button>
+
+<nav id="sidebar" class="sidebar">
+
+  <div class="sidebar-header">
+    <div class="sidebar-projectInfo">
+
+      <div>
+        <a href="https://github.com/nshkrdotcom/jido_hive" class="sidebar-projectName" translate="no">
+jido_hive_publications
+        </a>
+        <div class="sidebar-projectVersion" translate="no">
+          v0.1.0
+        </div>
+      </div>
+    </div>
+    <ul id="sidebar-list-nav" class="sidebar-list-nav" role="tablist" data-extras="Pages"></ul>
+  </div>
+</nav>
+
+<output role="status" id="toast"></output>
+
+<main class="content page-extra" id="main" data-type="extras">
+  <div id="content" class="content-inner">
+    <div class="top-search">
+      <div class="search-settings">
+        <form class="search-bar" action="search.html">
+          <label class="search-label">
+            <span class="sr-only">Search documentation of jido_hive_publications</span>
+            <div class="search-input-wrapper">
+              <input name="q" type="text" class="search-input" placeholder="Press / to search" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" />
+              <button type="button" tabindex="-1" class="search-close-button" aria-hidden="true">
+                <i class="ri-close-line ri-lg" title="Cancel search"></i>
+              </button>
+            </div>
+          </label>
+        </form>
+        <div class="autocomplete">
+        </div>
+        <div class="engine-selector" data-multiple="false">
+          <button type="button" class="engine-button" aria-label="Select search engine" aria-haspopup="true" aria-expanded="false">
+            <i class="ri-search-2-line" aria-hidden="true"></i>
+            <span class="engine-name">Default</span>
+            <i class="ri-arrow-down-s-line" aria-hidden="true"></i>
+          </button>
+          <div class="engine-dropdown" hidden role="menu">
+
+              <button type="button"
+                      class="engine-option"
+                      data-engine-url="search.html?q="
+                      role="menuitemradio"
+                      aria-checked="true">
+                <span class="name">Default</span>
+                <span class="help">In-browser search</span>
+              </button>
+
+          </div>
+        </div>
+        <button class="icon-settings display-settings">
+          <i class="ri-settings-3-line"></i>
+          <span class="sr-only">Settings</span>
+        </button>
+      </div>
+    </div>
+
+<div id="top-content">
+  <div class="heading-with-actions top-heading">
+    <h1>Setup Toolkit</h1>
+
+<a href="setup_toolkit.md" title="Copy Markdown (hold Ctrl/Cmd and click it to open as Markdown)" class="copy-markdown icon-action" rel="help">
+  <i class="ri-markdown-line" aria-hidden="true"></i>
+  <span class="sr-only">Copy Markdown</span>
+</a>
+
+
+      <a href="https://github.com/nshkrdotcom/jido_hive/blob/main/../setup/README.md#L1" title="View Source" class="icon-action" rel="help">
+        <i class="ri-code-s-slash-line" aria-hidden="true"></i>
+        <span class="sr-only">View Source</span>
+      </a>
+
+  </div>
+
+
+<p><code class="inline">setup/hive</code> is the user-facing shell wrapper for the operator flow.</p><p>It now assumes a generalized worker model:</p><ul><li>generic relay workers instead of fixed role wrappers</li><li>room creation from the currently connected worker set</li><li>optional <code class="inline">--participant-count</code> locking</li><li>default turn budgets derived from the room execution plan</li></ul><p>The worker launch path is now a separate package boundary:</p><ul><li><code class="inline">bin/client</code> and <code class="inline">bin/client-worker</code> launch <code class="inline">jido_hive_worker_runtime</code></li><li><code class="inline">jido_hive_client</code> remains the headless operator/session package</li></ul><p>Run <code class="inline">bin/setup</code> once from the repo root before using the toolkit.</p><h2 id="requirements" class="section-heading"><a href="#requirements" class="hover-link"><i class="ri-link-m" aria-hidden="true"></i></a><span class="text">Requirements</span></h2><ul><li><code class="inline">curl</code></li><li><code class="inline">jq</code></li><li>a running <code class="inline">jido_hive</code> server, usually through <code class="inline">bin/server</code> or
+<code class="inline">bin/live-demo-server</code></li></ul><p>By default the toolkit talks to <code class="inline">http://127.0.0.1:4000/api</code>.</p><p>You can override that with:</p><pre><code class="makeup bash" translate="no"><span class="">export JIDO_HIVE_API_BASE=http://127.0.0.1:4100/api
+</span></code></pre><p>Useful defaults:</p><pre><code class="makeup bash" translate="no"><span class="">export JIDO_HIVE_TENANT_ID=workspace-local
+</span><span class="">export JIDO_HIVE_ACTOR_ID=operator-1
+</span><span class="">export JIDO_HIVE_EXEC_CAPABILITY_ID=workspace.exec.session
+</span></code></pre><h2 id="recommended-demo-flow" class="section-heading"><a href="#recommended-demo-flow" class="hover-link"><i class="ri-link-m" aria-hidden="true"></i></a><span class="text">Recommended Demo Flow</span></h2><p>Two terminals:</p><p>Terminal 1:</p><pre><code class="makeup bash" translate="no"><span class="">bin/hive-control
+</span></code></pre><p>Terminal 2:</p><pre><code class="makeup bash" translate="no"><span class="">bin/hive-clients
+</span></code></pre><p>Recommended sequence:</p><ol><li>In terminal 2, launch two workers from <code class="inline">bin/hive-clients</code></li><li>In terminal 1, choose the live demo option from <code class="inline">bin/hive-control</code></li><li>Watch the client terminal for the per-turn prompt and response previews</li></ol><p>If you need a reproducible non-TUI room path from the repo root, use:</p><pre><code class="makeup bash" translate="no"><span class="">bin/hive-room-smoke \
+</span><span class="">  --brief &quot;local smoke room&quot; \
+</span><span class="">  --text &quot;hello from the scripted path&quot; \
+</span><span class="">  --text &quot;second message&quot;
+</span></code></pre><p>Add <code class="inline">--run</code> if you also want the script to start a room run after the chat
+submissions.</p><h2 id="three-terminal-local-flow" class="section-heading"><a href="#three-terminal-local-flow" class="hover-link"><i class="ri-link-m" aria-hidden="true"></i></a><span class="text">Three-Terminal Local Flow</span></h2><p>If you want the direct local flow:</p><pre><code class="makeup bash" translate="no"><span class="">bin/live-demo-server
+</span><span class="">bin/client-worker --worker-index 1
+</span><span class="">bin/client-worker --worker-index 2
+</span></code></pre><p><code class="inline">bin/live-demo-server</code> waits for workers, creates or reuses the room, runs the
+demo in the foreground, and exits with the live-demo result. The run wait budget
+is derived from the room's remaining slots plus the assignment timeout contract
+unless <code class="inline">JIDO_HIVE_WAIT_TIMEOUT_MS</code> or <code class="inline">--wait-timeout-ms</code> overrides it.</p><h2 id="core-commands" class="section-heading"><a href="#core-commands" class="hover-link"><i class="ri-link-m" aria-hidden="true"></i></a><span class="text">Core Commands</span></h2><p>Show help:</p><pre><code class="makeup bash" translate="no"><span class="">setup/hive help
+</span></code></pre><p>Wait for the server:</p><pre><code class="makeup bash" translate="no"><span class="">setup/hive wait-server
+</span></code></pre><p>Inspect the server root metadata:</p><pre><code class="makeup bash" translate="no"><span class="">setup/hive server-info
+</span></code></pre><p>Wait for workers:</p><pre><code class="makeup bash" translate="no"><span class="">setup/hive wait-targets --count 2
+</span><span class="">setup/hive wait-targets --target target-worker-01 --target target-worker-02
+</span></code></pre><p>Create a room from the currently connected workers:</p><pre><code class="makeup bash" translate="no"><span class="">setup/hive create-room room-manual-1
+</span></code></pre><p>Create a room locked to two workers:</p><pre><code class="makeup bash" translate="no"><span class="">setup/hive create-room room-manual-1 --participant-count 2
+</span></code></pre><p>Create a room from explicit targets:</p><pre><code class="makeup bash" translate="no"><span class="">setup/hive create-room room-manual-1 \
+</span><span class="">  --target target-worker-01 \
+</span><span class="">  --target target-worker-02
+</span></code></pre><p>Start a room run operation with its locked default assignment budget:</p><pre><code class="makeup bash" translate="no"><span class="">setup/hive run-room room-manual-1 --assignment-timeout-ms 180000
+</span></code></pre><p>Override the number of assignments to request:</p><pre><code class="makeup bash" translate="no"><span class="">setup/hive run-room room-manual-1 --max-assignments 4 --assignment-timeout-ms 180000
+</span></code></pre><p>Run the full live demo:</p><pre><code class="makeup bash" translate="no"><span class="">setup/hive live-demo --room-id room-demo-1 --participant-count 2
+</span></code></pre><p>If <code class="inline">--participant-count</code> is omitted, <code class="inline">live-demo</code> locks all currently connected
+compatible workers.</p><h2 id="important-behavior" class="section-heading"><a href="#important-behavior" class="hover-link"><i class="ri-link-m" aria-hidden="true"></i></a><span class="text">Important Behavior</span></h2><ul><li><code class="inline">doctor</code> now verifies both API reachability and the deployed root demo contract
+before printing targets</li><li><code class="inline">server-info</code> returns the root JSON payload that backs the homepage/API status
+contract</li><li><code class="inline">create-room</code> and <code class="inline">live-demo</code> discover connected relay targets from
+<code class="inline">GET /api/targets</code></li><li>room context inspection now includes graph adjacency and derived stale flags</li><li>room timeline inspection now includes contradiction and downstream-invalidation entries</li><li>malformed relation payloads are rejected by the server instead of being
+silently accepted and ignored later</li><li>the room locks the selected worker set at room creation time</li><li>the default turn budget is <code class="inline">participant_count * 3</code></li><li>if a worker drops mid-room, the logical budget is preserved and the room keeps
+round-robining across the remaining workers</li><li><code class="inline">run-room</code> starts an explicit run operation and returns the accepted operation record</li><li><code class="inline">live-demo</code> waits for that run operation to complete before printing the final room snapshot</li><li><code class="inline">live-demo</code> now derives its default wait timeout from the room's remaining
+assignment budget and <code class="inline">assignment_timeout_ms</code> instead of using a fixed wall clock timeout</li><li><code class="inline">run-room</code> uses the locked room plan by default when <code class="inline">--max-assignments</code> is omitted</li></ul><p>For the current human-facing graph-authoring path, see:</p><ul><li><code class="inline">../examples/jido_hive_console/README.md</code></li><li><code class="inline">../jido_hive_client/README.md</code></li></ul><h2 id="publication-workflows" class="section-heading"><a href="#publication-workflows" class="hover-link"><i class="ri-link-m" aria-hidden="true"></i></a><span class="text">Publication Workflows</span></h2><p>Publication planning and execution are no longer exposed through <code class="inline">setup/hive</code>.
+Use the explicit <code class="inline">jido_hive_publications</code> extension through the web route
+<code class="inline">/rooms/:room_id/publications</code> or the downstream surfaces that mount that
+extension.</p><h2 id="connector-installs" class="section-heading"><a href="#connector-installs" class="hover-link"><i class="ri-link-m" aria-hidden="true"></i></a><span class="text">Connector Installs</span></h2><p>Start and complete a GitHub install:</p><pre><code class="makeup bash" translate="no"><span class="">setup/hive start-install github --subject octocat --scope repo
+</span><span class="">setup/hive complete-install &lt;install-id&gt; --subject octocat --scope repo
+</span></code></pre><p>Start and complete a Notion install:</p><pre><code class="makeup bash" translate="no"><span class="">setup/hive start-install notion --subject notion-workspace
+</span><span class="">setup/hive complete-install &lt;install-id&gt; --subject notion-workspace
+</span></code></pre><p>If <code class="inline">--scope</code> is omitted, the server now infers the connector's authored default
+scope set from the connector manifest. That prevents manual installs from
+creating connected-but-unusable connections with empty scope metadata.</p>
+
+</div>
+
+<div class="bottom-actions" id="bottom-actions">
+  <div class="bottom-actions-item">
+
+      <a href="debugging_guide.html" class="bottom-actions-button" rel="prev">
+        <span class="subheader">
+          ← Previous Page
+        </span>
+        <span class="title">
+Debugging Guide
+        </span>
+      </a>
+
+  </div>
+  <div class="bottom-actions-item">
+
+      <a href="multi_agent_round_robin.html" class="bottom-actions-button" rel="next">
+        <span class="subheader">
+          Next Page →
+        </span>
+        <span class="title">
+Developer Guide: Multi-Agent Round Robin
+        </span>
+      </a>
+
+  </div>
+</div>
+    <footer class="footer">
+
+        <p>
+
+          <span class="line">
+            <button class="a-main footer-button display-quick-switch" title="Go to package docs">
+              Go to package docs
+            </button>
+
+              <a href="llms.txt" target="_blank">
+                View llms.txt
+              </a>
+
+
+              <a href="jido_hive_publications.epub">
+                Download ePub version
+              </a>
+
+          </span>
+        </p>
+
+        <p class="built-using">
+          Built using
+          <a href="https://github.com/elixir-lang/ex_doc" title="ExDoc" target="_blank" rel="help noopener" translate="no">ExDoc</a> (v0.40.1) for the
+
+            <a href="https://elixir-lang.org" title="Elixir" target="_blank" translate="no">Elixir programming language</a>
+
+        </p>
+
+
+    </footer>
+  </div>
+</main>
+</div>
+
+  </body>
+</html>

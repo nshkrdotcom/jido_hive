@@ -106,10 +106,12 @@ defmodule JidoHiveWorkerRuntime.CollaborationPrompt do
 
   defp render_repair_prompt(text) do
     """
-    Convert this assistant response into the required JSON contract:
+    Convert this assistant response into the canonical contribution JSON contract:
     - Return exactly one JSON object.
     - Do not use markdown fences.
+    - Use the canonical nested shape with `kind` at the top level and semantic content under `payload`.
     - Do not return wrapper keys like schema_version, room_id, participant_id, participant_role, target_id, capability_id, id, phase, objective, status, execution, tool_events, or events.
+    - Do not return legacy top-level keys like summary, context_objects, artifacts, or authority_level.
 
     #{text}
     """
@@ -157,8 +159,9 @@ defmodule JidoHiveWorkerRuntime.CollaborationPrompt do
     Required JSON contract:
     #{output_schema}
 
-    Use [] for empty context_objects or artifacts.
+    Use [] for empty payload.context_objects or payload.artifacts.
     Do not return wrapper keys like schema_version, room_id, participant_id, participant_role, target_id, capability_id, id, phase, objective, status, execution, tool_events, or events.
+    Do not return legacy top-level keys like summary, context_objects, artifacts, or authority_level.
     """
     |> String.trim()
   end
@@ -226,6 +229,7 @@ defmodule JidoHiveWorkerRuntime.CollaborationPrompt do
 
     Preserve meaning. Return JSON only.
     Do not return wrapper keys like schema_version, room_id, participant_id, participant_role, target_id, capability_id, id, phase, objective, status, execution, tool_events, or events.
+    Do not return legacy top-level keys like summary, context_objects, artifacts, or authority_level.
     """
     |> String.trim()
   end
@@ -314,31 +318,33 @@ defmodule JidoHiveWorkerRuntime.CollaborationPrompt do
       _other ->
         """
         {
-          "summary": "string",
           "kind": "#{Enum.join(allowed_contribution_types, "|")}",
-          "context_objects": [
-            {
-              "object_type": "#{Enum.join(allowed_object_types, "|")}",
-              "title": "string",
-              "body": "string",
-              "data": {},
-              "scope": {"read": ["room"], "write": ["author"]},
-              "uncertainty": {"status": "provisional", "confidence": 0.0},
-              "relations": [
-                {
-                  "relation": "#{Enum.join(allowed_relation_types, "|")}",
-                  "target_id": "ctx-1"
-                }
-              ]
-            }
-          ],
-          "artifacts": [
-            {
-              "artifact_type": "note|tool_output|prompt",
-              "title": "string",
-              "body": "string"
-            }
-          ]
+          "payload": {
+            "summary": "string",
+            "context_objects": [
+              {
+                "object_type": "#{Enum.join(allowed_object_types, "|")}",
+                "title": "string",
+                "body": "string",
+                "data": {},
+                "scope": {"read": ["room"], "write": ["author"]},
+                "uncertainty": {"status": "provisional", "confidence": 0.0},
+                "relations": [
+                  {
+                    "relation": "#{Enum.join(allowed_relation_types, "|")}",
+                    "target_id": "ctx-1"
+                  }
+                ]
+              }
+            ],
+            "artifacts": [
+              {
+                "artifact_type": "note|tool_output|prompt",
+                "title": "string",
+                "body": "string"
+              }
+            ]
+          }
         }
         """
         |> String.trim()

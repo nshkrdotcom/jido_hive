@@ -76,10 +76,13 @@ flowchart TB
     subgraph Core[Authoritative server core]
       Rooms[room reducer and snapshots]
       Policy[dispatch policy]
-      Context[context graph and projections]
-      Timeline[timeline and inspection surfaces]
-      Publish[publication planner and executor]
+      RoomRuns[room run control]
       Connectors[connector install and connection state]
+    end
+
+    subgraph Extensions[Downstream consumers and extensions]
+      Context[context graph and workflow projections]
+      Publish[publication planning and execution]
     end
 
     subgraph External[External systems]
@@ -95,9 +98,8 @@ flowchart TB
     API --> Rooms
     Relay --> Rooms
     Rooms --> Policy
+    Rooms --> RoomRuns
     Rooms --> Context
-    Rooms --> Timeline
-    Rooms --> Publish
     Publish --> Connectors
     Connectors --> GitHub
     Connectors --> Notion
@@ -105,7 +107,8 @@ flowchart TB
 
 ### Practical model
 
-- `POST /rooms/:id/contributions` and `POST /rooms/:id/publications` are server-owned truth mutations.
+- `POST /rooms/:id/contributions` is a server-owned truth mutation.
+- publication execution now lives in explicit extension packages over canonical room resources.
 - the client may shape or submit intent, but the server decides what lands.
 - if a TUI bug and a headless client bug disagree, the server response is still the ground truth.
 
@@ -117,9 +120,7 @@ The server is responsible for:
 - participant registration and target discovery
 - assignment dispatch
 - contribution validation and reduction
-- context graph projection
-- contradiction/staleness/relationship signals
-- publication planning and execution
+- room-event replay and room-run control
 - connector install and connection state
 
 It is not responsible for being a terminal UI toolkit, a shell runner, or a second client runtime.
@@ -133,13 +134,19 @@ Mounted under `/api`.
 High-value routes include:
 
 - `GET /rooms/:id`
+- `PATCH /rooms/:id`
+- `DELETE /rooms/:id`
+- `GET /rooms/:id/participants`
+- `POST /rooms/:id/participants`
+- `GET /rooms/:id/assignments`
+- `PATCH /rooms/:id/assignments/:assignment_id`
+- `GET /rooms/:id/contributions`
 - `GET /rooms/:id/events`
 - `POST /rooms`
 - `POST /rooms/:id/runs`
 - `GET /rooms/:id/runs/:run_id`
+- `DELETE /rooms/:id/runs/:run_id`
 - `POST /rooms/:id/contributions`
-- `GET /rooms/:id/publication_plan`
-- `POST /rooms/:id/publications`
 - `GET /targets`
 - `GET /policies`
 - `POST /connectors/:connector_id/installs`
@@ -226,19 +233,21 @@ For the full site-by-site operator walkthrough, use:
 
 High-value server areas:
 
-- `lib/jido_hive_server/collaboration/`: rooms, reducers, dispatch, projections
-- `lib/jido_hive_server/publications/`: publication planning and execution
+- `lib/jido_hive_server/collaboration/`: rooms, reducers, dispatch, room events, and room runs
 - `lib/jido_hive_server_web/controllers/`: REST boundary
 - `lib/jido_hive_server/integrations_bootstrap.ex`: connector registration
+
+Publication planning and execution live in the explicit
+`jido_hive_publications` package.
 
 ### Design rules
 
 When changing the server:
 
 - keep room truth centralized
-- keep derived context signals deterministic
-- reject malformed relation writes at append time
-- keep publication auth and execution explicit
+- keep the room core ontology-free
+- reject malformed canonical resource writes at append time
+- keep graph and publication behavior outside the room-core path
 - do not move connector policy decisions into the client or console
 
 ### Debugging order

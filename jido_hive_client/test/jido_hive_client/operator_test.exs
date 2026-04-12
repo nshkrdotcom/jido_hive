@@ -105,7 +105,7 @@ defmodule JidoHiveClient.OperatorTest do
            }
   end
 
-  test "fetch_room_timeline returns entries and next cursor" do
+  test "list_room_events returns entries and next cursor" do
     {:ok, server} =
       TestHTTPServer.start_link(fn request ->
         assert request.path == "/rooms/room-1/events?after=1"
@@ -140,7 +140,7 @@ defmodule JidoHiveClient.OperatorTest do
               ],
               next_cursor: "2"
             }} =
-             Operator.fetch_room_timeline(TestHTTPServer.base_url(server), "room-1", after: 1)
+             Operator.list_room_events(TestHTTPServer.base_url(server), "room-1", after: 1)
   end
 
   test "fetch_room returns the decoded room snapshot" do
@@ -164,119 +164,51 @@ defmodule JidoHiveClient.OperatorTest do
 
     on_exit(fn -> TestHTTPServer.stop(server) end)
 
-    assert {:ok,
-            %{
-              "room_id" => "room-1",
-              "status" => "running",
-              "brief" => "Discuss architecture",
-              "assignments" => [%{"assignment_id" => "asg-1", "objective" => "Draft plan"}],
-              "contributions" => [%{"contribution_id" => "ctr-1", "summary" => "Draft plan"}],
-              "context_objects" => [%{"context_id" => "ctx-1", "object_type" => "note"}]
-            }} =
-             Operator.fetch_room(TestHTTPServer.base_url(server), "room-1")
+    assert {:ok, room} = Operator.fetch_room(TestHTTPServer.base_url(server), "room-1")
+    assert room["id"] == "room-1"
+    assert room["name"] == "Discuss architecture"
+    assert room["status"] == "running"
+
+    assert [assignment] = room["assignments"]
+    assert assignment["id"] == "asg-1"
+    assert assignment["payload"]["objective"] == "Draft plan"
+    refute Map.has_key?(assignment, "assignment_id")
+    refute Map.has_key?(assignment, "objective")
+    refute Map.has_key?(assignment, "phase")
+    refute Map.has_key?(assignment, "context_view")
+    refute Map.has_key?(assignment, "contribution_contract")
+    refute Map.has_key?(assignment, "session")
+
+    assert [contribution] = room["contributions"]
+    assert contribution["id"] == "ctr-1"
+    assert contribution["kind"] == "reasoning"
+
+    assert [participant] = room["participants"]
+    assert participant["id"] == "operator-1"
+    assert participant["kind"] == "human"
+    assert participant["meta"]["role"] == "facilitator"
+    refute Map.has_key?(participant, "participant_id")
+    refute Map.has_key?(participant, "participant_kind")
+    refute Map.has_key?(participant, "participant_role")
+    refute Map.has_key?(participant, "authority_level")
+
+    assert [context_object] = room["context_objects"]
+    assert context_object["context_id"] == "ctx-1"
+    assert context_object["object_type"] == "note"
+
+    refute Map.has_key?(room, "room_id")
+    refute Map.has_key?(room, "brief")
   end
 
-  test "fetch_room_sync returns the consolidated room sync payload" do
-    {:ok, server} =
-      TestHTTPServer.start_link(fn request ->
-        case request.path do
-          "/rooms/room-1" ->
-            {200, %{}, Jason.encode!(%{"data" => canonical_room_resource()})}
-
-          "/rooms/room-1/assignments" ->
-            {200, %{}, Jason.encode!(%{"data" => canonical_assignments()})}
-
-          "/rooms/room-1/contributions?limit=200&after_sequence=0" ->
-            {200, %{},
-             Jason.encode!(%{
-               "data" => canonical_contribution_entries(),
-               "meta" => %{"next_after_sequence" => 3, "has_more" => false}
-             })}
-
-          "/rooms/room-1/events?after=2" ->
-            {200, %{},
-             Jason.encode!(%{
-               "data" => [
-                 %{
-                   "id" => "evt-3",
-                   "room_id" => "room-1",
-                   "sequence" => 3,
-                   "type" => "contribution_submitted",
-                   "data" => %{
-                     "contribution" => %{
-                       "id" => "ctr-1",
-                       "assignment_id" => "asg-1",
-                       "participant_id" => "worker-1",
-                       "kind" => "reasoning",
-                       "payload" => %{"summary" => "Draft plan"}
-                     }
-                   },
-                   "inserted_at" => "2026-04-11T00:03:00Z"
-                 }
-               ],
-               "meta" => %{"next_after_sequence" => 3, "has_more" => false}
-             })}
-        end
-      end)
-
-    on_exit(fn -> TestHTTPServer.stop(server) end)
-
-    assert {:ok,
-            %{
-              room_snapshot: %{
-                "room_id" => "room-1",
-                "status" => "running",
-                "workflow_summary" => %{
-                  "objective" => "Discuss architecture"
-                }
-              },
-              entries: [
-                %{
-                  "event_id" => "evt-3",
-                  "kind" => "contribution.recorded",
-                  "body" => "Draft plan"
-                }
-              ],
-              next_cursor: "3",
-              context_objects: [%{"context_id" => "ctx-1"}],
-              operations: []
-            }} =
-             Operator.fetch_room_sync(TestHTTPServer.base_url(server), "room-1", after: 2)
+  test "core operator no longer exports publication helper functions" do
+    refute function_exported?(Operator, :fetch_publication_plan, 2)
+    refute function_exported?(Operator, :publish_room, 3)
   end
 
-  test "fetch_publication_plan and publish_room go through the shared operator API" do
-    parent = self()
-
-    {:ok, server} =
-      TestHTTPServer.start_link(fn request ->
-        case {request.method, request.path} do
-          {"GET", "/rooms/room-1/publication_plan"} ->
-            {200, %{},
-             Jason.encode!(%{
-               "data" => %{
-                 "publications" => [
-                   %{"channel" => "github", "required_bindings" => [%{"field" => "repo"}]}
-                 ]
-               }
-             })}
-
-          {"POST", "/rooms/room-1/publications"} ->
-            send(parent, {:publish_request, Jason.decode!(request.body)})
-            {200, %{}, Jason.encode!(%{"data" => %{"status" => "submitted"}})}
-        end
-      end)
-
-    on_exit(fn -> TestHTTPServer.stop(server) end)
-
-    assert {:ok, %{"publications" => [%{"channel" => "github"}]}} =
-             Operator.fetch_publication_plan(TestHTTPServer.base_url(server), "room-1")
-
-    payload = %{"publications" => [%{"channel" => "github", "connection_id" => "conn-1"}]}
-
-    assert {:ok, %{"status" => "submitted"}} =
-             Operator.publish_room(TestHTTPServer.base_url(server), "room-1", payload)
-
-    assert_receive {:publish_request, ^payload}
+  test "core operator no longer exports room sync helper functions" do
+    refute function_exported?(Operator, :fetch_room_sync, 3)
+    refute function_exported?(Operator, :fetch_room_timeline, 3)
+    refute function_exported?(Operator, :fetch_context_objects, 2)
   end
 
   test "create_room, run operation start/status, and list targets and policies go through the shared operator API" do
@@ -360,15 +292,14 @@ defmodule JidoHiveClient.OperatorTest do
 
     on_exit(fn -> TestHTTPServer.stop(server) end)
 
-    room_payload = %{"room_id" => "room-1", "brief" => "Discuss architecture"}
+    room_payload = %{"id" => "room-1", "name" => "Discuss architecture"}
 
-    assert {:ok,
-            %{
-              "room_id" => "room-1",
-              "status" => "idle",
-              "brief" => "Discuss architecture"
-            }} =
-             Operator.create_room(TestHTTPServer.base_url(server), room_payload)
+    assert {:ok, room} = Operator.create_room(TestHTTPServer.base_url(server), room_payload)
+    assert room["id"] == "room-1"
+    assert room["name"] == "Discuss architecture"
+    assert room["status"] == "idle"
+    refute Map.has_key?(room, "room_id")
+    refute Map.has_key?(room, "brief")
 
     assert_receive {:create_room_request,
                     %{

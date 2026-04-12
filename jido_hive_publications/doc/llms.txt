@@ -1,0 +1,22 @@
+# jido_hive_publications v0.1.0 - Table of Contents
+
+## Pages
+
+- Package
+  - [Jido Hive Publications Overview](readme.md)
+
+- Project Overview
+  - [License](license.md)
+
+- User Guides
+  - [Architecture](architecture.md)
+  - [Debugging Guide](debugging_guide.md)
+  - [Setup Toolkit](setup_toolkit.md)
+
+- Developer Guides
+  - [Developer Guide: Multi-Agent Round Robin](multi_agent_round_robin.md)
+
+## Modules
+
+- [JidoHivePublications](JidoHivePublications.md): Explicit publication extension over canonical Jido Hive room resources.
+

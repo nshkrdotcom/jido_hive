@@ -5,6 +5,7 @@ defmodule JidoHive.Switchyard.TUI.RoomsComponent do
 
   alias ExRatatui.Event
   alias JidoHive.Switchyard.TUI.{RoomsRuntime, RoomsView, State}
+  alias JidoHivePublications
   alias JidoHiveSurface
   alias Workbench.{Cmd, Keymap}
 
@@ -14,7 +15,12 @@ defmodule JidoHive.Switchyard.TUI.RoomsComponent do
 
   @impl true
   def init(%{context: context} = props, _ctx) do
-    state = State.new(client_module: Map.get(context, :client_module, JidoHiveSurface))
+    state =
+      State.new(
+        client_module: Map.get(context, :client_module, JidoHiveSurface),
+        publications_module: Map.get(context, :publications_module, JidoHivePublications)
+      )
+
     room_id = Map.get(context, :room_id)
     next_state = %{state | room_id: room_id}
 
@@ -58,7 +64,7 @@ defmodule JidoHive.Switchyard.TUI.RoomsComponent do
         {:ok, State.set_status(state, "Selected room could not be loaded.", :error), []}
 
       room ->
-        room_id = room.room_id
+        room_id = room.id
 
         next_state =
           %{state | room_id: room_id} |> State.set_status("Loading room workspace...", :info)

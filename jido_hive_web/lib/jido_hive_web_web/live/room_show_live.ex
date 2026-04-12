@@ -1,7 +1,7 @@
 defmodule JidoHiveWebWeb.RoomShowLive do
   use JidoHiveWebWeb, :live_view
 
-  alias JidoHiveClient.RoomWorkspace
+  alias JidoHiveContextGraph.RoomWorkspace
   alias JidoHiveWeb.UIConfig
 
   @impl true
@@ -38,14 +38,16 @@ defmodule JidoHiveWebWeb.RoomShowLive do
       |> assign(:run_errors, %{})
 
     if connected?(socket) do
-      {:ok, session} =
-        room_session_module.start_link(
+      session_opts =
+        [
           api_base_url: api_base_url,
           room_id: room_id,
           participant_id: identity.participant_id,
-          participant_role: identity.participant_role,
-          authority_level: identity.authority_level
-        )
+          participant_role: identity.participant_role
+        ]
+
+      {:ok, session} =
+        room_session_module.start_link(session_opts)
 
       :ok = room_session_module.subscribe(session)
       _ = room_session_module.refresh(session)
@@ -241,7 +243,7 @@ defmodule JidoHiveWebWeb.RoomShowLive do
         <button phx-click="refresh_room" class="ui-button ui-button--ghost">
           Refresh
         </button>
-        <a href={~p"/rooms/#{@room_id}/publish"} class="ui-button ui-button--primary">
+        <a href={~p"/rooms/#{@room_id}/publications"} class="ui-button ui-button--primary">
           Publish
         </a>
       </:actions>
@@ -310,7 +312,7 @@ defmodule JidoHiveWebWeb.RoomShowLive do
                   <article :for={entry <- @room_workspace.conversation} class="ui-feed__item">
                     <div class="ui-feed__meta">
                       <span class="ui-feed__author">{entry.participant_id}</span>
-                      <span class="ui-feed__kind">{entry.contribution_type}</span>
+                      <span class="ui-feed__kind">{entry.kind}</span>
                     </div>
                     <p class="ui-feed__body">{entry.body}</p>
                   </article>

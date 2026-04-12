@@ -123,7 +123,7 @@ defmodule JidoHiveContextGraph.ContributionValidator do
 
     case value(payload, "context_objects") do
       objects when is_list(objects) -> objects
-      _other -> value(contribution, "context_objects") || []
+      _other -> []
     end
   end
 

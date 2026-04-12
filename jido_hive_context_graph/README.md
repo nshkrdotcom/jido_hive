@@ -12,5 +12,6 @@ preserving the current operator-facing graph workflows for the client, TUI, and 
 - build adjacency and provenance projections
 - rebuild duplicate/staleness annotations
 - derive workflow summary data from the graph projection
+- provide reusable workflow, provenance, and workspace helpers for TUI/web/headless consumers
 
 It does not own authoritative room truth. That remains in `jido_hive_server`.

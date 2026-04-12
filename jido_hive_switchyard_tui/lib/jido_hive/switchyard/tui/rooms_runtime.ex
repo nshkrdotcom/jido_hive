@@ -60,11 +60,12 @@ defmodule JidoHive.Switchyard.TUI.RoomsRuntime do
       when is_binary(room_id) do
     Cmd.async(
       fn ->
-        state.client_module.load_publication_workspace(
+        state.publications_module.load_publication_workspace(
           Map.fetch!(props.context, :api_base_url),
           room_id,
           Map.fetch!(props.context, :subject),
-          operator_module: Map.get(props.context, :operator_module)
+          operator_module: Map.get(props.context, :operator_module),
+          operator_module_fallback: Map.get(props.context, :operator_module_fallback)
         )
       end,
       fn
@@ -76,11 +77,11 @@ defmodule JidoHive.Switchyard.TUI.RoomsRuntime do
 
   @spec submit_draft(map(), State.t(), String.t()) :: Workbench.Cmd.t()
   def submit_draft(props, %State{} = state, draft) when is_binary(draft) do
-    identity = %{
-      participant_id: Map.fetch!(props.context, :participant_id),
-      participant_role: Map.fetch!(props.context, :participant_role),
-      authority_level: Map.fetch!(props.context, :authority_level)
-    }
+    identity =
+      %{
+        participant_id: Map.fetch!(props.context, :participant_id),
+        participant_role: Map.fetch!(props.context, :participant_role)
+      }
 
     Cmd.async(
       fn ->
@@ -100,7 +101,7 @@ defmodule JidoHive.Switchyard.TUI.RoomsRuntime do
   def publish(props, %State{} = state) do
     Cmd.async(
       fn ->
-        state.client_module.publish(
+        state.publications_module.publish(
           Map.fetch!(props.context, :api_base_url),
           state.room_id,
           state.publication_workspace || %{},

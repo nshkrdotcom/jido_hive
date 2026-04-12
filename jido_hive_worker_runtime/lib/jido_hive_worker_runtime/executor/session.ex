@@ -90,7 +90,8 @@ defmodule JidoHiveWorkerRuntime.Executor.Session do
   defp finalize_response(assignment, decoded_payload, projection, events) do
     contribution = ProtocolCodec.normalize_contribution(decoded_payload, assignment)
     normalized_events = Enum.map(events, &normalize_event/1)
-    artifacts = decoded_payload["artifacts"] || []
+    artifacts = get_in(decoded_payload, ["payload", "artifacts"]) || []
+
     status = projection.execution["status"] || "completed"
 
     contribution
@@ -106,12 +107,6 @@ defmodule JidoHiveWorkerRuntime.Executor.Session do
       |> Map.put("approvals", projection.approvals)
       |> Map.put("execution", projection.execution)
     end)
-    |> Map.put("status", status)
-    |> Map.put("artifacts", artifacts)
-    |> Map.put("events", normalized_events)
-    |> Map.put("tool_events", projection.tool_events)
-    |> Map.put("approvals", projection.approvals)
-    |> Map.put("execution", projection.execution)
   end
 
   defp build_repaired_or_invalid_response(
@@ -183,17 +178,20 @@ defmodule JidoHiveWorkerRuntime.Executor.Session do
 
   defp invalid_json_response(reason) do
     %{
-      "summary" => "execution produced invalid contribution JSON",
-      "contribution_type" => "reasoning",
-      "authority_level" => "advisory",
-      "context_objects" => [],
-      "artifacts" => [
-        %{
-          "artifact_type" => "note",
-          "title" => "invalid_json",
-          "body" => inspect(reason)
-        }
-      ]
+      "kind" => "reasoning",
+      "payload" => %{
+        "summary" => "execution produced invalid contribution JSON",
+        "artifacts" => [
+          %{
+            "artifact_type" => "note",
+            "title" => "invalid_json",
+            "body" => inspect(reason)
+          }
+        ]
+      },
+      "meta" => %{
+        "status" => "failed"
+      }
     }
   end
 

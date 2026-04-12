@@ -8,7 +8,6 @@ defmodule JidoHiveClient.HeadlessCLITest do
       %{
         "api_base_url" => "http://127.0.0.1:4000/api",
         "participant_role" => "coordinator",
-        "authority_level" => "binding",
         "poll_interval_ms" => 250
       }
     end
@@ -16,40 +15,31 @@ defmodule JidoHiveClient.HeadlessCLITest do
     def list_saved_rooms("https://example.com/api"), do: ["room-a", "room-b"]
 
     def fetch_room("https://example.com/api", "room-1") do
-      {:ok, %{"room_id" => "room-1", "status" => "running"}}
-    end
-
-    def fetch_room_sync("https://example.com/api", "room-1", after: after_cursor) do
-      send(test_pid(), {:fetch_room_sync, after_cursor})
-
       {:ok,
        %{
-         room_snapshot: %{
-           "room_id" => "room-1",
-           "status" => "running",
-           "workflow_summary" => %{
-             "objective" => "Stabilize the Redis auth path",
-             "stage" => "Resolve contradictions",
-             "next_action" => "Review ctx-4 and submit a binding resolution",
-             "blockers" => [%{"kind" => "contradiction", "count" => 2}],
-             "publish_ready" => false,
-             "publish_blockers" => ["Open contradictions remain"],
-             "graph_counts" => %{
-               "duplicates" => 1,
-               "contradictions" => 1,
-               "decisions" => 1,
-               "stale" => 0,
-               "total" => 3
-             },
-             "focus_candidates" => [
-               %{"kind" => "contradiction", "context_id" => "ctx-4"},
-               %{"kind" => "duplicate_cluster", "context_id" => "ctx-1", "duplicate_count" => 1}
-             ]
-           }
+         "id" => "room-1",
+         "name" => "Stabilize the Redis auth path",
+         "status" => "running",
+         "workflow_summary" => %{
+           "objective" => "Stabilize the Redis auth path",
+           "stage" => "Resolve contradictions",
+           "next_action" => "Review ctx-4 and submit a binding resolution",
+           "blockers" => [%{"kind" => "contradiction", "count" => 2}],
+           "publish_ready" => false,
+           "publish_blockers" => ["Open contradictions remain"],
+           "graph_counts" => %{
+             "duplicates" => 1,
+             "contradictions" => 1,
+             "decisions" => 1,
+             "stale" => 0,
+             "total" => 3
+           },
+           "focus_candidates" => [
+             %{"kind" => "contradiction", "context_id" => "ctx-4"},
+             %{"kind" => "duplicate_cluster", "context_id" => "ctx-1", "duplicate_count" => 1}
+           ]
          },
-         entries: [%{"event_id" => "evt-3"}],
-         next_cursor: "evt-3",
-         context_objects: [
+         "context_objects" => [
            %{
              "context_id" => "ctx-1",
              "object_type" => "belief",
@@ -75,28 +65,26 @@ defmodule JidoHiveClient.HeadlessCLITest do
              "relations" => []
            }
          ],
-         operations: [%{"operation_id" => "room_run-1", "status" => "running"}]
+         "operations" => [%{"operation_id" => "room_run-1", "status" => "running"}]
        }}
     end
 
-    def fetch_publication_plan("https://example.com/api", "room-1") do
-      send(test_pid(), :fetch_publication_plan)
+    def list_room_events("https://example.com/api", "room-1", opts) when is_list(opts) do
+      after_cursor = Keyword.get(opts, :after)
+      send(test_pid(), {:list_room_events, after_cursor})
 
-      {:ok,
-       %{
-         "duplicate_policy" => "canonical_only",
-         "source_entries" => ["ctx-1", "ctx-3"],
-         "publications" => [%{"channel" => "github"}]
-       }}
-    end
+      case after_cursor do
+        "evt-1" ->
+          {:ok, %{entries: [%{"event_id" => "evt-2"}], next_cursor: "evt-2"}}
 
-    def fetch_room_timeline("https://example.com/api", "room-1", after: "evt-1") do
-      {:ok, %{entries: [%{"event_id" => "evt-2"}], next_cursor: "evt-2"}}
+        _other ->
+          {:ok, %{entries: [%{"event_id" => "evt-3"}], next_cursor: "evt-3"}}
+      end
     end
 
     def create_room("https://example.com/api", payload) do
       send(test_pid(), {:create_room, payload})
-      {:ok, %{"room_id" => payload["room_id"], "status" => "idle"}}
+      {:ok, %{"id" => payload["id"], "name" => payload["name"], "status" => "idle"}}
     end
 
     def start_room_run_operation("https://example.com/api", "room-1", opts) do
@@ -178,7 +166,7 @@ defmodule JidoHiveClient.HeadlessCLITest do
   end
 
   test "operator room get and timeline use the shared operator API" do
-    assert {:ok, %{"room_id" => "room-1", "status" => "running"}} =
+    assert {:ok, %{"id" => "room-1", "status" => "running"}} =
              HeadlessCLI.dispatch(
                [
                  "operator",
@@ -209,7 +197,7 @@ defmodule JidoHiveClient.HeadlessCLITest do
              )
   end
 
-  test "operator room workflow returns the canonical workflow summary from sync" do
+  test "operator room workflow returns the canonical workflow summary from room detail and events" do
     assert {:ok,
             %{
               "room_id" => "room-1",
@@ -232,7 +220,7 @@ defmodule JidoHiveClient.HeadlessCLITest do
                operator_module: OperatorStub
              )
 
-    assert_receive {:fetch_room_sync, nil}
+    assert_receive {:list_room_events, nil}
   end
 
   test "operator room workspace returns structured room workspace data" do
@@ -252,28 +240,6 @@ defmodule JidoHiveClient.HeadlessCLITest do
                  "room-1",
                  "--selected-context-id",
                  "ctx-4"
-               ],
-               operator_module: OperatorStub
-             )
-  end
-
-  test "operator publication workspace returns structured publish data" do
-    assert {:ok,
-            %{
-              "channels" => [%{"channel" => "github"}],
-              "ready?" => true,
-              "source_entries" => ["ctx-1", "ctx-3"]
-            }} =
-             HeadlessCLI.dispatch(
-               [
-                 "room",
-                 "publication-workspace",
-                 "--api-base-url",
-                 "https://example.com/api",
-                 "--room-id",
-                 "room-1",
-                 "--subject",
-                 "alice"
                ],
                operator_module: OperatorStub
              )
@@ -309,7 +275,7 @@ defmodule JidoHiveClient.HeadlessCLITest do
                operator_module: OperatorStub
              )
 
-    assert_receive {:fetch_room_sync, "evt-2"}
+    assert_receive {:list_room_events, "evt-2"}
   end
 
   test "operator room focus returns the shared control-plane digest" do
@@ -346,7 +312,7 @@ defmodule JidoHiveClient.HeadlessCLITest do
                operator_module: OperatorStub
              )
 
-    assert_receive {:fetch_room_sync, nil}
+    assert_receive {:list_room_events, nil}
   end
 
   test "operator room provenance returns the shared provenance trace for a context object" do
@@ -383,16 +349,11 @@ defmodule JidoHiveClient.HeadlessCLITest do
                operator_module: OperatorStub
              )
 
-    assert_receive {:fetch_room_sync, nil}
+    assert_receive {:list_room_events, nil}
   end
 
-  test "operator room publish-plan returns the canonical publication planning surface" do
-    assert {:ok,
-            %{
-              "duplicate_policy" => "canonical_only",
-              "source_entries" => ["ctx-1", "ctx-3"],
-              "publications" => [%{"channel" => "github"}]
-            }} =
+  test "publication commands are no longer part of the core headless CLI" do
+    assert {:error, :unsupported_command} =
              HeadlessCLI.dispatch(
                [
                  "room",
@@ -405,7 +366,35 @@ defmodule JidoHiveClient.HeadlessCLITest do
                operator_module: OperatorStub
              )
 
-    assert_receive :fetch_publication_plan
+    assert {:error, :unsupported_command} =
+             HeadlessCLI.dispatch(
+               [
+                 "room",
+                 "publication-workspace",
+                 "--api-base-url",
+                 "https://example.com/api",
+                 "--room-id",
+                 "room-1",
+                 "--subject",
+                 "alice"
+               ],
+               operator_module: OperatorStub
+             )
+
+    assert {:error, :unsupported_command} =
+             HeadlessCLI.dispatch(
+               [
+                 "room",
+                 "publish",
+                 "--api-base-url",
+                 "https://example.com/api",
+                 "--room-id",
+                 "room-1",
+                 "--payload-file",
+                 "/tmp/publish.json"
+               ],
+               operator_module: OperatorStub
+             )
   end
 
   test "operator room create persists the room locally after creation" do
@@ -414,7 +403,7 @@ defmodule JidoHiveClient.HeadlessCLITest do
 
     File.write!(
       payload_file,
-      Jason.encode!(%{"room_id" => "room-1", "brief" => "Discuss architecture"})
+      Jason.encode!(%{"id" => "room-1", "name" => "Discuss architecture"})
     )
 
     on_exit(fn -> File.rm(payload_file) end)
@@ -422,7 +411,11 @@ defmodule JidoHiveClient.HeadlessCLITest do
     assert {:ok,
             %{
               "operation_id" => operation_id,
-              "result" => %{"room_id" => "room-1", "status" => "idle"}
+              "result" => %{
+                "id" => "room-1",
+                "name" => "Discuss architecture",
+                "status" => "idle"
+              }
             }} =
              HeadlessCLI.dispatch(
                [
@@ -439,7 +432,7 @@ defmodule JidoHiveClient.HeadlessCLITest do
 
     assert String.starts_with?(operation_id, "room_create-")
 
-    assert_receive {:create_room, %{"room_id" => "room-1", "brief" => "Discuss architecture"}}
+    assert_receive {:create_room, %{"id" => "room-1", "name" => "Discuss architecture"}}
     assert_receive {:add_saved_room, "room-1", "https://example.com/api"}
   end
 
@@ -536,6 +529,7 @@ defmodule JidoHiveClient.HeadlessCLITest do
     assert attrs.text == "hello from cli"
     assert attrs.selected_context_id == "ctx-1"
     assert attrs.selected_relation == "supports"
+    refute Map.has_key?(attrs, :authority_level)
     assert_receive {:shutdown, _session}
   end
 
@@ -593,8 +587,9 @@ defmodule JidoHiveClient.HeadlessCLITest do
     assert_receive {:submit_contribution, payload}
     assert payload["room_id"] == "room-1"
     assert payload["participant_id"] == "alice"
+    refute Map.has_key?(payload, "authority_level")
 
-    assert payload["context_objects"] == [
+    assert get_in(payload, ["payload", "context_objects"]) == [
              %{
                "object_type" => "decision",
                "title" => "Choose ctx-1 and close the contradiction",
@@ -605,5 +600,7 @@ defmodule JidoHiveClient.HeadlessCLITest do
                ]
              }
            ]
+
+    assert get_in(payload, ["meta", "status"]) == "completed"
   end
 end

@@ -26,7 +26,6 @@ defmodule JidoHive.Switchyard.TUI do
         subject: Keyword.get(opts, :subject, Keyword.get(opts, :participant_id, "alice")),
         participant_id: Keyword.get(opts, :participant_id, "alice"),
         participant_role: Keyword.get(opts, :participant_role, "coordinator"),
-        authority_level: Keyword.get(opts, :authority_level, "binding"),
         room_id: Keyword.get(opts, :room_id),
         tenant_id: Keyword.get(opts, :tenant_id, "workspace-local"),
         actor_id: Keyword.get(opts, :actor_id, "operator-1")

@@ -687,15 +687,21 @@ defmodule JidoHiveContextGraph.ContextManager do
   defp visible_token?(_token, _context_object, _participant), do: false
 
   defp human_participant?(participant) do
-    Map.get(participant, :participant_kind, Map.get(participant, "participant_kind")) == "human"
+    participant_kind(participant) == "human"
   end
 
   defp participant_id(participant) do
-    Map.get(participant, :participant_id) || Map.get(participant, "participant_id")
+    Map.get(participant, :id) || Map.get(participant, "id")
   end
 
   defp participant_role(participant) do
-    Map.get(participant, :participant_role) || Map.get(participant, "participant_role")
+    participant
+    |> Map.get(:meta, Map.get(participant, "meta", %{}))
+    |> then(fn meta -> Map.get(meta, :role) || Map.get(meta, "role") end)
+  end
+
+  defp participant_kind(participant) do
+    Map.get(participant, :kind) || Map.get(participant, "kind")
   end
 
   defp authored_participant_id(context_object) do

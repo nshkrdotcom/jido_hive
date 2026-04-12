@@ -8,7 +8,7 @@ defmodule JidoHiveClient.EmbeddedSyncTest do
       Agent.start_link(fn -> %{calls: 0} end)
     end
 
-    def fetch_sync(opts, room_id, query_opts) do
+    def fetch_room(opts, room_id) do
       test_pid = Keyword.fetch!(opts, :test_pid)
       server = Keyword.fetch!(opts, :server)
 
@@ -18,33 +18,22 @@ defmodule JidoHiveClient.EmbeddedSyncTest do
           {next, %{state | calls: next}}
         end)
 
-      send(test_pid, {:fetch_sync, room_id, query_opts, call_number})
+      send(test_pid, {:fetch_room, room_id, call_number})
 
       {:ok,
        %{
-         room_snapshot: %{
-           "room_id" => room_id,
-           "status" => "running",
-           "dispatch_state" => %{"completed_slots" => 1, "total_slots" => 2},
-           "participants" => []
-         },
-         entries: [
-           %{
-             "event_id" => "evt-1",
-             "cursor" => "evt-1",
-             "kind" => "contribution.recorded",
-             "body" => "Hello sync"
-           }
-         ],
-         next_cursor: "evt-1",
-         context_objects: [
+         "id" => room_id,
+         "name" => "Sync room",
+         "status" => "running",
+         "participants" => [],
+         "context_objects" => [
            %{
              "context_id" => "ctx-1",
              "object_type" => "message",
              "body" => "Hello sync"
            }
          ],
-         operations: [
+         "operations" => [
            %{
              "operation_id" => "room_run-1",
              "client_operation_id" => "room_run-client-1",
@@ -55,19 +44,28 @@ defmodule JidoHiveClient.EmbeddedSyncTest do
        }}
     end
 
-    def fetch_room(_opts, _room_id), do: flunk("fetch_room should not be called")
+    def list_events(opts, room_id, query_opts) do
+      send(Keyword.fetch!(opts, :test_pid), {:list_events, room_id, query_opts})
 
-    def fetch_timeline(_opts, _room_id, _query_opts),
-      do: flunk("fetch_timeline should not be called")
-
-    def fetch_context_objects(_opts, _room_id),
-      do: flunk("fetch_context_objects should not be called")
+      {:ok,
+       %{
+         entries: [
+           %{
+             "event_id" => "evt-1",
+             "cursor" => "evt-1",
+             "kind" => "contribution.submitted",
+             "body" => "Hello sync"
+           }
+         ],
+         next_cursor: "evt-1"
+       }}
+    end
 
     def submit_contribution(_opts, room_id, _payload),
       do: {:ok, %{"data" => %{"room_id" => room_id}}}
   end
 
-  test "refresh uses the consolidated room sync fetch and surfaces server operations" do
+  test "refresh uses explicit room detail and event listing and surfaces server operations" do
     {:ok, server} = SyncOnlyRoomApiStub.start_link()
 
     {:ok, embedded} =
@@ -80,14 +78,15 @@ defmodule JidoHiveClient.EmbeddedSyncTest do
       )
 
     assert {:ok, snapshot} = Embedded.refresh(embedded)
-    assert_receive {:fetch_sync, "room-1", [after: nil], _call_number}
+    assert_receive {:fetch_room, "room-1", _call_number}
+    assert_receive {:list_events, "room-1", [after: nil]}
 
     assert snapshot["timeline"] == [
              %{
                "body" => "Hello sync",
                "cursor" => "evt-1",
                "event_id" => "evt-1",
-               "kind" => "contribution.recorded"
+               "kind" => "contribution.submitted"
              }
            ]
 

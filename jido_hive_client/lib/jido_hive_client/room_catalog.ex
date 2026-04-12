@@ -6,10 +6,9 @@ defmodule JidoHiveClient.RoomCatalog do
   alias JidoHiveClient.Operator
 
   @type room_summary :: %{
-          room_id: String.t(),
-          brief: String.t(),
+          id: String.t(),
+          name: String.t(),
           status: String.t(),
-          dispatch_policy_id: String.t(),
           completed_slots: non_neg_integer(),
           total_slots: non_neg_integer(),
           participant_count: non_neg_integer(),
@@ -34,15 +33,17 @@ defmodule JidoHiveClient.RoomCatalog do
   end
 
   defp room_summary(snapshot) do
-    dispatch_state = Map.get(snapshot, "dispatch_state", %{})
+    assignment_counts = Map.get(snapshot, "assignment_counts", %{})
 
     %{
-      room_id: Map.get(snapshot, "room_id", "unknown"),
-      brief: Map.get(snapshot, "brief", ""),
+      id: Map.get(snapshot, "id", "unknown"),
+      name:
+        Map.get(snapshot, "name") ||
+          get_in(snapshot, ["workflow_summary", "objective"]) ||
+          "",
       status: Map.get(snapshot, "status", "unknown"),
-      dispatch_policy_id: Map.get(snapshot, "dispatch_policy_id", ""),
-      completed_slots: Map.get(dispatch_state, "completed_slots", 0),
-      total_slots: Map.get(dispatch_state, "total_slots", 0),
+      completed_slots: Map.get(assignment_counts, "completed", 0),
+      total_slots: assignment_total(assignment_counts),
       participant_count: snapshot |> Map.get("participants", []) |> length(),
       flagged: Map.get(snapshot, "status") in ["needs_resolution", "failed"],
       fetch_error: false
@@ -51,15 +52,21 @@ defmodule JidoHiveClient.RoomCatalog do
 
   defp missing_room_summary(room_id, _reason) do
     %{
-      room_id: room_id,
-      brief: "",
+      id: room_id,
+      name: "",
       status: "missing",
-      dispatch_policy_id: "",
       completed_slots: 0,
       total_slots: 0,
       participant_count: 0,
       flagged: false,
       fetch_error: true
     }
+  end
+
+  defp assignment_total(assignment_counts) do
+    assignment_counts
+    |> Map.values()
+    |> Enum.filter(&is_integer/1)
+    |> Enum.sum()
   end
 end

@@ -57,6 +57,7 @@ defmodule JidoHiveWeb.MixProject do
   defp deps do
     [
       {:jido_hive_client, path: "../jido_hive_client"},
+      {:jido_hive_publications, path: "../jido_hive_publications"},
       {:jido_hive_surface, path: "../jido_hive_surface"},
       {:phoenix, "~> 1.8.1"},
       {:phoenix_html, "~> 4.1"},

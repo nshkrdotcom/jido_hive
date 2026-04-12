@@ -13,9 +13,14 @@ defmodule JidoHiveWorkerRuntime.CollaborationPromptTest do
 
     assert request.system_prompt =~ "Allowed contribution types: reasoning, artifact"
     assert request.system_prompt =~ "\"kind\": \"reasoning|artifact\""
+    assert request.system_prompt =~ "\"payload\": {"
+    assert request.system_prompt =~ "\"summary\": \"string\""
 
     assert request.system_prompt =~
              "Do not return wrapper keys like schema_version, room_id, participant_id"
+
+    assert request.system_prompt =~
+             "Do not return legacy top-level keys like summary, context_objects, artifacts, or authority_level."
 
     assert request.prompt =~ "Return the JSON object only."
     assert request.prompt =~ "Assignment packet JSON:"

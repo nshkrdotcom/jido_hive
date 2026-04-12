@@ -185,8 +185,8 @@ defmodule JidoHiveClient.Embedded do
       DebugTrace.emit(:info, "room_session.submit_chat.completed", %{
         room_id: state.room_id,
         participant_id: state.participant.participant_id,
-        contribution_type: contribution["contribution_type"],
-        context_count: length(contribution["context_objects"] || [])
+        contribution_type: contribution_kind(contribution),
+        context_count: contribution_context_count(contribution)
       })
 
       send(self(), {:sync_room_async, true})
@@ -200,8 +200,8 @@ defmodule JidoHiveClient.Embedded do
          room_id: state.room_id,
          payload: %{
            "operation_id" => operation_id,
-           "summary" => contribution["summary"],
-           "context_count" => length(contribution["context_objects"] || [])
+           "summary" => contribution_summary(contribution),
+           "context_count" => contribution_context_count(contribution)
          }
        })}
     else
@@ -386,9 +386,9 @@ defmodule JidoHiveClient.Embedded do
         |> Map.put("status", "completed")
         |> Map.put("updated_at", now_iso8601())
         |> Map.put("completed_at", now_iso8601())
-        |> Map.put("contribution_type", contribution["contribution_type"])
-        |> Map.put("summary", contribution["summary"])
-        |> Map.put("context_count", length(contribution["context_objects"] || []))
+        |> Map.put("contribution_type", contribution_kind(contribution))
+        |> Map.put("summary", contribution_summary(contribution))
+        |> Map.put("context_count", contribution_context_count(contribution))
         |> Map.put("error", nil)
       end)
 
@@ -400,8 +400,8 @@ defmodule JidoHiveClient.Embedded do
        room_id: state.room_id,
        payload: %{
          "operation_id" => operation_id,
-         "summary" => contribution["summary"],
-         "contribution_type" => contribution["contribution_type"]
+         "summary" => contribution_summary(contribution),
+         "contribution_type" => contribution_kind(contribution)
        }
      })}
   end
@@ -477,9 +477,17 @@ defmodule JidoHiveClient.Embedded do
   end
 
   defp current_snapshot(%__MODULE__{} = state) do
-    state.room_snapshot
-    |> normalize_room_snapshot()
-    |> Map.put("room_id", state.room_id)
+    normalized_snapshot =
+      state.room_snapshot
+      |> normalize_room_snapshot()
+      |> Map.delete(:room_id)
+      |> Map.delete("room_id")
+
+    snapshot_id =
+      Map.get(normalized_snapshot, :id) || Map.get(normalized_snapshot, "id") || state.room_id
+
+    normalized_snapshot
+    |> Map.put("id", snapshot_id)
     |> Map.put("participant", state.participant)
     |> Map.put("session_state", SessionState.snapshot(state.session_state))
     |> Map.put("timeline", state.timeline)
@@ -511,8 +519,6 @@ defmodule JidoHiveClient.Embedded do
       participant_id: state.participant.participant_id,
       participant_role: state.participant.participant_role,
       participant_kind: state.participant.participant_kind,
-      authority_level:
-        Map.get(attrs, :authority_level) || Map.get(attrs, "authority_level") || "advisory",
       text: Map.get(attrs, :text) || Map.get(attrs, "text"),
       local_context: %{
         "timeline_count" => length(state.timeline),
@@ -611,28 +617,29 @@ defmodule JidoHiveClient.Embedded do
   defp fetch_sync_result(%__MODULE__{} = state, force_full?) do
     _ = force_full?
 
-    case state.room_api.fetch_sync(room_api_sync_opts(state), state.room_id,
-           after: state.next_cursor
-         ) do
+    with {:ok, room_snapshot} <-
+           state.room_api.fetch_room(room_api_sync_opts(state), state.room_id),
+         {:ok, %{entries: entries, next_cursor: next_cursor}} <-
+           state.room_api.list_events(room_api_sync_opts(state), state.room_id,
+             after: state.next_cursor
+           ) do
+      normalized_snapshot = normalize_room_snapshot(room_snapshot)
+
       {:ok,
        %{
-         room_snapshot: room_snapshot,
+         room_snapshot: normalized_snapshot,
          entries: entries,
          next_cursor: next_cursor,
-         context_objects: context_objects,
-         operations: operations
-       }} ->
-        {:ok,
-         %{
-           room_snapshot: normalize_room_snapshot(room_snapshot),
-           entries: entries,
-           next_cursor: next_cursor,
-           context_objects: context_objects,
-           operations: operations
-         }}
-
-      {:error, reason} ->
-        {:error, reason}
+         context_objects:
+           Map.get(
+             normalized_snapshot,
+             "context_objects",
+             Map.get(normalized_snapshot, :context_objects, [])
+           ),
+         operations: Map.get(normalized_snapshot, "operations", [])
+       }}
+    else
+      {:error, reason} -> {:error, reason}
     end
   end
 
@@ -813,22 +820,27 @@ defmodule JidoHiveClient.Embedded do
     %{
       "room_id" => state.room_id,
       "participant_id" => state.participant.participant_id,
-      "participant_role" => state.participant.participant_role,
-      "participant_kind" => state.participant.participant_kind,
-      "contribution_type" => "decision",
-      "authority_level" => "binding",
-      "summary" => Map.get(attrs, "summary") || Map.get(attrs, :summary) || "Accepted: #{title}",
-      "context_objects" => [
-        %{
-          "object_type" => "decision",
-          "title" => title,
-          "body" => value(context_object, "body") || title,
-          "relations" => [%{"relation" => "derives_from", "target_id" => context_id}]
-        }
-      ],
-      "events" => [%{"event_type" => "accept", "context_id" => context_id}],
-      "execution" => %{"status" => "completed"},
-      "status" => "completed"
+      "kind" => "decision",
+      "payload" => %{
+        "summary" =>
+          Map.get(attrs, "summary") || Map.get(attrs, :summary) || "Accepted: #{title}",
+        "context_objects" => [
+          %{
+            "object_type" => "decision",
+            "title" => title,
+            "body" => value(context_object, "body") || title,
+            "relations" => [%{"relation" => "derives_from", "target_id" => context_id}]
+          }
+        ]
+      },
+      "meta" => %{
+        "participant_role" => state.participant.participant_role,
+        "participant_kind" => state.participant.participant_kind,
+        "authority_level" => "binding",
+        "events" => [%{"event_type" => "accept", "context_id" => context_id}],
+        "execution" => %{"status" => "completed"},
+        "status" => "completed"
+      }
     }
   end
 
@@ -955,8 +967,8 @@ defmodule JidoHiveClient.Embedded do
       parent,
       {:submit_operation_stage, operation_id, "sending",
        %{
-         "contribution_type" => contribution["contribution_type"],
-         "context_count" => length(contribution["context_objects"] || [])
+         "contribution_type" => contribution_kind(contribution),
+         "context_count" => contribution_context_count(contribution)
        }}
     )
   end
@@ -1085,7 +1097,8 @@ defmodule JidoHiveClient.Embedded do
   end
 
   defp push_snapshot(pid, snapshot) when is_pid(pid) do
-    room_id = Map.get(snapshot, :room_id) || Map.get(snapshot, "room_id")
+    room_id = Map.get(snapshot, :id) || Map.get(snapshot, "id")
+
     send(pid, {:room_session_snapshot, room_id, snapshot})
   end
 
@@ -1136,6 +1149,32 @@ defmodule JidoHiveClient.Embedded do
 
   defp value(map, key) when is_map(map) and is_binary(key) do
     Map.get(map, key) || Map.get(map, existing_atom_key(key))
+  end
+
+  defp contribution_payload(contribution) when is_map(contribution) do
+    Map.get(contribution, "payload") || Map.get(contribution, :payload) || %{}
+  end
+
+  defp contribution_kind(contribution) do
+    Map.get(contribution, "kind") || Map.get(contribution, :kind)
+  end
+
+  defp contribution_summary(contribution) do
+    payload = contribution_payload(contribution)
+
+    Map.get(payload, "summary") || Map.get(payload, :summary) || Map.get(payload, "text") ||
+      Map.get(payload, :text) || Map.get(payload, "title") || Map.get(payload, :title)
+  end
+
+  defp contribution_context_objects(contribution) do
+    payload = contribution_payload(contribution)
+    Map.get(payload, "context_objects") || Map.get(payload, :context_objects) || []
+  end
+
+  defp contribution_context_count(contribution) do
+    contribution
+    |> contribution_context_objects()
+    |> length()
   end
 
   defp existing_atom_key(key) when is_binary(key) do

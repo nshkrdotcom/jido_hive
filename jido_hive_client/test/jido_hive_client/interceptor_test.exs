@@ -134,8 +134,9 @@ defmodule JidoHiveClient.InterceptorTest do
 
     assert contribution["room_id"] == "room-1"
     assert contribution["participant_id"] == "alice"
+    assert contribution["kind"] == "chat"
 
-    assert contribution["events"] == [
+    assert get_in(contribution, ["meta", "events"]) == [
              %{
                "body" => "We should rollback",
                "event_type" => "chat.message",
@@ -143,7 +144,7 @@ defmodule JidoHiveClient.InterceptorTest do
              }
            ]
 
-    assert contribution["execution"]["backend"] == "mock"
+    assert get_in(contribution, ["meta", "execution", "backend"]) == "mock"
   end
 
   test "preserves authority level from chat input through interception" do

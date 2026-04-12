@@ -27,32 +27,37 @@ defmodule JidoHiveWorkerRuntime.Executor.Scripted do
     %{
       "assignment_id" => assignment["id"],
       "participant_id" => assignment["participant_id"],
-      "participant_role" => assignment["participant_role"] || "analyst",
-      "summary" => "analysis pass added substrate beliefs and notes",
       "kind" => "reasoning",
-      "context_objects" => [
-        %{
-          "object_type" => "belief",
-          "title" => "Server-owned room state",
-          "body" => "The server should own room state and issue explicit assignments."
-        },
-        %{
-          "object_type" => "note",
-          "title" => "Context views",
-          "body" =>
-            "Assignments should include a filtered context view instead of a full mutable packet."
-        }
-      ],
-      "artifacts" => [],
-      "tool_events" => [
-        %{
-          "event_type" => "tool_call",
-          "tool_name" => "context.read",
-          "status" => "ok",
-          "input" => %{"scope" => "room"},
-          "output" => %{"brief" => get_in(assignment, ["context", "brief"])}
-        }
-      ]
+      "payload" => %{
+        "summary" => "analysis pass added substrate beliefs and notes",
+        "context_objects" => [
+          %{
+            "object_type" => "belief",
+            "title" => "Server-owned room state",
+            "body" => "The server should own room state and issue explicit assignments."
+          },
+          %{
+            "object_type" => "note",
+            "title" => "Context views",
+            "body" =>
+              "Assignments should include a filtered context view instead of a full mutable packet."
+          }
+        ],
+        "artifacts" => []
+      },
+      "meta" => %{
+        "participant_role" => assignment["participant_role"] || "analyst",
+        "status" => "completed",
+        "tool_events" => [
+          %{
+            "event_type" => "tool_call",
+            "tool_name" => "context.read",
+            "status" => "ok",
+            "input" => %{"scope" => "room"},
+            "output" => %{"brief" => get_in(assignment, ["context", "brief"])}
+          }
+        ]
+      }
     }
   end
 
@@ -60,27 +65,32 @@ defmodule JidoHiveWorkerRuntime.Executor.Scripted do
     %{
       "assignment_id" => assignment["id"],
       "participant_id" => assignment["participant_id"],
-      "participant_role" => assignment["participant_role"] || "skeptic",
-      "summary" => "critique pass added one open question",
       "kind" => "reasoning",
-      "context_objects" => [
-        %{
-          "object_type" => "question",
-          "title" => "Human approval path",
-          "body" =>
-            "The system still needs a clear human authority handoff for binding decisions."
-        }
-      ],
-      "artifacts" => [],
-      "tool_events" => [
-        %{
-          "event_type" => "tool_call",
-          "tool_name" => "critique.scan",
-          "status" => "ok",
-          "input" => %{"focus" => "gaps"},
-          "output" => %{"issue_count" => 1}
-        }
-      ]
+      "payload" => %{
+        "summary" => "critique pass added one open question",
+        "context_objects" => [
+          %{
+            "object_type" => "question",
+            "title" => "Human approval path",
+            "body" =>
+              "The system still needs a clear human authority handoff for binding decisions."
+          }
+        ],
+        "artifacts" => []
+      },
+      "meta" => %{
+        "participant_role" => assignment["participant_role"] || "skeptic",
+        "status" => "completed",
+        "tool_events" => [
+          %{
+            "event_type" => "tool_call",
+            "tool_name" => "critique.scan",
+            "status" => "ok",
+            "input" => %{"focus" => "gaps"},
+            "output" => %{"issue_count" => 1}
+          }
+        ]
+      }
     }
   end
 end

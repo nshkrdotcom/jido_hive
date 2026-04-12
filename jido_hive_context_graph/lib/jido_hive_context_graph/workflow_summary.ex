@@ -13,11 +13,12 @@ defmodule JidoHiveContextGraph.WorkflowSummary do
     stale_count = stale_count(snapshot)
     decision_count = Enum.count(canonical_objects, &(object_type(&1) == "decision"))
     status = room_status(snapshot)
-    publish_ready = status == "publication_ready"
+    publish_ready = publishable?(contradictions, open_questions, decision_count)
 
     %{
       objective: room_objective(snapshot),
-      stage: workflow_stage(status, contradictions, open_questions, decision_count),
+      stage:
+        workflow_stage(status, contradictions, open_questions, decision_count, publish_ready),
       next_action:
         workflow_next_action(
           status,
@@ -64,33 +65,44 @@ defmodule JidoHiveContextGraph.WorkflowSummary do
     }
   end
 
-  defp workflow_stage("publication_ready", _contradictions, _open_questions, _decision_count),
-    do: "Ready to publish"
-
-  defp workflow_stage(_status, contradictions, _open_questions, _decision_count)
+  defp workflow_stage(_status, contradictions, _open_questions, _decision_count, _publish_ready)
        when contradictions != [],
        do: "Resolve contradictions"
 
-  defp workflow_stage(_status, _contradictions, open_questions, 0)
+  defp workflow_stage(_status, _contradictions, open_questions, 0, _publish_ready)
        when open_questions != [],
        do: "Clarify open questions"
 
-  defp workflow_stage("idle", _contradictions, _open_questions, 0), do: "Start the room"
-  defp workflow_stage(_status, _contradictions, _open_questions, 0), do: "Reach a decision"
+  defp workflow_stage("waiting", _contradictions, _open_questions, 0, _publish_ready),
+    do: "Start the room"
 
-  defp workflow_stage("running", _contradictions, _open_questions, _decision_count),
-    do: "Steer active work"
+  defp workflow_stage(
+         "active",
+         _contradictions,
+         _open_questions,
+         _decision_count,
+         _publish_ready
+       ),
+       do: "Steer active work"
 
-  defp workflow_stage(status, _contradictions, _open_questions, _decision_count),
+  defp workflow_stage(status, _contradictions, _open_questions, _decision_count, true)
+       when status in ["completed", "closed"],
+       do: "Ready to publish"
+
+  defp workflow_stage(_status, _contradictions, _open_questions, 0, _publish_ready),
+    do: "Reach a decision"
+
+  defp workflow_stage(status, _contradictions, _open_questions, _decision_count, _publish_ready),
     do: humanize_status(status)
 
   defp workflow_next_action(
-         "publication_ready",
+         status,
          _contradictions,
          _open_questions,
          _decision_count,
          true
-       ) do
+       )
+       when status in ["completed", "closed"] do
     "Review the publication plan and submit to the selected channels"
   end
 
@@ -114,7 +126,7 @@ defmodule JidoHiveContextGraph.WorkflowSummary do
     "Answer #{context_id(question)} or send a clarification message that closes it"
   end
 
-  defp workflow_next_action("idle", _contradictions, _open_questions, 0, _publish_ready) do
+  defp workflow_next_action("waiting", _contradictions, _open_questions, 0, _publish_ready) do
     "Start a room run or send the first steering message"
   end
 
@@ -123,7 +135,7 @@ defmodule JidoHiveContextGraph.WorkflowSummary do
   end
 
   defp workflow_next_action(
-         "running",
+         "active",
          _contradictions,
          _open_questions,
          _decision_count,
@@ -216,11 +228,15 @@ defmodule JidoHiveContextGraph.WorkflowSummary do
   end
 
   defp room_objective(snapshot) do
-    Map.get(snapshot, :brief) || Map.get(snapshot, "brief") || "No room objective available"
+    Map.get(snapshot, :name) || Map.get(snapshot, "name") || "No room objective available"
   end
 
   defp room_status(snapshot) do
-    Map.get(snapshot, :status) || Map.get(snapshot, "status") || "idle"
+    Map.get(snapshot, :status) || Map.get(snapshot, "status") || "waiting"
+  end
+
+  defp publishable?(contradictions, open_questions, decision_count) do
+    contradictions == [] and open_questions == [] and decision_count > 0
   end
 
   defp humanize_status(status) when is_binary(status) do

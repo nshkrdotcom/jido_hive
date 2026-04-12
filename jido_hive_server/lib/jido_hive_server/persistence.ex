@@ -11,7 +11,6 @@ defmodule JidoHiveServer.Persistence do
   }
 
   alias JidoHiveServer.Persistence.{
-    PublicationRunRecord,
     RoomEventRecord,
     RoomRunRecord,
     RoomSnapshotRecord,
@@ -247,47 +246,6 @@ defmodule JidoHiveServer.Persistence do
     {:ok, runs}
   end
 
-  @spec create_publication_run(map()) :: {:ok, map()} | {:error, Ecto.Changeset.t()}
-  def create_publication_run(attrs) when is_map(attrs) do
-    normalized = normalize(attrs)
-
-    %PublicationRunRecord{}
-    |> PublicationRunRecord.changeset(normalized)
-    |> Repo.insert()
-    |> case do
-      {:ok, record} -> {:ok, publication_run_snapshot(record)}
-      {:error, _} = error -> error
-    end
-  end
-
-  @spec update_publication_run(String.t(), map()) :: {:ok, map()} | {:error, term()}
-  def update_publication_run(publication_run_id, attrs)
-      when is_binary(publication_run_id) and is_map(attrs) do
-    case Repo.get(PublicationRunRecord, publication_run_id) do
-      nil ->
-        {:error, :publication_run_not_found}
-
-      %PublicationRunRecord{} = record ->
-        record
-        |> PublicationRunRecord.changeset(normalize(attrs))
-        |> Repo.update()
-        |> case do
-          {:ok, updated} -> {:ok, publication_run_snapshot(updated)}
-          {:error, _} = error -> error
-        end
-    end
-  end
-
-  @spec list_publication_runs(String.t()) :: [map()]
-  def list_publication_runs(room_id) when is_binary(room_id) do
-    from(record in PublicationRunRecord,
-      where: record.room_id == ^room_id,
-      order_by: [asc: record.inserted_at, asc: record.publication_run_id]
-    )
-    |> Repo.all()
-    |> Enum.map(&publication_run_snapshot/1)
-  end
-
   @spec upsert_target(map()) :: {:ok, map()} | {:error, Ecto.Changeset.t()}
   def upsert_target(%{target_id: target_id} = target) when is_binary(target_id) do
     normalized =
@@ -434,22 +392,6 @@ defmodule JidoHiveServer.Persistence do
       until: record.until || %{},
       result: record.result,
       error: record.error,
-      inserted_at: record.inserted_at,
-      updated_at: record.updated_at
-    }
-  end
-
-  defp publication_run_snapshot(%PublicationRunRecord{} = record) do
-    %{
-      publication_run_id: record.publication_run_id,
-      room_id: record.room_id,
-      channel: record.channel,
-      connector_id: record.connector_id,
-      capability_id: record.capability_id,
-      status: record.status,
-      request: record.request || %{},
-      result: record.result || %{},
-      error: record.error || %{},
       inserted_at: record.inserted_at,
       updated_at: record.updated_at
     }

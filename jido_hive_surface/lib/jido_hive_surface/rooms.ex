@@ -3,7 +3,8 @@ defmodule JidoHiveSurface.Rooms do
   UI-neutral room workflows over `jido_hive_client`.
   """
 
-  alias JidoHiveClient.{Operator, RoomCatalog, RoomSession, RoomWorkspace}
+  alias JidoHiveClient.{Operator, RoomCatalog, RoomSession}
+  alias JidoHiveContextGraph.RoomWorkspace
 
   @spec list(String.t(), keyword()) :: [RoomCatalog.room_summary()]
   def list(api_base_url, opts \\ []) when is_binary(api_base_url) and is_list(opts) do
@@ -12,15 +13,15 @@ defmodule JidoHiveSurface.Rooms do
 
   @spec normalize_create_attrs(map()) :: {:ok, map()} | {:error, map()}
   def normalize_create_attrs(attrs) when is_map(attrs) do
-    brief =
+    name =
       attrs
-      |> value("brief")
+      |> value("name")
       |> to_string()
       |> String.trim()
 
     room_id =
       attrs
-      |> value("room_id")
+      |> value("id")
       |> to_string()
       |> String.trim()
       |> case do
@@ -28,19 +29,19 @@ defmodule JidoHiveSurface.Rooms do
         other -> other
       end
 
-    if brief == "" do
-      {:error, %{brief: "can't be blank"}}
+    if name == "" do
+      {:error, %{name: "can't be blank"}}
     else
       {:ok,
        %{
-         "room_id" => room_id,
-         "brief" => brief,
+         "id" => room_id,
+         "name" => name,
          "participants" => value(attrs, "participants") || []
        }}
     end
   end
 
-  def normalize_create_attrs(_attrs), do: {:error, %{brief: "can't be blank"}}
+  def normalize_create_attrs(_attrs), do: {:error, %{name: "can't be blank"}}
 
   @spec normalize_run_attrs(map()) :: {:ok, keyword()} | {:error, map()}
   def normalize_run_attrs(attrs) when is_map(attrs) do
@@ -61,10 +62,8 @@ defmodule JidoHiveSurface.Rooms do
       when is_binary(api_base_url) and is_binary(room_id) and is_list(opts) do
     operator_module = operator_module(opts)
     after_cursor = Keyword.get(opts, :after)
-    sync_opts = if(after_cursor, do: [after: after_cursor], else: [])
-
-    {:ok, sync_result} = operator_module.fetch_room_sync(api_base_url, room_id, sync_opts)
-    snapshot = hydrate_sync_snapshot(sync_result)
+    {:ok, sync_result} = load_room_view(operator_module, api_base_url, room_id, after_cursor)
+    snapshot = hydrate_room_view(sync_result)
 
     RoomWorkspace.build(snapshot,
       selected_context_id: Keyword.get(opts, :selected_context_id),
@@ -79,10 +78,9 @@ defmodule JidoHiveSurface.Rooms do
       when is_binary(api_base_url) and is_binary(room_id) and is_binary(context_id) and
              is_list(opts) do
     operator_module = operator_module(opts)
-    sync_opts = if(after_cursor = Keyword.get(opts, :after), do: [after: after_cursor], else: [])
-
-    {:ok, sync_result} = operator_module.fetch_room_sync(api_base_url, room_id, sync_opts)
-    snapshot = hydrate_sync_snapshot(sync_result)
+    after_cursor = Keyword.get(opts, :after)
+    {:ok, sync_result} = load_room_view(operator_module, api_base_url, room_id, after_cursor)
+    snapshot = hydrate_room_view(sync_result)
 
     RoomWorkspace.provenance(snapshot, context_id)
   end
@@ -141,14 +139,16 @@ defmodule JidoHiveSurface.Rooms do
         Keyword.get(opts, :room_session_module_fallback) ||
         RoomSession
 
+    session_opts =
+      [
+        api_base_url: api_base_url,
+        room_id: room_id,
+        participant_id: Map.fetch!(identity, :participant_id),
+        participant_role: Map.fetch!(identity, :participant_role)
+      ]
+
     with {:ok, session} <-
-           room_session_module.start_link(
-             api_base_url: api_base_url,
-             room_id: room_id,
-             participant_id: Map.fetch!(identity, :participant_id),
-             participant_role: Map.fetch!(identity, :participant_role),
-             authority_level: Map.fetch!(identity, :authority_level)
-           ),
+           room_session_module.start_link(session_opts),
          {:ok, result} <- room_session_module.submit_chat(session, %{text: text}) do
       :ok = room_session_module.shutdown(session)
       {:ok, result}
@@ -161,7 +161,29 @@ defmodule JidoHiveSurface.Rooms do
       Operator
   end
 
-  defp hydrate_sync_snapshot(sync_result) do
+  defp load_room_view(operator_module, api_base_url, room_id, after_cursor) do
+    event_opts =
+      case after_cursor do
+        nil -> []
+        cursor -> [after: cursor]
+      end
+
+    with {:ok, room_snapshot} <- operator_module.fetch_room(api_base_url, room_id),
+         {:ok, %{entries: entries, next_cursor: next_cursor}} <-
+           operator_module.list_room_events(api_base_url, room_id, event_opts) do
+      {:ok,
+       %{
+         room_snapshot: room_snapshot,
+         entries: entries,
+         next_cursor: next_cursor,
+         context_objects:
+           Map.get(room_snapshot, :context_objects, Map.get(room_snapshot, "context_objects", [])),
+         operations: Map.get(room_snapshot, :operations, Map.get(room_snapshot, "operations", []))
+       }}
+    end
+  end
+
+  defp hydrate_room_view(sync_result) do
     sync_result.room_snapshot
     |> Map.put("timeline", sync_result.entries)
     |> Map.put("context_objects", sync_result.context_objects)
@@ -179,8 +201,7 @@ defmodule JidoHiveSurface.Rooms do
   end
 
   defp room_id_from(attrs, room) do
-    Map.get(attrs, "room_id") || Map.get(attrs, :room_id) || Map.get(room, "room_id") ||
-      Map.get(room, :room_id)
+    Map.get(attrs, "id") || Map.get(attrs, :id) || Map.get(room, "id") || Map.get(room, :id)
   end
 
   defp parse_optional_positive_integer(attrs, key) do

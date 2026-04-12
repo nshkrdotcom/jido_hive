@@ -17,8 +17,7 @@ defmodule JidoHiveWeb.UIConfig do
     %{
       subject: param_or_default(params, "subject", defaults.subject),
       participant_id: param_or_default(params, "participant_id", defaults.participant_id),
-      participant_role: param_or_default(params, "participant_role", defaults.participant_role),
-      authority_level: param_or_default(params, "authority_level", defaults.authority_level)
+      participant_role: param_or_default(params, "participant_role", defaults.participant_role)
     }
   end
 
@@ -29,7 +28,7 @@ defmodule JidoHiveWeb.UIConfig do
 
   @spec publications_module() :: module()
   def publications_module do
-    Application.get_env(@app, :publications_module, JidoHiveSurface)
+    Application.get_env(@app, :publications_module, JidoHivePublications)
   end
 
   @spec room_session_module() :: module()

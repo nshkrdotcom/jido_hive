@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta http-equiv="x-ua-compatible" content="ie=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="generator" content="ExDoc v0.40.1">
+    <meta name="project" content="jido_hive_publications v0.1.0">
+
+
+    <title>Debugging Guide — jido_hive_publications v0.1.0</title>
+
+    <link rel="stylesheet" href="dist/html-elixir-YJO4MOOW.css" />
+
+    <script defer src="dist/sidebar_items-715F0EAA.js"></script>
+    <script defer src="docs_config.js"></script>
+    <script defer src="dist/html-YU4BZFVS.js"></script>
+
+  </head>
+  <body>
+    <script>(()=>{var t="ex_doc:settings",e="dark";var o="dark",s="light";var E="sidebar_state",n="closed";var r="sidebar_width";var a="sidebar-open";var i=new URLSearchParams(window.location.search),S=i.get("theme")||JSON.parse(localStorage.getItem(t)||"{}").theme;(S===o||S!==s&&window.matchMedia("(prefers-color-scheme: dark)").matches)&&document.body.classList.add(e);var d=sessionStorage.getItem(E),A=d!==n&&!window.matchMedia(`screen and (max-width: ${768}px)`).matches;document.body.classList.toggle(a,A);var c=sessionStorage.getItem(r);c&&document.body.style.setProperty("--sidebarWidth",`${c}px`);var p=/(Macintosh|iPhone|iPad|iPod)/.test(window.navigator.userAgent);document.documentElement.classList.toggle("apple-os",p);})();
+</script>
+
+<div class="body-wrapper">
+
+<button id="sidebar-menu" class="sidebar-button sidebar-toggle" aria-label="toggle sidebar" aria-controls="sidebar">
+  <i class="ri-menu-line ri-lg" title="Collapse/expand sidebar"></i>
+</button>
+
+<nav id="sidebar" class="sidebar">
+
+  <div class="sidebar-header">
+    <div class="sidebar-projectInfo">
+
+      <div>
+        <a href="https://github.com/nshkrdotcom/jido_hive" class="sidebar-projectName" translate="no">
+jido_hive_publications
+        </a>
+        <div class="sidebar-projectVersion" translate="no">
+          v0.1.0
+        </div>
+      </div>
+    </div>
+    <ul id="sidebar-list-nav" class="sidebar-list-nav" role="tablist" data-extras="Pages"></ul>
+  </div>
+</nav>
+
+<output role="status" id="toast"></output>
+
+<main class="content page-extra" id="main" data-type="extras">
+  <div id="content" class="content-inner">
+    <div class="top-search">
+      <div class="search-settings">
+        <form class="search-bar" action="search.html">
+          <label class="search-label">
+            <span class="sr-only">Search documentation of jido_hive_publications</span>
+            <div class="search-input-wrapper">
+              <input name="q" type="text" class="search-input" placeholder="Press / to search" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" />
+              <button type="button" tabindex="-1" class="search-close-button" aria-hidden="true">
+                <i class="ri-close-line ri-lg" title="Cancel search"></i>
+              </button>
+            </div>
+          </label>
+        </form>
+        <div class="autocomplete">
+        </div>
+        <div class="engine-selector" data-multiple="false">
+          <button type="button" class="engine-button" aria-label="Select search engine" aria-haspopup="true" aria-expanded="false">
+            <i class="ri-search-2-line" aria-hidden="true"></i>
+            <span class="engine-name">Default</span>
+            <i class="ri-arrow-down-s-line" aria-hidden="true"></i>
+          </button>
+          <div class="engine-dropdown" hidden role="menu">
+
+              <button type="button"
+                      class="engine-option"
+                      data-engine-url="search.html?q="
+                      role="menuitemradio"
+                      aria-checked="true">
+                <span class="name">Default</span>
+                <span class="help">In-browser search</span>
+              </button>
+
+          </div>
+        </div>
+        <button class="icon-settings display-settings">
+          <i class="ri-settings-3-line"></i>
+          <span class="sr-only">Settings</span>
+        </button>
+      </div>
+    </div>
+
+<div id="top-content">
+  <div class="heading-with-actions top-heading">
+    <h1>Jido Hive Debugging Guide</h1>
+
+<a href="debugging_guide.md" title="Copy Markdown (hold Ctrl/Cmd and click it to open as Markdown)" class="copy-markdown icon-action" rel="help">
+  <i class="ri-markdown-line" aria-hidden="true"></i>
+  <span class="sr-only">Copy Markdown</span>
+</a>
+
+
+      <a href="https://github.com/nshkrdotcom/jido_hive/blob/main/../docs/debugging_guide.md#L1" title="View Source" class="icon-action" rel="help">
+        <i class="ri-code-s-slash-line" aria-hidden="true"></i>
+        <span class="sr-only">View Source</span>
+      </a>
+
+  </div>
+
+
+<p>This is the default debugging order for <code class="inline">jido_hive</code>.</p><p>Use it when:</p><ul><li>a room looks stale</li><li>a mutation appears to hang</li><li>a worker is not registering</li><li>a run operation is blocked</li><li>the TUI shows something that looks wrong</li><li>the web UI shows something that looks wrong</li></ul><p>The governing rule is:</p><ol><li>server truth first</li><li>headless operator client second</li><li>shared operator surface third</li><li>worker runtime fourth if the bug involves targets, room channels, or assignment execution</li><li>TUI or web UI last</li></ol><p>If a behavior reproduces from the headless client or shared surface, it is not a
+UI-only bug.</p><h2 id="current-transport-split" class="section-heading"><a href="#current-transport-split" class="hover-link"><i class="ri-link-m" aria-hidden="true"></i></a><span class="text">Current transport split</span></h2><p>Today the system uses two transport styles:</p><ul><li>operator surfaces use the HTTP API</li><li>workers use websocket room channels</li></ul><p>That means:</p><ul><li><code class="inline">setup/hive</code> is an HTTP-oriented operator/tooling surface</li><li><code class="inline">jido_hive_client room ...</code> commands are HTTP-backed</li><li><code class="inline">jido_hive_surface</code> is the shared UI-neutral workflow layer over those
+operator seams</li><li>the Switchyard-backed console is HTTP-backed for room inspection and human
+actions</li><li><code class="inline">jido_hive_web</code> is HTTP-backed for room inspection and human actions</li><li><code class="inline">bin/client</code> and <code class="inline">bin/client-worker</code> launch websocket room workers through
+<code class="inline">jido_hive_worker_runtime</code></li></ul><h2 id="what-each-layer-owns" class="section-heading"><a href="#what-each-layer-owns" class="hover-link"><i class="ri-link-m" aria-hidden="true"></i></a><span class="text">What each layer owns</span></h2><ul><li><code class="inline">jido_hive_server</code>
+authoritative room truth, room-event truth, reduction, and connector state</li><li><code class="inline">jido_hive_client</code>
+reusable operator workflows, room-scoped local session behavior, headless CLI</li><li><code class="inline">jido_hive_surface</code>
+shared room workflows for TUI and web packages</li><li><code class="inline">jido_hive_publications</code>
+explicit publication planning, execution, persistence, and publication UI
+models</li><li><code class="inline">jido_hive_worker_runtime</code>
+relay worker registration, assignment delivery, local execution, worker-local
+runtime state</li><li><code class="inline">jido_hive_switchyard_tui</code>, <code class="inline">jido_hive_web</code>, and <code class="inline">examples/jido_hive_console</code>
+presentation, routing, local screen state, and key handling</li></ul><h2 id="standard-triage-sequence" class="section-heading"><a href="#standard-triage-sequence" class="hover-link"><i class="ri-link-m" aria-hidden="true"></i></a><span class="text">Standard triage sequence</span></h2><p>Use one bug, one room, one sequence.</p><h3 id="1-confirm-server-truth" class="section-heading"><a href="#1-confirm-server-truth" class="hover-link"><i class="ri-link-m" aria-hidden="true"></i></a><span class="text">1. Confirm server truth</span></h3><p>Start here before touching the client or TUI.</p><pre><code class="makeup bash" translate="no"><span class="">setup/hive server-info
+</span><span class="">curl -sS http://127.0.0.1:4000/api/rooms/&lt;room-id&gt; | jq
+</span><span class="">curl -sS http://127.0.0.1:4000/api/rooms/&lt;room-id&gt;/events | jq
+</span></code></pre><p>Questions this answers:</p><ul><li>does the server think the room is <code class="inline">waiting</code>, <code class="inline">active</code>, <code class="inline">completed</code>, <code class="inline">closed</code>,
+or <code class="inline">failed</code>?</li><li>does the room already contain the contribution or context object you expect?</li><li>is the room event feed moving even if the console looks stale?</li></ul><p>If server truth is wrong, stop blaming the client, surface, or UI.</p><h3 id="2-reproduce-through-jido_hive_client" class="section-heading"><a href="#2-reproduce-through-jido_hive_client" class="hover-link"><i class="ri-link-m" aria-hidden="true"></i></a><span class="text">2. Reproduce through <code class="inline">jido_hive_client</code></span></h3><p>This is the main seam test.</p><pre><code class="makeup bash" translate="no"><span class="">cd jido_hive_client
+</span><span class="">mix escript.build
+</span><span class="">
+</span><span class="">./jido_hive_client room show \
+</span><span class="">  --api-base-url http://127.0.0.1:4000/api \
+</span><span class="">  --room-id &lt;room-id&gt; | jq
+</span><span class="">
+</span><span class="">./jido_hive_client room workflow \
+</span><span class="">  --api-base-url http://127.0.0.1:4000/api \
+</span><span class="">  --room-id &lt;room-id&gt; | jq
+</span><span class="">
+</span><span class="">./jido_hive_client room tail \
+</span><span class="">  --api-base-url http://127.0.0.1:4000/api \
+</span><span class="">  --room-id &lt;room-id&gt; | jq
+</span></code></pre><p>Questions this answers:</p><ul><li>can the client see the same truth as raw HTTP?</li><li>is the bug already present before the TUI is involved?</li><li>is the issue in operator/session semantics rather than rendering?</li></ul><h3 id="3-reproduce-through-the-shared-surface-or-human-action-headlessly" class="section-heading"><a href="#3-reproduce-through-the-shared-surface-or-human-action-headlessly" class="hover-link"><i class="ri-link-m" aria-hidden="true"></i></a><span class="text">3. Reproduce through the shared surface or human action headlessly</span></h3><p>Use the shared surface next when the issue seems UI-adjacent but should still be
+reproducible without Phoenix or terminal state.</p><p>Typical examples:</p><ul><li>room list does not match saved rooms</li><li>publication workspace looks wrong in an extension-mounted surface</li><li>provenance flow or room create/run validation looks inconsistent</li></ul><p>Then use the headless client with trace for submit, accept, or resolve bugs.</p><p>Use this for submit, accept, or resolve bugs.</p><pre><code class="makeup bash" translate="no"><span class="">JIDO_HIVE_CLIENT_LOG_LEVEL=debug \
+</span><span class="">./jido_hive_client room submit \
+</span><span class="">  --api-base-url http://127.0.0.1:4000/api \
+</span><span class="">  --room-id &lt;room-id&gt; \
+</span><span class="">  --participant-id alice \
+</span><span class="">  --participant-role coordinator \
+</span><span class="">  --authority-level binding \
+</span><span class="">  --text &quot;debug probe&quot; \
+</span><span class="">  &gt; submit.json \
+</span><span class="">  2&gt; submit_trace.ndjson
+</span></code></pre><p>Rules:</p><ul><li>JSON stays on stdout</li><li>trace stays on stderr</li><li>capture this before adding more logging</li></ul><h3 id="4-if-the-bug-is-execution-side-debug-the-worker-runtime" class="section-heading"><a href="#4-if-the-bug-is-execution-side-debug-the-worker-runtime" class="hover-link"><i class="ri-link-m" aria-hidden="true"></i></a><span class="text">4. If the bug is execution-side, debug the worker runtime</span></h3><p>This is the right layer for:</p><ul><li>target never appears in <code class="inline">/api/targets</code></li><li>worker never joins the room channel</li><li>assignments never arrive</li><li>provider execution fails before the contribution is published</li></ul><p>Useful checks:</p><pre><code class="makeup bash" translate="no"><span class="">setup/hive targets
+</span><span class="">curl -sS http://127.0.0.1:4000/api/targets | jq
+</span><span class="">bin/client-worker --worker-index 1
+</span></code></pre><p>If you need to run the worker package directly:</p><pre><code class="makeup bash" translate="no"><span class="">cd jido_hive_worker_runtime
+</span><span class="">mix escript.build
+</span><span class="">./jido_hive_worker --help
+</span></code></pre><h3 id="5-only-then-run-the-ui" class="section-heading"><a href="#5-only-then-run-the-ui" class="hover-link"><i class="ri-link-m" aria-hidden="true"></i></a><span class="text">5. Only then run the UI</span></h3><p>Web:</p><pre><code class="makeup bash" translate="no"><span class="">cd jido_hive_web
+</span><span class="">mix phx.server
+</span></code></pre><p>TUI:</p><pre><code class="makeup bash" translate="no"><span class="">cd examples/jido_hive_console
+</span><span class="">mix escript.build
+</span><span class="">./hive console --local --participant-id alice --debug --room-id &lt;room-id&gt;
+</span></code></pre><p>At this point you are testing:</p><ul><li>browser or terminal render state</li><li>focus and selection</li><li>local editor state</li><li>overlays and presentation</li><li>composition between presentation layer and the shared operator surface</li></ul><p>If the bug is already visible headlessly or from <code class="inline">jido_hive_surface</code>, do not
+stay here.</p><h2 id="structured-trace-rule" class="section-heading"><a href="#structured-trace-rule" class="hover-link"><i class="ri-link-m" aria-hidden="true"></i></a><span class="text">Structured trace rule</span></h2><p>For bash-first debugging, prefer:</p><pre><code class="makeup bash" translate="no"><span class="">cd jido_hive_client
+</span><span class="">JIDO_HIVE_CLIENT_LOG_LEVEL=debug \
+</span><span class="">./jido_hive_client room show --api-base-url http://127.0.0.1:4000/api --room-id &lt;room-id&gt; \
+</span><span class="">  &gt; room.json \
+</span><span class="">  2&gt; trace.ndjson
+</span></code></pre><p>That keeps machine-readable output and trace output separate.</p><h2 id="local-iex" class="section-heading"><a href="#local-iex" class="hover-link"><i class="ri-link-m" aria-hidden="true"></i></a><span class="text">Local <code class="inline">iex</code></span></h2><p>Use local <code class="inline">iex</code> only when bash-level reproduction is not enough.</p><p>Server:</p><pre><code class="makeup bash" translate="no"><span class="">cd jido_hive_server
+</span><span class="">iex -S mix phx.server
+</span></code></pre><p>Client:</p><pre><code class="makeup bash" translate="no"><span class="">cd jido_hive_client
+</span><span class="">iex -S mix
+</span></code></pre><p>Worker runtime:</p><pre><code class="makeup bash" translate="no"><span class="">cd jido_hive_worker_runtime
+</span><span class="">iex -S mix
+</span></code></pre><p>Do not assume production remote shell attach exists as a supported workflow.
+For production, prefer HTTP, headless client commands, and platform logs.</p>
+
+</div>
+
+<div class="bottom-actions" id="bottom-actions">
+  <div class="bottom-actions-item">
+
+      <a href="architecture.html" class="bottom-actions-button" rel="prev">
+        <span class="subheader">
+          ← Previous Page
+        </span>
+        <span class="title">
+Architecture
+        </span>
+      </a>
+
+  </div>
+  <div class="bottom-actions-item">
+
+      <a href="setup_toolkit.html" class="bottom-actions-button" rel="next">
+        <span class="subheader">
+          Next Page →
+        </span>
+        <span class="title">
+Setup Toolkit
+        </span>
+      </a>
+
+  </div>
+</div>
+    <footer class="footer">
+
+        <p>
+
+          <span class="line">
+            <button class="a-main footer-button display-quick-switch" title="Go to package docs">
+              Go to package docs
+            </button>
+
+              <a href="llms.txt" target="_blank">
+                View llms.txt
+              </a>
+
+
+              <a href="jido_hive_publications.epub">
+                Download ePub version
+              </a>
+
+          </span>
+        </p>
+
+        <p class="built-using">
+          Built using
+          <a href="https://github.com/elixir-lang/ex_doc" title="ExDoc" target="_blank" rel="help noopener" translate="no">ExDoc</a> (v0.40.1) for the
+
+            <a href="https://elixir-lang.org" title="Elixir" target="_blank" translate="no">Elixir programming language</a>
+
+        </p>
+
+
+    </footer>
+  </div>
+</main>
+</div>
+
+  </body>
+</html>

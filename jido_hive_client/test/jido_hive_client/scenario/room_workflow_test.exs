@@ -1,15 +1,15 @@
 defmodule JidoHiveClient.Scenario.RoomWorkflowTest do
   use ExUnit.Case, async: true
 
-  alias JidoHiveClient.RoomWorkflow, as: SharedRoomWorkflow
   alias JidoHiveClient.Scenario.RoomWorkflow
+  alias JidoHiveContextGraph.RoomWorkflow, as: SharedRoomWorkflow
 
   defmodule SharedState do
     def start_link do
       Agent.start_link(fn ->
         %{
           room_id: nil,
-          brief: nil,
+          name: nil,
           messages: [],
           run_statuses: ["accepted", "running", "completed"],
           run_fetch_count: 0
@@ -23,10 +23,10 @@ defmodule JidoHiveClient.Scenario.RoomWorkflowTest do
       server = Keyword.fetch!(opts, :server)
 
       Agent.update(server, fn state ->
-        %{state | room_id: payload["room_id"], brief: payload["brief"]}
+        %{state | room_id: payload["id"], name: payload["name"]}
       end)
 
-      {:ok, %{"room_id" => payload["room_id"], "status" => "idle"}}
+      {:ok, %{"id" => payload["id"], "name" => payload["name"], "status" => "idle"}}
     end
 
     def start_room_run_operation(_api_base_url, room_id, opts \\ []) do
@@ -58,7 +58,7 @@ defmodule JidoHiveClient.Scenario.RoomWorkflowTest do
       |> then(&{:ok, &1})
     end
 
-    def fetch_room_sync(_api_base_url, room_id, opts \\ []) do
+    def fetch_room(_api_base_url, room_id, opts \\ []) do
       server = Keyword.fetch!(opts, :server)
 
       {:ok,
@@ -68,31 +68,12 @@ defmodule JidoHiveClient.Scenario.RoomWorkflowTest do
            |> Enum.at(min(max(state.run_fetch_count - 1, 0), length(state.run_statuses) - 1))
 
          %{
-           room_snapshot: %{
-             "room_id" => room_id,
-             "brief" => state.brief,
-             "status" =>
-               if(current_run_status == "completed", do: "publication_ready", else: "running"),
-             "workflow_summary" =>
-               workflow_summary(state.brief, current_run_status, state.messages)
-           },
-           entries:
-             Enum.with_index(state.messages, 1)
-             |> Enum.map(fn {message, index} ->
-               %{
-                 "event_id" => "evt-#{index}",
-                 "cursor" => "evt-#{index}",
-                 "kind" => "contribution.recorded",
-                 "body" => message
-               }
-             end),
-           next_cursor:
-             case length(state.messages) do
-               0 -> nil
-               count -> "evt-#{count}"
-             end,
-           context_objects: context_objects(state.messages),
-           operations: [
+           "id" => room_id,
+           "name" => state.name,
+           "status" => if(current_run_status == "completed", do: "completed", else: "running"),
+           "workflow_summary" => workflow_summary(state.name, current_run_status, state.messages),
+           "context_objects" => context_objects(state.messages),
+           "operations" => [
              %{
                "operation_id" => "room_run-1",
                "client_operation_id" => "room_run-client-1",
@@ -104,7 +85,33 @@ defmodule JidoHiveClient.Scenario.RoomWorkflowTest do
        end)}
     end
 
-    defp workflow_summary(brief, current_run_status, messages) do
+    def list_room_events(_api_base_url, _room_id, opts \\ []) do
+      server = Keyword.fetch!(opts, :server)
+
+      {:ok,
+       Agent.get(server, fn state ->
+         entries =
+           Enum.with_index(state.messages, 1)
+           |> Enum.map(fn {message, index} ->
+             %{
+               "event_id" => "evt-#{index}",
+               "cursor" => "evt-#{index}",
+               "kind" => "contribution.submitted",
+               "body" => message
+             }
+           end)
+
+         next_cursor =
+           case length(state.messages) do
+             0 -> nil
+             count -> "evt-#{count}"
+           end
+
+         %{entries: entries, next_cursor: next_cursor}
+       end)}
+    end
+
+    defp workflow_summary(name, current_run_status, messages) do
       duplicate_count =
         messages
         |> Enum.frequencies()
@@ -113,7 +120,7 @@ defmodule JidoHiveClient.Scenario.RoomWorkflowTest do
       publish_ready = current_run_status == "completed"
 
       %{
-        "objective" => brief,
+        "objective" => name,
         "stage" => if(publish_ready, do: "Ready to publish", else: "Steer active work"),
         "next_action" =>
           if(publish_ready,
@@ -202,10 +209,10 @@ defmodule JidoHiveClient.Scenario.RoomWorkflowTest do
         messages = Agent.get(shared_server, & &1.messages)
 
         %{
-          "room_id" => room_id,
+          "id" => room_id,
           "timeline" =>
             Enum.map(messages, fn message ->
-              %{"kind" => "contribution.recorded", "body" => message}
+              %{"kind" => "contribution.submitted", "body" => message}
             end),
           "context_objects" =>
             Enum.map(messages, fn message ->
@@ -231,9 +238,11 @@ defmodule JidoHiveClient.Scenario.RoomWorkflowTest do
         %{
           "room_id" => room_id,
           "participant_id" => participant_id,
-          "contribution_type" => "chat",
-          "summary" => message,
-          "context_objects" => [%{"object_type" => "message", "body" => message}]
+          "kind" => "chat",
+          "payload" => %{
+            "summary" => message,
+            "context_objects" => [%{"object_type" => "message", "body" => message}]
+          }
         }
       end)
       |> then(&{:ok, &1})
@@ -249,8 +258,8 @@ defmodule JidoHiveClient.Scenario.RoomWorkflowTest do
              RoomWorkflow.run(
                api_base_url: "http://127.0.0.1:4000/api",
                room_payload: %{
-                 "room_id" => "room-1",
-                 "brief" => "Exercise the room workflow harness."
+                 "id" => "room-1",
+                 "name" => "Exercise the room workflow harness."
                },
                participant_id: "alice",
                participant_role: "coordinator",
@@ -273,9 +282,9 @@ defmodule JidoHiveClient.Scenario.RoomWorkflowTest do
              :room_synced
            ]
 
-    assert report.room["room_id"] == "room-1"
-    assert report.before_run_submit["summary"] == "Message before run"
-    assert report.during_run_submit["summary"] == "Message during run"
+    assert report.room["id"] == "room-1"
+    assert get_in(report.before_run_submit, ["payload", "summary"]) == "Message before run"
+    assert get_in(report.during_run_submit, ["payload", "summary"]) == "Message during run"
     assert report.run_operation["status"] == "completed"
 
     assert Enum.map(report.final_sync.context_objects, & &1["body"]) == [
@@ -297,8 +306,8 @@ defmodule JidoHiveClient.Scenario.RoomWorkflowTest do
              RoomWorkflow.run(
                api_base_url: "http://127.0.0.1:4000/api",
                room_payload: %{
-                 "room_id" => "room-duplicates-1",
-                 "brief" => "Collapse repeated room beliefs into one canonical operator view."
+                 "id" => "room-duplicates-1",
+                 "name" => "Collapse repeated room beliefs into one canonical operator view."
                },
                participant_id: "alice",
                participant_role: "coordinator",

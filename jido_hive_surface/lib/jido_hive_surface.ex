@@ -3,7 +3,7 @@ defmodule JidoHiveSurface do
   UI-neutral operator surface over `jido_hive_client`.
   """
 
-  alias JidoHiveSurface.{Publications, Rooms}
+  alias JidoHiveSurface.Rooms
 
   @spec list_rooms(String.t(), keyword()) :: [map()]
   def list_rooms(api_base_url, opts \\ []), do: Rooms.list(api_base_url, opts)
@@ -38,13 +38,4 @@ defmodule JidoHiveSurface do
           {:ok, map()} | {:error, term()}
   def submit_steering(api_base_url, room_id, identity, text, opts \\ []),
     do: Rooms.submit_steering(api_base_url, room_id, identity, text, opts)
-
-  @spec load_publication_workspace(String.t(), String.t(), String.t(), keyword()) :: map()
-  def load_publication_workspace(api_base_url, room_id, subject, opts \\ []),
-    do: Publications.workspace(api_base_url, room_id, subject, opts)
-
-  @spec publish(String.t(), String.t(), map(), map(), keyword()) ::
-          {:ok, map()} | {:error, term()}
-  def publish(api_base_url, room_id, publication_workspace, bindings, opts \\ []),
-    do: Publications.publish(api_base_url, room_id, publication_workspace, bindings, opts)
 end

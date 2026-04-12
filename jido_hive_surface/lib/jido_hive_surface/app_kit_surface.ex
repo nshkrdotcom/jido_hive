@@ -9,8 +9,7 @@ defmodule JidoHiveSurface.AppKitSurface do
   alias AppKit.ScopeObjects
   alias JidoHiveSurface.Rooms
 
-  @spec room_scope(String.t(), String.t(), String.t()) ::
-          {:ok, AppKit.ScopeObjects.HostScope.t()} | {:error, atom()}
+  @spec room_scope(String.t(), String.t(), String.t()) :: {:ok, map()} | {:error, atom()}
   def room_scope(api_base_url, room_id, actor_id)
       when is_binary(api_base_url) and is_binary(room_id) and is_binary(actor_id) do
     ScopeObjects.host_scope(%{

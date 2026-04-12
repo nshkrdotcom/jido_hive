@@ -24,13 +24,16 @@ seam is still wrong.
 This repo currently contains:
 
 - `jido_hive_server`
-  authoritative room engine, REST API, websocket room transport, context graph,
-  publications, connector state
+  authoritative room engine, REST API, websocket room transport, persistence,
+  and connector state
 - `jido_hive_client`
   headless operator API, JSON CLI, and room-scoped local session boundary
 - `jido_hive_surface`
-  UI-neutral operator workflows for room CRUD, room workspace, provenance,
-  run-control, and publication flows over `jido_hive_client`
+  UI-neutral operator workflows for room CRUD, room workspace, provenance, and
+  run-control flows over `jido_hive_client`
+- `jido_hive_publications`
+  explicit publication planning, execution, persistence, and publication UI
+  models over canonical room resources
 - `jido_hive_worker_runtime`
   long-lived relay worker runtime, local executor stack, worker CLI, and worker
   control API
@@ -141,7 +144,10 @@ flowchart LR
 
     subgraph Surface[jido_hive_surface]
       SurfaceRooms[JidoHiveSurface room workflows]
-      SurfacePublish[JidoHiveSurface publication workflows]
+    end
+
+    subgraph Publications[jido_hive_publications]
+      PublishSurface[JidoHivePublications publication workflows]
     end
 
     subgraph Workers[jido_hive_worker_runtime]
@@ -154,7 +160,6 @@ flowchart LR
       API[REST API]
       Relay[websocket relay]
       Rooms[room reducer and snapshots]
-      Publish[publication planner]
       Connectors[connector state]
     end
 
@@ -162,12 +167,13 @@ flowchart LR
     Headless --> RoomSession
     Session --> RoomSession
     TUI --> SurfaceRooms
-    TUI --> SurfacePublish
+    TUI --> PublishSurface
     Web --> SurfaceRooms
-    Web --> SurfacePublish
+    Web --> PublishSurface
     Setup --> API
     SurfaceRooms --> OperatorAPI
-    SurfacePublish --> OperatorAPI
+    PublishSurface --> OperatorAPI
+    PublishSurface --> Connectors
     Web --> RoomSession
     RoomSession --> Embedded
     OperatorAPI --> API
@@ -176,8 +182,6 @@ flowchart LR
     RelayWorker --> Relay
     Relay --> Rooms
     API --> Rooms
-    Rooms --> Publish
-    Publish --> Connectors
     RelayWorker --> Executor
 ```
 
@@ -185,7 +189,9 @@ flowchart LR
 
 - the server decides what the room is
 - the client reads and mutates that truth through reusable operator/session seams
-- the shared surface turns that seam into UI-neutral room and publication workflows
+- the shared surface turns that seam into UI-neutral room workflows
+- optional extensions such as `jido_hive_publications` layer publication
+  behavior on top of canonical room resources
 - the worker runtime executes assignments and publishes structured results
 - the Switchyard-backed TUI and the Phoenix web UI both render those seams
   interactively
@@ -200,7 +206,7 @@ combination of:
 - a typed shared context graph with provenance, contradiction, and canonical
   signals
 - the same room model exposed through API, headless CLI, and TUI
-- publication planning that explains what becomes official output and why
+- explicit extension packages for graph projection and publication workflows
 
 ## Package guide
 
@@ -210,6 +216,8 @@ combination of:
   operator API, room session boundary, headless CLI
 - [jido_hive_surface/README.md](jido_hive_surface/README.md)
   UI-neutral operator surface for TUI and web presentation packages
+- [jido_hive_publications/README.md](jido_hive_publications/README.md)
+  explicit publication extension over canonical room resources
 - [jido_hive_worker_runtime/README.md](jido_hive_worker_runtime/README.md)
   relay workers, executor stack, worker CLI
 - [jido_hive_switchyard_site/README.md](jido_hive_switchyard_site/README.md)

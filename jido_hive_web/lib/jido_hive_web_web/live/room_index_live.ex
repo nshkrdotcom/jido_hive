@@ -14,7 +14,7 @@ defmodule JidoHiveWebWeb.RoomIndexLive do
      |> assign(:rooms_module, rooms_module)
      |> assign(:rooms, rooms_module.list_rooms(api_base_url, []))
      |> assign(:create_errors, %{})
-     |> assign(:room_form, to_form(%{"room_id" => "", "brief" => ""}, as: :room))}
+     |> assign(:room_form, to_form(%{"id" => "", "name" => ""}, as: :room))}
   end
 
   @impl true
@@ -23,7 +23,7 @@ defmodule JidoHiveWebWeb.RoomIndexLive do
 
     with {:ok, payload} <- rooms_module.normalize_create_attrs(attrs),
          {:ok, room} <- rooms_module.create_room(socket.assigns.api_base_url, payload, []) do
-      room_id = Map.get(room, "room_id") || Map.get(room, :room_id) || payload["room_id"]
+      room_id = Map.get(room, "id") || Map.get(room, :id) || payload["id"]
 
       {:noreply,
        socket
@@ -87,12 +87,12 @@ defmodule JidoHiveWebWeb.RoomIndexLive do
             <div class="ui-panel__body">
               <.form id="create-room-form" for={@room_form} phx-submit="create_room" class="ui-form">
                 <div class="ui-field">
-                  <label class="ui-label" for={@room_form[:room_id].id}>Room ID</label>
+                  <label class="ui-label" for={@room_form[:id].id}>Room ID</label>
                   <input
-                    id={@room_form[:room_id].id}
+                    id={@room_form[:id].id}
                     type="text"
-                    name={@room_form[:room_id].name}
-                    value={@room_form[:room_id].value}
+                    name={@room_form[:id].name}
+                    value={@room_form[:id].value}
                     class="ui-input"
                     placeholder="room-123"
                   />
@@ -100,15 +100,15 @@ defmodule JidoHiveWebWeb.RoomIndexLive do
                 </div>
 
                 <div class="ui-field">
-                  <label class="ui-label" for={@room_form[:brief].id}>Brief</label>
+                  <label class="ui-label" for={@room_form[:name].id}>Room Name</label>
                   <textarea
-                    id={@room_form[:brief].id}
-                    name={@room_form[:brief].name}
+                    id={@room_form[:name].id}
+                    name={@room_form[:name].name}
                     class="ui-textarea ui-textarea--compact"
                     placeholder="What should the room solve?"
-                  ><%= @room_form[:brief].value %></textarea>
-                  <p :if={Map.has_key?(@create_errors, :brief)} class="ui-field-error">
-                    {@create_errors.brief}
+                  ><%= @room_form[:name].value %></textarea>
+                  <p :if={Map.has_key?(@create_errors, :name)} class="ui-field-error">
+                    {@create_errors.name}
                   </p>
                 </div>
 
@@ -140,9 +140,9 @@ defmodule JidoHiveWebWeb.RoomIndexLive do
                 <div class="ui-room-card__header">
                   <div class="ui-room-card__title-block">
                     <h3 class="ui-room-card__title">
-                      <a href={~p"/rooms/#{room.room_id}"}>{room.brief}</a>
+                      <a href={~p"/rooms/#{room.id}"}>{room.name}</a>
                     </h3>
-                    <p class="ui-room-card__meta">{room.room_id}</p>
+                    <p class="ui-room-card__meta">{room.id}</p>
                   </div>
                   <span class={status_chip_class(room.status)}>{room.status}</span>
                 </div>
@@ -163,8 +163,11 @@ defmodule JidoHiveWebWeb.RoomIndexLive do
                 </dl>
 
                 <div class="ui-room-card__actions">
-                  <a href={~p"/rooms/#{room.room_id}"} class="ui-button ui-button--secondary">Open</a>
-                  <a href={~p"/rooms/#{room.room_id}/publish"} class="ui-button ui-button--ghost">
+                  <a href={~p"/rooms/#{room.id}"} class="ui-button ui-button--secondary">Open</a>
+                  <a
+                    href={~p"/rooms/#{room.id}/publications"}
+                    class="ui-button ui-button--ghost"
+                  >
                     Publish
                   </a>
                 </div>
@@ -215,7 +218,9 @@ defmodule JidoHiveWebWeb.RoomIndexLive do
     """
   end
 
-  defp status_chip_class("publication_ready"), do: "ui-status-chip ui-status-chip--success"
+  defp status_chip_class("completed"), do: "ui-status-chip ui-status-chip--success"
+  defp status_chip_class("active"), do: "ui-status-chip ui-status-chip--info"
+  defp status_chip_class("waiting"), do: "ui-status-chip ui-status-chip--muted"
   defp status_chip_class("running"), do: "ui-status-chip ui-status-chip--info"
   defp status_chip_class("failed"), do: "ui-status-chip ui-status-chip--danger"
   defp status_chip_class("missing"), do: "ui-status-chip ui-status-chip--muted"

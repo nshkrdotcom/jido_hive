@@ -5,19 +5,17 @@ defmodule JidoHiveConsole.WorkflowScript do
 
   @default_api_base_url "http://127.0.0.1:4000/api"
   @prod_api_base_url "https://jido-hive-server-test.app.nsai.online/api"
-  @default_brief "Workflow smoke room"
+  @default_name "Workflow smoke room"
   @default_participant_role "coordinator"
-  @default_authority_level "binding"
 
   @switches [
     local: :boolean,
     prod: :boolean,
     api_base_url: :string,
     room_id: :string,
-    brief: :string,
+    name: :string,
     participant_id: :string,
     participant_role: :string,
-    authority_level: :string,
     text: :keep,
     run: :boolean,
     max_assignments: :integer,
@@ -34,13 +32,12 @@ defmodule JidoHiveConsole.WorkflowScript do
       api_base_url = resolve_api_base_url(parsed, opts)
 
       room_id = Keyword.get(parsed, :room_id) || generated_room_id()
-      brief = Keyword.get(parsed, :brief, @default_brief)
+      name = Keyword.get(parsed, :name, @default_name)
       participant_id = Keyword.get(parsed, :participant_id, "alice")
       participant_role = Keyword.get(parsed, :participant_role, @default_participant_role)
-      authority_level = Keyword.get(parsed, :authority_level, @default_authority_level)
       texts = Keyword.get_values(parsed, :text)
 
-      payload_path = write_room_payload(room_id, brief)
+      payload_path = write_room_payload(room_id, name)
 
       try do
         with {:ok, created} <-
@@ -54,7 +51,6 @@ defmodule JidoHiveConsole.WorkflowScript do
                  room_id,
                  participant_id,
                  participant_role,
-                 authority_level,
                  texts,
                  opts
                ),
@@ -69,7 +65,7 @@ defmodule JidoHiveConsole.WorkflowScript do
              "workflow" => "room_smoke",
              "api_base_url" => api_base_url,
              "room_id" => room_id,
-             "brief" => brief,
+             "name" => name,
              "participant_id" => participant_id,
              "created" => created,
              "initial_room" => initial_room,
@@ -124,7 +120,6 @@ defmodule JidoHiveConsole.WorkflowScript do
          room_id,
          participant_id,
          participant_role,
-         authority_level,
          text
        ) do
     [
@@ -138,8 +133,6 @@ defmodule JidoHiveConsole.WorkflowScript do
       participant_id,
       "--participant-role",
       participant_role,
-      "--authority-level",
-      authority_level,
       "--text",
       text
     ]
@@ -167,7 +160,6 @@ defmodule JidoHiveConsole.WorkflowScript do
          room_id,
          participant_id,
          participant_role,
-         authority_level,
          texts,
          opts
        ) do
@@ -181,7 +173,6 @@ defmodule JidoHiveConsole.WorkflowScript do
                  room_id,
                  participant_id,
                  participant_role,
-                 authority_level,
                  text
                ),
                opts
@@ -221,7 +212,7 @@ defmodule JidoHiveConsole.WorkflowScript do
     headless_module.dispatch(argv, dispatch_opts)
   end
 
-  defp write_room_payload(room_id, brief) do
+  defp write_room_payload(room_id, name) do
     payload_path =
       Path.join(
         System.tmp_dir!(),
@@ -229,8 +220,8 @@ defmodule JidoHiveConsole.WorkflowScript do
       )
 
     payload = %{
-      "room_id" => room_id,
-      "brief" => brief,
+      "id" => room_id,
+      "name" => name,
       "participants" => []
     }
 

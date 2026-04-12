@@ -20,14 +20,16 @@ if System.get_env("PHX_SERVER") do
   config :jido_hive_web, JidoHiveWebWeb.Endpoint, server: true
 end
 
-config :jido_hive_web,
-  api_base_url: System.get_env("JIDO_HIVE_WEB_API_BASE_URL") || "http://127.0.0.1:4000/api",
-  default_identity: %{
+default_identity =
+  %{
     subject: System.get_env("JIDO_HIVE_WEB_SUBJECT") || "alice",
     participant_id: System.get_env("JIDO_HIVE_WEB_PARTICIPANT_ID") || "alice",
-    participant_role: System.get_env("JIDO_HIVE_WEB_PARTICIPANT_ROLE") || "coordinator",
-    authority_level: System.get_env("JIDO_HIVE_WEB_AUTHORITY_LEVEL") || "binding"
+    participant_role: System.get_env("JIDO_HIVE_WEB_PARTICIPANT_ROLE") || "coordinator"
   }
+
+config :jido_hive_web,
+  api_base_url: System.get_env("JIDO_HIVE_WEB_API_BASE_URL") || "http://127.0.0.1:4000/api",
+  default_identity: default_identity
 
 if config_env() == :prod do
   # The secret key base is used to sign/encrypt cookies and other secrets.
