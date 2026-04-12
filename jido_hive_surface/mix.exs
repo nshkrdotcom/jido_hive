@@ -41,6 +41,10 @@ defmodule JidoHive.Surface.MixProject do
   defp deps do
     [
       {:jido_hive_client, path: "../jido_hive_client"},
+      {:app_kit_core, path: "../../app_kit/core/app_kit_core"},
+      {:app_kit_scope_objects, path: "../../app_kit/core/scope_objects"},
+      {:app_kit_chat_surface, path: "../../app_kit/core/chat_surface"},
+      {:app_kit_operator_surface, path: "../../app_kit/core/operator_surface"},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
       {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false},
       {:ex_doc, "~> 0.40", only: [:dev, :test], runtime: false}

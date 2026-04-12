@@ -72,6 +72,18 @@ Do not use this package for:
 Those belong in `jido_hive_server`, `jido_hive_client`,
 `jido_hive_worker_runtime`, and the UI packages respectively.
 
+## AppKit adoption
+
+`JidoHiveSurface.AppKitSurface` is the additive `app_kit` adoption seam for the
+current platform work.
+
+It keeps `jido_hive` honest by:
+
+- projecting synced room workspaces through `AppKit.OperatorSurface`
+- projecting steering submissions through `AppKit.ChatSurface`
+- leaving canonical room truth in `jido_hive_server` and synced room reads in
+  `jido_hive_client`
+
 ## User-Facing Flows
 
 The shared surface currently supports:
