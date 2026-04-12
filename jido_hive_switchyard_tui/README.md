@@ -72,6 +72,7 @@ JidoHive.Switchyard.TUI.run(
 
 ## Examples
 
+- [test/jido_hive/switchyard/tui_runtime_smoke_test.exs](test/jido_hive/switchyard/tui_runtime_smoke_test.exs) boots the real Switchyard TUI runtime in `test_mode` and drives a headless room and publish flow through injected key events.
 - [test/jido_hive/switchyard/tui/rooms_mount_test.exs](test/jido_hive/switchyard/tui/rooms_mount_test.exs) covers room loading, room-open behavior, and room-specific key handling through the component seam.
 - [test/jido_hive/switchyard/tui/state_test.exs](test/jido_hive/switchyard/tui/state_test.exs) covers cursor bounds and selected-context state transitions.
 
