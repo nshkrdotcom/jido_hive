@@ -88,10 +88,27 @@ defmodule JidoHiveWorkerRuntime.Executor.Session do
   end
 
   defp finalize_response(assignment, decoded_payload, projection, events) do
-    ProtocolCodec.normalize_contribution(decoded_payload, assignment)
-    |> Map.put("status", projection.execution["status"] || "completed")
-    |> Map.put("artifacts", decoded_payload["artifacts"] || [])
-    |> Map.put("events", Enum.map(events, &normalize_event/1))
+    contribution = ProtocolCodec.normalize_contribution(decoded_payload, assignment)
+    normalized_events = Enum.map(events, &normalize_event/1)
+    artifacts = decoded_payload["artifacts"] || []
+    status = projection.execution["status"] || "completed"
+
+    contribution
+    |> update_in(["payload"], fn payload ->
+      payload
+      |> Map.put("artifacts", artifacts)
+    end)
+    |> update_in(["meta"], fn meta ->
+      meta
+      |> Map.put("status", status)
+      |> Map.put("events", normalized_events)
+      |> Map.put("tool_events", projection.tool_events)
+      |> Map.put("approvals", projection.approvals)
+      |> Map.put("execution", projection.execution)
+    end)
+    |> Map.put("status", status)
+    |> Map.put("artifacts", artifacts)
+    |> Map.put("events", normalized_events)
     |> Map.put("tool_events", projection.tool_events)
     |> Map.put("approvals", projection.approvals)
     |> Map.put("execution", projection.execution)
@@ -144,7 +161,7 @@ defmodule JidoHiveWorkerRuntime.Executor.Session do
   end
 
   defp provider(assignment) do
-    case get_in(assignment, ["session", "provider"]) || Map.get(assignment, "provider") do
+    case get_in(assignment, ["executor", "provider"]) || Map.get(assignment, "provider") do
       "claude" -> :claude
       value when is_binary(value) and value != "" -> :codex
       value when is_atom(value) -> value
@@ -161,7 +178,7 @@ defmodule JidoHiveWorkerRuntime.Executor.Session do
   end
 
   defp default_run_id(assignment) do
-    "run-#{assignment["assignment_id"]}"
+    "run-#{assignment["id"]}"
   end
 
   defp invalid_json_response(reason) do

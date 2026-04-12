@@ -109,7 +109,7 @@ Representative checks:
 ```bash
 setup/hive server-info
 curl -sS http://127.0.0.1:4000/api/rooms/<room-id> | jq
-curl -sS http://127.0.0.1:4000/api/rooms/<room-id>/timeline | jq
+curl -sS http://127.0.0.1:4000/api/rooms/<room-id>/events | jq
 
 cd jido_hive_client
 mix escript.build

@@ -20,13 +20,20 @@ defmodule JidoHiveWorkerRuntime.RelayWorkerTest do
     def stop(pid), do: Agent.stop(pid)
   end
 
+  defmodule HttpStub do
+    def list_rooms(_api_base_url, _participant_id), do: {:ok, []}
+    def list_room_events(_api_base_url, _room_id, _after_sequence), do: {:ok, []}
+    def upsert_target(_api_base_url, payload), do: {:ok, payload}
+    def mark_target_offline(_api_base_url, _target_id), do: :ok
+  end
+
   defmodule ChannelStub do
     def join(socket, topic, payload) do
       test_pid = Agent.get(socket, & &1.test_pid)
       send(test_pid, {:channel_joined, topic, payload})
 
-      {:ok, channel} = Agent.start_link(fn -> %{test_pid: test_pid} end)
-      {:ok, %{"status" => "ok"}, channel}
+      {:ok, channel} = Agent.start_link(fn -> %{test_pid: test_pid, topic: topic} end)
+      {:ok, %{"current_event_sequence" => 0, "catch_up_required" => false}, channel}
     end
 
     def push(channel, event, payload) do
@@ -47,9 +54,7 @@ defmodule JidoHiveWorkerRuntime.RelayWorkerTest do
   defmodule RejectingContributionChannelStub do
     alias JidoHiveWorkerRuntime.RelayWorkerTest.ChannelStub
 
-    def join(socket, topic, payload) do
-      ChannelStub.join(socket, topic, payload)
-    end
+    def join(socket, topic, payload), do: ChannelStub.join(socket, topic, payload)
 
     def push(channel, event, payload) do
       case event do
@@ -93,13 +98,14 @@ defmodule JidoHiveWorkerRuntime.RelayWorkerTest do
   end
 
   defp worker_opts(runtime, test_pid) do
-    worker_opts(runtime, test_pid, ChannelStub)
+    worker_opts(runtime, test_pid, ChannelStub, ["room-1"])
   end
 
-  defp worker_opts(runtime, test_pid, channel_module) do
+  defp worker_opts(runtime, test_pid, channel_module, room_ids) do
     [
       url: "ws://127.0.0.1:4000/socket/websocket",
-      relay_topic: "relay:workspace-1",
+      api_base_url: "http://127.0.0.1:4000/api",
+      room_ids: room_ids,
       workspace_id: "workspace-1",
       user_id: "user-1",
       participant_id: "participant-1",
@@ -111,25 +117,37 @@ defmodule JidoHiveWorkerRuntime.RelayWorkerTest do
       runtime: runtime,
       socket_module: SocketStub,
       channel_module: channel_module,
+      http_client: HttpStub,
       socket_opts: [test_pid: test_pid]
     ]
   end
 
-  defp assignment_payload do
+  defp assignment_offer(room_id \\ "room-1") do
     %{
-      "assignment_id" => "asn-1",
-      "room_id" => "room-1",
-      "participant_id" => "participant-1",
-      "participant_role" => "analyst",
-      "target_id" => "target-1",
-      "capability_id" => "capability-1",
-      "session" => %{"provider" => "codex"},
-      "contribution_contract" => %{
-        "allowed_contribution_types" => ["reasoning"],
-        "allowed_object_types" => ["belief"],
-        "allowed_relation_types" => ["derives_from"]
-      },
-      "context_view" => %{"brief" => "Design a substrate.", "context_objects" => []}
+      "data" => %{
+        "id" => "asn-1",
+        "room_id" => room_id,
+        "participant_id" => "participant-1",
+        "status" => "pending",
+        "payload" => %{
+          "objective" => "Design a substrate.",
+          "phase" => "analysis",
+          "context" => %{"brief" => "Design a substrate.", "context_objects" => []},
+          "output_contract" => %{
+            "allowed_contribution_types" => ["reasoning"],
+            "allowed_object_types" => ["belief"],
+            "allowed_relation_types" => ["derives_from"]
+          },
+          "executor" => %{"provider" => "codex", "workspace_root" => "/workspace"}
+        },
+        "meta" => %{
+          "participant_meta" => %{
+            "role" => "analyst",
+            "target_id" => "target-1",
+            "capability_id" => "capability-1"
+          }
+        }
+      }
     }
   end
 
@@ -138,23 +156,28 @@ defmodule JidoHiveWorkerRuntime.RelayWorkerTest do
     [runtime: runtime]
   end
 
-  test "registers with the relay by joining then sending hello and participant upsert", %{
-    runtime: runtime
-  } do
+  test "joins canonical room topics with participant metadata", %{runtime: runtime} do
     {:ok, _worker} = RelayWorker.start_link(worker_opts(runtime, self()))
 
-    assert_receive {:channel_joined, "relay:workspace-1", %{"workspace_id" => "workspace-1"}},
-                   @receive_timeout
-
-    assert_receive {:channel_push, "relay.hello", hello_payload}, @receive_timeout
-    assert_receive {:channel_push, "participant.upsert", participant_payload}, @receive_timeout
-
-    assert hello_payload["participant_id"] == "participant-1"
-    assert participant_payload["target_id"] == "target-1"
-    assert participant_payload["workspace_root"] == "/workspace"
+    assert_receive {:channel_joined, "room:room-1", payload}, @receive_timeout
+    assert get_in(payload, ["session", "mode"]) == "participant"
+    assert get_in(payload, ["participant", "id"]) == "participant-1"
+    assert get_in(payload, ["participant", "kind"]) == "agent"
+    assert get_in(payload, ["participant", "meta", "target_id"]) == "target-1"
+    assert get_in(payload, ["participant", "meta", "workspace_root"]) == "/workspace"
   end
 
-  test "executes an inbound assignment and publishes contribution.submit", %{runtime: runtime} do
+  test "joins many room topics over one socket connection", %{runtime: runtime} do
+    {:ok, _worker} =
+      RelayWorker.start_link(worker_opts(runtime, self(), ChannelStub, ["room-1", "room-2"]))
+
+    assert_receive {:channel_joined, "room:room-1", _payload}, @receive_timeout
+    assert_receive {:channel_joined, "room:room-2", _payload}, @receive_timeout
+  end
+
+  test "executes an inbound assignment offer and publishes contribution.submit", %{
+    runtime: runtime
+  } do
     {:ok, worker} =
       RelayWorker.start_link(
         worker_opts(runtime, self()) ++ [contribution_submit_timeout_ms: 12_345]
@@ -162,48 +185,55 @@ defmodule JidoHiveWorkerRuntime.RelayWorkerTest do
 
     await_handshake()
 
-    send(worker, %Message{event: "assignment.start", payload: assignment_payload()})
+    send(worker, %Message{
+      topic: "room:room-1",
+      event: "assignment.offer",
+      payload: assignment_offer()
+    })
 
-    assert_receive {:channel_push, "contribution.submit", contribution, 12_345}, @receive_timeout
+    assert_receive {:channel_push, "contribution.submit", %{"data" => contribution}, 12_345},
+                   @receive_timeout
+
     assert contribution["assignment_id"] == "asn-1"
-    assert String.starts_with?(contribution["contribution_id"], "contrib-")
-    assert contribution["status"] == "completed"
+    assert contribution["kind"] == "reasoning"
+    assert String.starts_with?(contribution["id"], "contrib-")
     assert Runtime.snapshot(runtime).metrics.assignments_completed == 1
   end
 
-  test "retries join after a relay disconnect event", %{runtime: runtime} do
+  test "retries room joins after a websocket disconnect event", %{runtime: runtime} do
     {:ok, worker} = RelayWorker.start_link(worker_opts(runtime, self()))
     await_handshake()
 
     send(worker, %Message{event: "phx_close", payload: %{}})
 
-    assert Runtime.snapshot(runtime).connection_status in [:waiting_socket, :joining]
-    assert_receive {:channel_joined, "relay:workspace-1", %{"workspace_id" => "workspace-1"}}, 500
-    assert_receive {:channel_push, "relay.hello", _hello_payload}
-    assert_receive {:channel_push, "participant.upsert", _participant_payload}
+    assert_reconnecting(runtime)
+    assert_receive {:channel_joined, "room:room-1", _payload}, 500
     assert_runtime_ready(runtime)
   end
 
   test "marks the assignment failed when contribution submission is rejected", %{runtime: runtime} do
     {:ok, worker} =
-      RelayWorker.start_link(worker_opts(runtime, self(), RejectingContributionChannelStub))
+      RelayWorker.start_link(
+        worker_opts(runtime, self(), RejectingContributionChannelStub, ["room-1"])
+      )
 
     await_handshake()
 
-    send(worker, %Message{event: "assignment.start", payload: assignment_payload()})
+    send(worker, %Message{
+      topic: "room:room-1",
+      event: "assignment.offer",
+      payload: assignment_offer()
+    })
 
-    assert_receive {:channel_push, "contribution.submit", _contribution, 30_000}, @receive_timeout
+    assert_receive {:channel_push, "contribution.submit", %{"data" => _contribution}, 30_000},
+                   @receive_timeout
+
     assert Process.alive?(worker)
-
     assert_assignment_failed(runtime)
   end
 
   defp await_handshake do
-    assert_receive {:channel_joined, "relay:workspace-1", %{"workspace_id" => "workspace-1"}},
-                   @receive_timeout
-
-    assert_receive {:channel_push, "relay.hello", _payload}, @receive_timeout
-    assert_receive {:channel_push, "participant.upsert", _payload}, @receive_timeout
+    assert_receive {:channel_joined, "room:room-1", _payload}, @receive_timeout
     :ok
   end
 
@@ -220,6 +250,21 @@ defmodule JidoHiveWorkerRuntime.RelayWorkerTest do
 
   defp assert_runtime_ready(_runtime, 0) do
     flunk("runtime did not return to :ready")
+  end
+
+  defp assert_reconnecting(runtime, attempts \\ 10)
+
+  defp assert_reconnecting(runtime, attempts) when attempts > 0 do
+    if Runtime.snapshot(runtime).connection_status in [:waiting_socket, :ready] do
+      :ok
+    else
+      Process.sleep(20)
+      assert_reconnecting(runtime, attempts - 1)
+    end
+  end
+
+  defp assert_reconnecting(_runtime, 0) do
+    flunk("runtime did not enter reconnecting state")
   end
 
   defp assert_assignment_failed(runtime, attempts \\ 10)

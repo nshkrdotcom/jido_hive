@@ -87,7 +87,7 @@ defmodule JidoHiveWorkerRuntime.Runtime do
 
   @spec run_assignment(pid() | atom(), map()) :: {:ok, map()} | {:error, term()}
   def run_assignment(server \\ __MODULE__, assignment) when is_map(assignment) do
-    with {:ok, normalized_assignment} <- ProtocolCodec.normalize_assignment_start(assignment),
+    with {:ok, normalized_assignment} <- ProtocolCodec.normalize_assignment_offer(assignment),
          {module, executor_opts} <- GenServer.call(server, :executor),
          :ok <- GenServer.call(server, {:assignment_received, normalized_assignment}),
          :ok <- GenServer.call(server, {:assignment_started, normalized_assignment}) do
@@ -174,7 +174,7 @@ defmodule JidoHiveWorkerRuntime.Runtime do
       |> append_event(%{
         type: "client.assignment.received",
         room_id: assignment["room_id"],
-        assignment_id: assignment["assignment_id"],
+        assignment_id: assignment["id"],
         payload: assignment_payload(assignment)
       })
 
@@ -188,7 +188,7 @@ defmodule JidoHiveWorkerRuntime.Runtime do
       |> append_event(%{
         type: "client.assignment.started",
         room_id: assignment["room_id"],
-        assignment_id: assignment["assignment_id"],
+        assignment_id: assignment["id"],
         payload: assignment_payload(assignment)
       })
 
@@ -202,11 +202,11 @@ defmodule JidoHiveWorkerRuntime.Runtime do
       |> append_event(%{
         type: "client.assignment.completed",
         room_id: assignment["room_id"],
-        assignment_id: assignment["assignment_id"],
+        assignment_id: assignment["id"],
         payload: %{
           "status" => contribution["status"],
-          "summary" => contribution["summary"],
-          "contribution_type" => contribution["contribution_type"]
+          "summary" => contribution_summary(contribution),
+          "kind" => contribution["kind"]
         }
       })
 
@@ -220,7 +220,7 @@ defmodule JidoHiveWorkerRuntime.Runtime do
       |> append_event(%{
         type: "client.assignment.failed",
         room_id: assignment["room_id"],
-        assignment_id: assignment["assignment_id"],
+        assignment_id: assignment["id"],
         payload: %{"reason" => inspect(reason)}
       })
 
@@ -236,10 +236,10 @@ defmodule JidoHiveWorkerRuntime.Runtime do
       append_event(state, %{
         type: "client.contribution.published",
         room_id: assignment["room_id"],
-        assignment_id: assignment["assignment_id"],
+        assignment_id: assignment["id"],
         payload: %{
           "status" => contribution["status"],
-          "contribution_type" => contribution["contribution_type"]
+          "kind" => contribution["kind"]
         }
       })
 
@@ -268,11 +268,16 @@ defmodule JidoHiveWorkerRuntime.Runtime do
 
   defp assignment_payload(assignment) do
     %{
+      "id" => assignment["id"],
       "participant_id" => assignment["participant_id"],
       "participant_role" => assignment["participant_role"],
       "target_id" => assignment["target_id"],
       "phase" => assignment["phase"]
     }
+  end
+
+  defp contribution_summary(contribution) do
+    get_in(contribution, ["payload", "summary"]) || contribution["summary"]
   end
 
   defp normalize_executor({module, opts}) when is_atom(module) and is_list(opts),

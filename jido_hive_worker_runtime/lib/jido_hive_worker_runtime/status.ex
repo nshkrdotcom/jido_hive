@@ -9,26 +9,27 @@ defmodule JidoHiveWorkerRuntime.Status do
     emit(
       "starting participant=#{opts[:participant_id]} role=#{opts[:participant_role]} " <>
         "target=#{opts[:target_id]} provider=#{provider_label(opts[:executor])} " <>
-        "relay=#{opts[:relay_topic]} workspace=#{opts[:workspace_id]} " <>
-        "url=#{opts[:url]}"
+        "workspace=#{opts[:workspace_id]} url=#{opts[:url]}"
     )
   end
 
   def relay_ready(state) when is_map(state) do
+    room_ids = state |> Map.get(:room_channels, %{}) |> Map.keys() |> Enum.sort()
+
     emit(
       "ready participant=#{state.participant_id} role=#{state.participant_role} " <>
         "target=#{state.target_id} capability=#{state.capability_id} " <>
-        "relay=#{state.relay_topic} workspace=#{state.workspace_id} " <>
-        "url=#{state.socket_url} waiting_for=assignment.start " <>
-        "services=phoenix-relay+jido-harness+asm+#{provider_label(state.executor)}"
+        "workspace=#{state.workspace_id} url=#{state.socket_url} " <>
+        "rooms=#{Enum.join(room_ids, ",")} waiting_for=assignment.offer " <>
+        "services=phoenix-room+jido-harness+asm+#{provider_label(state.executor)}"
     )
   end
 
   def relay_connecting(state) when is_map(state) do
     emit(
       "connecting participant=#{state.participant_id} role=#{state.participant_role} " <>
-        "target=#{state.target_id} relay=#{state.relay_topic} " <>
-        "workspace=#{state.workspace_id} url=#{state.socket_url}"
+        "target=#{state.target_id} workspace=#{state.workspace_id} " <>
+        "url=#{state.socket_url}"
     )
   end
 
@@ -42,7 +43,7 @@ defmodule JidoHiveWorkerRuntime.Status do
   def relay_join_retry(state, reason) when is_map(state) do
     emit(
       "join retry participant=#{state.participant_id} target=#{state.target_id} " <>
-        "topic=#{state.relay_topic} url=#{state.socket_url} reason=#{inspect(reason)}"
+        "url=#{state.socket_url} reason=#{inspect(reason)}"
     )
   end
 
@@ -114,7 +115,7 @@ defmodule JidoHiveWorkerRuntime.Status do
 
     emit(
       "completed room=#{assignment["room_id"]} phase=#{phase(assignment)} status=#{contribution["status"]} " <>
-        "contribution=#{contribution["contribution_type"] || "none"}#{usage_summary(contribution)}"
+        "contribution=#{contribution["kind"] || "none"}#{usage_summary(contribution)}"
     )
   end
 
@@ -128,7 +129,7 @@ defmodule JidoHiveWorkerRuntime.Status do
   def result_published(assignment, contribution)
       when is_map(assignment) and is_map(contribution) do
     emit(
-      "contribution published room=#{assignment["room_id"]} phase=#{phase(assignment)} status=#{contribution["status"]}"
+      "contribution published room=#{assignment["room_id"]} phase=#{phase(assignment)} status=#{contribution_status(contribution)}"
     )
   end
 
@@ -212,5 +213,9 @@ defmodule JidoHiveWorkerRuntime.Status do
     else
       ""
     end
+  end
+
+  defp contribution_status(contribution) do
+    contribution["status"] || get_in(contribution, ["meta", "status"]) || ""
   end
 end

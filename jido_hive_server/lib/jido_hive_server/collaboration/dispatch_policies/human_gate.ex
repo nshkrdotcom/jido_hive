@@ -3,21 +3,11 @@ defmodule JidoHiveServer.Collaboration.DispatchPolicies.HumanGate do
 
   @behaviour JidoHiveServer.Collaboration.DispatchPolicy
 
-  alias JidoHiveContextGraph
-  alias JidoHiveServer.Collaboration.DispatchPhaseConfig
+  alias JidoHiveServer.Collaboration.Schema.{Contribution, Participant, RoomEvent, RoomSnapshot}
 
   @policy_id "human_gate/v1"
 
-  @default_phases [
-    %{
-      "phase" => "analysis",
-      "objective" => "Prepare context for human review.",
-      "allowed_contribution_types" => ["reasoning"],
-      "allowed_object_types" => ["belief", "note", "question"],
-      "allowed_relation_types" => ["derives_from", "references"]
-    }
-  ]
-
+  @impl true
   def id, do: @policy_id
 
   @impl true
@@ -25,189 +15,172 @@ defmodule JidoHiveServer.Collaboration.DispatchPolicies.HumanGate do
     %{
       policy_id: @policy_id,
       config: %{
-        phases: @default_phases,
-        authority_participant_role: "reviewer"
+        agent_assignment_limit: "agent_count by default",
+        phase_cycle: ["analysis", "review"]
       }
     }
   end
 
   @impl true
-  def init_state(snapshot) do
-    participants = runtime_participants(snapshot)
-    phases = phases(snapshot)
-
-    %{
-      applied_event_ids: [],
-      completed_slots: 0,
-      total_slots: length(participants) * length(phases),
-      phases: phases
-    }
+  def init(%RoomSnapshot{} = snapshot, _context) do
+    {:ok,
+     %{
+       cursor: 0,
+       agent_assignment_limit: agent_assignment_limit(snapshot),
+       gate_assignment_id: nil,
+       human_gate_satisfied: false,
+       phase_cycle: ["analysis", "review"]
+     }, %{}}
   end
 
   @impl true
-  def next_assignment(snapshot, available_target_ids) do
-    participants = runtime_participants(snapshot)
-    phases = phases(snapshot)
-    completed_slots = completed_slots(snapshot)
-    total_slots = length(participants) * length(phases)
+  def handle_event(
+        %RoomEvent{type: :assignment_completed, data: %{"assignment_id" => assignment_id}},
+        %RoomSnapshot{} = snapshot,
+        policy_state,
+        _context
+      ) do
+    next_policy_state =
+      if completed_agent_assignment_count(snapshot) >=
+           agent_assignment_limit_from_state(snapshot, policy_state) do
+        Map.put(policy_state, :gate_assignment_id, assignment_id)
+      else
+        policy_state
+      end
 
-    with :ok <- require_runtime_participants(participants),
-         :ok <- require_remaining_slots(completed_slots, total_slots, snapshot),
-         {:ok, participant, phase} <- select_slot(participants, phases, completed_slots),
-         :ok <- require_available_target(participant, available_target_ids) do
-      {:ok, build_assignment(snapshot, participant, phase, completed_slots)}
-    else
-      {:blocked, reason} -> {:blocked, reason}
-    end
+    {:ok, next_policy_state, %{}}
   end
 
   @impl true
-  def next_action(snapshot, available_target_ids) do
+  def handle_event(
+        %RoomEvent{type: :contribution_submitted},
+        %RoomSnapshot{} = snapshot,
+        policy_state,
+        _context
+      ) do
+    next_policy_state =
+      if human_gate_satisfied?(snapshot, policy_state) do
+        Map.put(policy_state, :human_gate_satisfied, true)
+      else
+        policy_state
+      end
+
+    {:ok, next_policy_state, %{}}
+  end
+
+  @impl true
+  def handle_event(_event, _snapshot, policy_state, _context), do: {:ok, policy_state, %{}}
+
+  @impl true
+  def select(%RoomSnapshot{} = snapshot, %{availability: availability, policy_state: policy_state}) do
     cond do
-      current_assignment?(snapshot) ->
-        {:blocked, "running"}
+      snapshot.room.status in ["closed", "failed"] ->
+        {:close, String.to_atom(snapshot.room.status), policy_state, %{}}
 
-      completed_slots(snapshot) < total_slots(snapshot) ->
-        next_assignment(snapshot, available_target_ids)
+      snapshot.room.status == "completed" ->
+        {:complete, %{reason: :already_completed}, policy_state, %{}}
 
-      binding_contribution?(snapshot) ->
-        {:complete, "publication_ready"}
+      active_assignment?(snapshot) ->
+        {:wait, :assignment_in_progress, policy_state, %{status: "active"}}
+
+      completed_agent_assignment_count(snapshot) <
+          agent_assignment_limit_from_state(snapshot, policy_state) ->
+        select_agent_assignment(snapshot, availability, policy_state)
+
+      human_gate_satisfied?(snapshot, policy_state) ->
+        {:complete, %{reason: :human_gate_satisfied},
+         Map.put(policy_state, :human_gate_satisfied, true),
+         %{status: "completed", phase: "review"}}
 
       true ->
-        {:awaiting_authority, "awaiting_authority"}
+        {:wait, :awaiting_human, policy_state, %{status: "waiting", phase: "review"}}
     end
   end
 
-  @impl true
-  def status(snapshot) do
-    cond do
-      failed_assignment?(snapshot) ->
-        "failed"
+  defp select_agent_assignment(snapshot, availability, policy_state) do
+    participants = agent_participants(snapshot)
 
-      current_assignment?(snapshot) ->
-        "running"
+    case available_rotation(participants, availability, Map.get(policy_state, :cursor, 0)) do
+      [] ->
+        {:wait, :no_available_participants, policy_state, %{status: "waiting"}}
 
-      completed_slots(snapshot) >= total_slots(snapshot) and binding_contribution?(snapshot) ->
-        "publication_ready"
+      [%Participant{id: participant_id} | _rest] ->
+        next_policy_state =
+          policy_state
+          |> Map.put(:cursor, next_cursor(participants, participant_id))
+          |> Map.put(:human_gate_satisfied, false)
 
-      completed_slots(snapshot) >= total_slots(snapshot) ->
-        "awaiting_authority"
-
-      completed_slots(snapshot) > 0 ->
-        "running"
-
-      true ->
-        snapshot.status || "idle"
+        {:dispatch, [participant_id], next_policy_state, %{status: "active", phase: "analysis"}}
     end
   end
 
-  defp binding_contribution?(snapshot) do
-    Enum.any?(
-      Map.get(snapshot, :contributions, []),
-      &(Map.get(&1, :authority_level) == "binding")
-    )
-  end
+  defp human_gate_satisfied?(%RoomSnapshot{} = snapshot, policy_state) do
+    gate_assignment_id =
+      Map.get(policy_state, :gate_assignment_id) || Map.get(policy_state, "gate_assignment_id")
 
-  defp phases(snapshot) do
-    snapshot
-    |> raw_phases()
-    |> DispatchPhaseConfig.normalize(@default_phases)
-  end
-
-  defp raw_phases(snapshot) do
-    snapshot
-    |> Map.get(:dispatch_state, %{})
-    |> Map.get(:phases) ||
-      snapshot
-      |> Map.get(:dispatch_policy_config, %{})
-      |> then(&(Map.get(&1, "phases") || Map.get(&1, :phases)))
-  end
-
-  defp runtime_participants(snapshot) do
-    snapshot
-    |> Map.get(:participants, [])
-    |> Enum.filter(fn participant ->
-      Map.get(participant, :participant_kind) == "runtime" and
-        is_binary(Map.get(participant, :target_id))
+    Enum.any?(snapshot.contributions, fn
+      %Contribution{participant_id: participant_id, assignment_id: assignment_id} ->
+        human_participant?(snapshot, participant_id) and
+          (is_nil(gate_assignment_id) or assignment_id == gate_assignment_id)
     end)
   end
 
-  defp completed_slots(snapshot) do
-    snapshot
-    |> Map.get(:dispatch_state, %{})
-    |> Map.get(:completed_slots, 0)
+  defp human_participant?(%RoomSnapshot{} = snapshot, participant_id) do
+    Enum.any?(snapshot.participants, &(&1.id == participant_id and &1.kind == "human"))
   end
 
-  defp total_slots(snapshot) do
-    snapshot
-    |> Map.get(:dispatch_state, %{})
-    |> Map.get(:total_slots, 0)
+  defp agent_assignment_limit(%RoomSnapshot{} = snapshot) do
+    case get_in(snapshot.room.config, ["agent_assignment_limit"]) do
+      value when is_integer(value) and value > 0 -> value
+      _other -> max(length(agent_participants(snapshot)), 1)
+    end
   end
 
-  defp current_assignment?(snapshot), do: Map.get(snapshot, :current_assignment, %{}) != %{}
-
-  defp failed_assignment?(snapshot) do
-    Enum.any?(Map.get(snapshot, :assignments, []), &(&1.status == "failed"))
+  defp agent_assignment_limit_from_state(snapshot, policy_state) do
+    case Map.get(policy_state, :agent_assignment_limit) ||
+           Map.get(policy_state, "agent_assignment_limit") do
+      value when is_integer(value) and value > 0 -> value
+      _other -> agent_assignment_limit(snapshot)
+    end
   end
 
-  defp require_runtime_participants([]), do: {:blocked, "awaiting_authority"}
-  defp require_runtime_participants(_participants), do: :ok
-
-  defp require_remaining_slots(completed_slots, total_slots, snapshot) do
-    if completed_slots >= total_slots, do: {:blocked, status(snapshot)}, else: :ok
+  defp completed_agent_assignment_count(%RoomSnapshot{} = snapshot) do
+    snapshot.assignments
+    |> Enum.count(fn assignment ->
+      assignment.status == "completed" and
+        not human_participant?(snapshot, assignment.participant_id)
+    end)
   end
 
-  defp select_slot(participants, phases, completed_slots) do
-    participant_count = length(participants)
-    phase = Enum.at(phases, div(completed_slots, participant_count)) || List.last(phases)
-    participant = Enum.at(participants, rem(completed_slots, participant_count))
-    {:ok, participant, phase}
+  defp active_assignment?(%RoomSnapshot{} = snapshot) do
+    Enum.any?(snapshot.assignments, &(&1.status in ["pending", "active"]))
   end
 
-  defp require_available_target(participant, available_target_ids) do
-    if Map.get(participant, :target_id) in available_target_ids,
-      do: :ok,
-      else: {:blocked, "blocked"}
+  defp agent_participants(%RoomSnapshot{} = snapshot) do
+    Enum.filter(snapshot.participants, &(&1.kind == "agent"))
   end
 
-  defp build_assignment(snapshot, participant, phase, completed_slots) do
-    task_context = assignment_task_context(snapshot, phase)
-
-    %{
-      participant_id: Map.get(participant, :participant_id),
-      participant_role: Map.get(participant, :participant_role),
-      target_id: Map.get(participant, :target_id),
-      capability_id: Map.get(participant, :capability_id),
-      phase: phase["phase"],
-      objective: phase["objective"] || snapshot.brief,
-      contribution_contract: %{
-        allowed_contribution_types: phase["allowed_contribution_types"] || ["reasoning"],
-        allowed_object_types: phase["allowed_object_types"] || ["belief", "note"],
-        allowed_relation_types: phase["allowed_relation_types"] || ["derives_from", "references"],
-        authority_mode: "advisory_only",
-        format: "json_object"
-      },
-      task_context: task_context,
-      context_view: JidoHiveContextGraph.build_context_view(snapshot, participant, task_context),
-      plan_slot_index: completed_slots
-    }
+  defp available_rotation(participants, availability, cursor) do
+    participants
+    |> rotate(cursor)
+    |> Enum.filter(&Map.has_key?(availability, &1.id))
   end
 
-  defp assignment_task_context(snapshot, phase) do
-    %{
-      mode: :assignment,
-      anchor_context_id: latest_context_id(snapshot),
-      objective: phase["objective"] || snapshot.brief
-    }
+  defp rotate([], _cursor), do: []
+
+  defp rotate(list, cursor) when is_integer(cursor) and cursor > 0 do
+    offset = rem(cursor, length(list))
+    Enum.drop(list, offset) ++ Enum.take(list, offset)
   end
 
-  defp latest_context_id(snapshot) do
-    snapshot
-    |> Map.get(:context_objects, [])
-    |> Enum.max_by(&{Map.get(&1, :inserted_at), Map.get(&1, :context_id)}, fn -> nil end)
-    |> case do
-      nil -> nil
-      context_object -> Map.get(context_object, :context_id)
+  defp rotate(list, _cursor), do: list
+
+  defp next_cursor([], _participant_id), do: 0
+
+  defp next_cursor(participants, participant_id) do
+    case Enum.find_index(participants, &(&1.id == participant_id)) do
+      nil -> 0
+      index -> index + 1
     end
   end
 end

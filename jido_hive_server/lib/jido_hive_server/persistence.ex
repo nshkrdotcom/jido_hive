@@ -3,22 +3,31 @@ defmodule JidoHiveServer.Persistence do
 
   import Ecto.Query
 
-  alias JidoHiveServer.Collaboration.Schema.RoomEvent
-  alias JidoHiveServer.Collaboration.SnapshotProjection
+  alias JidoHiveServer.Collaboration.Schema.{
+    Assignment,
+    Contribution,
+    RoomEvent,
+    RoomSnapshot
+  }
 
   alias JidoHiveServer.Persistence.{
     PublicationRunRecord,
     RoomEventRecord,
+    RoomRunRecord,
     RoomSnapshotRecord,
     TargetRecord
   }
 
   alias JidoHiveServer.Repo
 
-  @spec persist_room_transition(map(), [RoomEvent.t()]) :: {:ok, map()} | {:error, term()}
-  def persist_room_transition(%{room_id: room_id} = snapshot, events)
+  @default_contribution_window 200
+
+  @spec persist_room_transition(String.t(), [RoomEvent.t()], RoomSnapshot.t(), list()) ::
+          {:ok, RoomSnapshot.t()} | {:error, term()}
+  def persist_room_transition(room_id, events, %RoomSnapshot{} = snapshot, _run_updates \\ [])
       when is_binary(room_id) and is_list(events) do
-    snapshot_attrs = room_snapshot_attrs(snapshot)
+    compacted_snapshot = compact_snapshot(snapshot)
+    snapshot_attrs = room_snapshot_attrs(compacted_snapshot)
 
     Repo.transaction(fn ->
       Enum.each(events, fn %RoomEvent{} = event ->
@@ -34,11 +43,8 @@ defmodule JidoHiveServer.Persistence do
         conflict_target: :room_id
       )
       |> case do
-        {:ok, record} ->
-          record.snapshot |> rehydrate_room_snapshot() |> SnapshotProjection.project()
-
-        {:error, changeset} ->
-          Repo.rollback(changeset)
+        {:ok, _record} -> compacted_snapshot
+        {:error, changeset} -> Repo.rollback(changeset)
       end
     end)
     |> case do
@@ -47,9 +53,10 @@ defmodule JidoHiveServer.Persistence do
     end
   end
 
-  @spec persist_room_snapshot(map()) :: {:ok, map()} | {:error, Ecto.Changeset.t()}
-  def persist_room_snapshot(%{room_id: room_id} = snapshot) when is_binary(room_id) do
-    attrs = room_snapshot_attrs(snapshot)
+  @spec persist_room_snapshot(RoomSnapshot.t()) :: {:ok, RoomSnapshot.t()} | {:error, term()}
+  def persist_room_snapshot(%RoomSnapshot{} = snapshot) do
+    compacted_snapshot = compact_snapshot(snapshot)
+    attrs = room_snapshot_attrs(compacted_snapshot)
 
     %RoomSnapshotRecord{}
     |> RoomSnapshotRecord.changeset(attrs)
@@ -58,23 +65,36 @@ defmodule JidoHiveServer.Persistence do
       conflict_target: :room_id
     )
     |> case do
-      {:ok, record} ->
-        {:ok, record.snapshot |> rehydrate_room_snapshot() |> SnapshotProjection.project()}
-
-      {:error, _} = error ->
-        error
+      {:ok, _record} -> {:ok, compacted_snapshot}
+      {:error, _changeset} = error -> error
     end
   end
 
-  @spec fetch_room_snapshot(String.t()) :: {:ok, map()} | {:error, :room_not_found}
+  @spec fetch_room_snapshot(String.t()) ::
+          {:ok, RoomSnapshot.t()} | {:error, :room_not_found | :invalid_snapshot_format}
   def fetch_room_snapshot(room_id) when is_binary(room_id) do
     case Repo.get(RoomSnapshotRecord, room_id) do
       %RoomSnapshotRecord{snapshot: snapshot} ->
-        {:ok, snapshot |> rehydrate_room_snapshot() |> SnapshotProjection.project()}
+        rehydrate_room_snapshot(snapshot)
 
       nil ->
         {:error, :room_not_found}
     end
+  end
+
+  @spec list_rooms(keyword()) :: {:ok, [RoomSnapshot.t()]} | {:error, term()}
+  def list_rooms(opts \\ []) do
+    limit = Keyword.get(opts, :limit)
+    participant_id = Keyword.get(opts, :participant_id)
+    status = Keyword.get(opts, :status)
+
+    RoomSnapshotRecord
+    |> order_by([record], asc: record.room_id)
+    |> maybe_limit(limit)
+    |> Repo.all()
+    |> Enum.reduce_while({:ok, []}, fn %RoomSnapshotRecord{snapshot: snapshot}, {:ok, acc} ->
+      reduce_room_snapshot(snapshot, acc, participant_id, status)
+    end)
   end
 
   @spec delete_room_events(String.t()) :: :ok
@@ -83,6 +103,189 @@ defmodule JidoHiveServer.Persistence do
     |> Repo.delete_all()
 
     :ok
+  end
+
+  @spec append_room_events(String.t(), [RoomEvent.t()]) :: :ok | {:error, term()}
+  def append_room_events(room_id, events) when is_binary(room_id) and is_list(events) do
+    Repo.transaction(fn ->
+      Enum.each(events, fn %RoomEvent{} = event ->
+        room_id
+        |> room_event_attrs(event)
+        |> insert_room_event_record()
+      end)
+    end)
+    |> case do
+      {:ok, _value} -> :ok
+      {:error, error} -> {:error, error}
+    end
+  end
+
+  @spec list_room_events(String.t(), keyword()) :: {:ok, [RoomEvent.t()]} | {:error, term()}
+  def list_room_events(room_id, opts \\ []) when is_binary(room_id) and is_list(opts) do
+    after_sequence = Keyword.get(opts, :after_sequence, 0)
+    limit = Keyword.get(opts, :limit)
+    list_room_events_after(room_id, after_sequence, limit: limit)
+  end
+
+  @spec list_room_events_after(String.t(), non_neg_integer(), keyword()) ::
+          {:ok, [RoomEvent.t()]} | {:error, term()}
+  def list_room_events_after(room_id, checkpoint_sequence, opts \\ [])
+      when is_binary(room_id) and is_integer(checkpoint_sequence) and checkpoint_sequence >= 0 do
+    limit = Keyword.get(opts, :limit)
+
+    RoomEventRecord
+    |> where([record], record.room_id == ^room_id and record.sequence > ^checkpoint_sequence)
+    |> order_by([record], asc: record.sequence)
+    |> maybe_limit(limit)
+    |> Repo.all()
+    |> Enum.reduce_while({:ok, []}, fn record, {:ok, acc} ->
+      case rehydrate_room_event(record) do
+        {:ok, event} -> {:cont, {:ok, acc ++ [event]}}
+        {:error, reason} -> {:halt, {:error, reason}}
+      end
+    end)
+  end
+
+  @spec list_contributions(String.t(), keyword()) :: {:ok, [map()]} | {:error, term()}
+  def list_contributions(room_id, opts \\ []) when is_binary(room_id) and is_list(opts) do
+    after_sequence = Keyword.get(opts, :after_sequence, 0)
+    limit = Keyword.get(opts, :limit)
+    participant_id = Keyword.get(opts, :participant_id)
+    assignment_id = Keyword.get(opts, :assignment_id)
+    kind = Keyword.get(opts, :kind)
+
+    with {:ok, events} <- list_room_events_after(room_id, after_sequence, []) do
+      contributions =
+        events
+        |> Enum.filter(&(&1.type == :contribution_submitted))
+        |> Enum.map(fn event ->
+          %{
+            event_sequence: event.sequence,
+            contribution:
+              event.data
+              |> Map.get("contribution", event.data)
+              |> then(fn contribution_data ->
+                case Contribution.new(contribution_data) do
+                  {:ok, contribution} -> contribution
+                  {:error, _reason} -> nil
+                end
+              end)
+          }
+        end)
+        |> Enum.reject(&is_nil(&1.contribution))
+        |> Enum.filter(
+          &matches_contribution_filters?(&1.contribution, participant_id, assignment_id, kind)
+        )
+        |> maybe_take(limit)
+
+      {:ok, contributions}
+    end
+  end
+
+  @spec create_room_run(map()) :: {:ok, map()} | {:error, term()}
+  def create_room_run(attrs) when is_map(attrs) do
+    normalized = normalize(attrs)
+
+    %RoomRunRecord{}
+    |> RoomRunRecord.changeset(normalized)
+    |> Repo.insert()
+    |> case do
+      {:ok, record} -> {:ok, room_run_snapshot(record)}
+      {:error, _changeset} = error -> error
+    end
+  end
+
+  @spec update_room_run(String.t(), map()) :: {:ok, map()} | {:error, term()}
+  def update_room_run(run_id, attrs) when is_binary(run_id) and is_map(attrs) do
+    case Repo.get(RoomRunRecord, run_id) do
+      nil ->
+        {:error, :room_run_not_found}
+
+      %RoomRunRecord{} = record ->
+        record
+        |> RoomRunRecord.changeset(normalize(attrs))
+        |> Repo.update()
+        |> case do
+          {:ok, updated} -> {:ok, room_run_snapshot(updated)}
+          {:error, _changeset} = error -> error
+        end
+    end
+  end
+
+  @spec fetch_room_run(String.t(), String.t()) :: {:ok, map()} | {:error, term()}
+  def fetch_room_run(room_id, run_id) when is_binary(room_id) and is_binary(run_id) do
+    case Repo.get(RoomRunRecord, run_id) do
+      %RoomRunRecord{room_id: ^room_id} = record -> {:ok, room_run_snapshot(record)}
+      %RoomRunRecord{} -> {:error, :room_run_not_found}
+      nil -> {:error, :room_run_not_found}
+    end
+  end
+
+  @spec list_room_runs(String.t()) :: {:ok, [map()]} | {:error, term()}
+  def list_room_runs(room_id) when is_binary(room_id) do
+    runs =
+      from(record in RoomRunRecord,
+        where: record.room_id == ^room_id,
+        order_by: [asc: record.inserted_at, asc: record.run_id]
+      )
+      |> Repo.all()
+      |> Enum.map(&room_run_snapshot/1)
+
+    {:ok, runs}
+  end
+
+  @spec list_active_room_runs(String.t()) :: {:ok, [map()]} | {:error, term()}
+  def list_active_room_runs(room_id) when is_binary(room_id) do
+    runs =
+      from(record in RoomRunRecord,
+        where: record.room_id == ^room_id and record.status in ["queued", "running"],
+        order_by: [asc: record.inserted_at, asc: record.run_id]
+      )
+      |> Repo.all()
+      |> Enum.map(&room_run_snapshot/1)
+
+    {:ok, runs}
+  end
+
+  @spec create_publication_run(map()) :: {:ok, map()} | {:error, Ecto.Changeset.t()}
+  def create_publication_run(attrs) when is_map(attrs) do
+    normalized = normalize(attrs)
+
+    %PublicationRunRecord{}
+    |> PublicationRunRecord.changeset(normalized)
+    |> Repo.insert()
+    |> case do
+      {:ok, record} -> {:ok, publication_run_snapshot(record)}
+      {:error, _} = error -> error
+    end
+  end
+
+  @spec update_publication_run(String.t(), map()) :: {:ok, map()} | {:error, term()}
+  def update_publication_run(publication_run_id, attrs)
+      when is_binary(publication_run_id) and is_map(attrs) do
+    case Repo.get(PublicationRunRecord, publication_run_id) do
+      nil ->
+        {:error, :publication_run_not_found}
+
+      %PublicationRunRecord{} = record ->
+        record
+        |> PublicationRunRecord.changeset(normalize(attrs))
+        |> Repo.update()
+        |> case do
+          {:ok, updated} -> {:ok, publication_run_snapshot(updated)}
+          {:error, _} = error -> error
+        end
+    end
+  end
+
+  @spec list_publication_runs(String.t()) :: [map()]
+  def list_publication_runs(room_id) when is_binary(room_id) do
+    from(record in PublicationRunRecord,
+      where: record.room_id == ^room_id,
+      order_by: [asc: record.inserted_at, asc: record.publication_run_id]
+    )
+    |> Repo.all()
+    |> Enum.map(&publication_run_snapshot/1)
   end
 
   @spec upsert_target(map()) :: {:ok, map()} | {:error, Ecto.Changeset.t()}
@@ -171,77 +374,22 @@ defmodule JidoHiveServer.Persistence do
     |> Enum.map(&rehydrate_target(&1.snapshot))
   end
 
-  @spec create_publication_run(map()) :: {:ok, map()} | {:error, Ecto.Changeset.t()}
-  def create_publication_run(attrs) when is_map(attrs) do
-    normalized = normalize(attrs)
-
-    %PublicationRunRecord{}
-    |> PublicationRunRecord.changeset(normalized)
-    |> Repo.insert()
-    |> case do
-      {:ok, record} -> {:ok, publication_run_snapshot(record)}
-      {:error, _} = error -> error
-    end
-  end
-
-  @spec update_publication_run(String.t(), map()) :: {:ok, map()} | {:error, term()}
-  def update_publication_run(publication_run_id, attrs)
-      when is_binary(publication_run_id) and is_map(attrs) do
-    case Repo.get(PublicationRunRecord, publication_run_id) do
-      nil ->
-        {:error, :publication_run_not_found}
-
-      %PublicationRunRecord{} = record ->
-        record
-        |> PublicationRunRecord.changeset(normalize(attrs))
-        |> Repo.update()
-        |> case do
-          {:ok, updated} -> {:ok, publication_run_snapshot(updated)}
-          {:error, _} = error -> error
-        end
-    end
-  end
-
-  @spec list_publication_runs(String.t()) :: [map()]
-  def list_publication_runs(room_id) when is_binary(room_id) do
-    from(record in PublicationRunRecord,
-      where: record.room_id == ^room_id,
-      order_by: [asc: record.inserted_at, asc: record.publication_run_id]
-    )
-    |> Repo.all()
-    |> Enum.map(&publication_run_snapshot/1)
-  end
-
-  @spec append_room_events(String.t(), [RoomEvent.t()]) :: :ok | {:error, term()}
-  def append_room_events(room_id, events) when is_binary(room_id) and is_list(events) do
-    Repo.transaction(fn ->
-      Enum.each(events, fn %RoomEvent{} = event ->
-        room_id
-        |> room_event_attrs(event)
-        |> insert_room_event_record()
-      end)
-    end)
-    |> case do
-      {:ok, _value} -> :ok
-      {:error, error} -> {:error, error}
-    end
-  end
-
-  defp room_snapshot_attrs(%{room_id: room_id} = snapshot) do
+  defp room_snapshot_attrs(%RoomSnapshot{} = snapshot) do
     %{
-      room_id: room_id,
-      snapshot: snapshot |> SnapshotProjection.strip_derived() |> normalize()
+      room_id: snapshot.room.id,
+      snapshot: snapshot |> RoomSnapshot.to_map() |> normalize()
     }
   end
 
   defp room_event_attrs(room_id, %RoomEvent{} = event) do
     %{
-      event_id: event.event_id,
+      event_id: event.id,
       room_id: room_id,
+      sequence: event.sequence,
       event_type: Atom.to_string(event.type),
-      causation_id: event.causation_id,
-      correlation_id: event.correlation_id,
-      payload: normalize(event.payload || %{})
+      payload: normalize(event.data),
+      causation_id: nil,
+      correlation_id: nil
     }
   end
 
@@ -255,14 +403,40 @@ defmodule JidoHiveServer.Persistence do
     end
   end
 
-  @spec list_room_events(String.t()) :: [RoomEvent.t()]
-  def list_room_events(room_id) when is_binary(room_id) do
-    from(record in RoomEventRecord,
-      where: record.room_id == ^room_id,
-      order_by: [asc: record.inserted_at, asc: record.id]
-    )
-    |> Repo.all()
-    |> Enum.map(&rehydrate_room_event/1)
+  defp rehydrate_room_snapshot(snapshot) when is_map(snapshot) do
+    if RoomSnapshot.valid_snapshot_map?(snapshot) do
+      RoomSnapshot.new(snapshot)
+    else
+      {:error, :invalid_snapshot_format}
+    end
+  end
+
+  defp rehydrate_room_event(%RoomEventRecord{} = record) do
+    RoomEvent.new(%{
+      id: record.event_id,
+      room_id: record.room_id,
+      sequence: record.sequence,
+      type: record.event_type,
+      data: record.payload || %{},
+      inserted_at: record.inserted_at
+    })
+  end
+
+  defp room_run_snapshot(%RoomRunRecord{} = record) do
+    %{
+      id: record.run_id,
+      room_id: record.room_id,
+      status: record.status,
+      max_assignments: record.max_assignments,
+      assignments_started: record.assignments_started,
+      assignments_completed: record.assignments_completed,
+      assignment_timeout_ms: record.assignment_timeout_ms,
+      until: record.until || %{},
+      result: record.result,
+      error: record.error,
+      inserted_at: record.inserted_at,
+      updated_at: record.updated_at
+    }
   end
 
   defp publication_run_snapshot(%PublicationRunRecord{} = record) do
@@ -279,32 +453,6 @@ defmodule JidoHiveServer.Persistence do
       inserted_at: record.inserted_at,
       updated_at: record.updated_at
     }
-  end
-
-  defp rehydrate_room_snapshot(snapshot) when is_map(snapshot) do
-    %{
-      room_id: snapshot_value(snapshot, "room_id"),
-      name: snapshot_value(snapshot, "name"),
-      session_id: snapshot_value(snapshot, "session_id"),
-      brief: snapshot_value(snapshot, "brief"),
-      rules: snapshot_list(snapshot, "rules"),
-      phase: snapshot_value(snapshot, "phase"),
-      config: snapshot_map(snapshot, "config", & &1),
-      participants: snapshot_list(snapshot, "participants", &rehydrate_participant/1),
-      current_assignment: snapshot_map(snapshot, "current_assignment", &rehydrate_assignment/1),
-      assignments: snapshot_list(snapshot, "assignments", &rehydrate_assignment/1),
-      context_objects: snapshot_list(snapshot, "context_objects", &rehydrate_context_object/1),
-      contributions: snapshot_list(snapshot, "contributions", &rehydrate_contribution/1),
-      context_config: rehydrate_context_config(snapshot_map(snapshot, "context_config", & &1)),
-      dispatch_policy_id: snapshot_value(snapshot, "dispatch_policy_id", "round_robin/v2"),
-      dispatch_policy_config: snapshot_map(snapshot, "dispatch_policy_config", & &1),
-      dispatch_state: rehydrate_dispatch_state(snapshot_map(snapshot, "dispatch_state", & &1)),
-      status: snapshot_value(snapshot, "status", "idle"),
-      next_context_seq: snapshot_value(snapshot, "next_context_seq", 1),
-      next_assignment_seq: snapshot_value(snapshot, "next_assignment_seq", 1),
-      next_contribution_seq: snapshot_value(snapshot, "next_contribution_seq", 1)
-    }
-    |> SnapshotProjection.project()
   end
 
   defp rehydrate_target(snapshot) when is_map(snapshot) do
@@ -325,187 +473,91 @@ defmodule JidoHiveServer.Persistence do
     }
   end
 
-  defp rehydrate_participant(participant) do
-    %{
-      participant_id: participant["participant_id"],
-      participant_role: participant["participant_role"],
-      participant_kind: participant["participant_kind"],
-      authority_level: participant["authority_level"],
-      target_id: participant["target_id"],
-      capability_id: participant["capability_id"],
-      provider: participant["provider"],
-      runtime_driver: participant["runtime_driver"],
-      workspace_root: participant["workspace_root"],
-      metadata: participant["metadata"] || %{}
-    }
-  end
+  defp compact_snapshot(%RoomSnapshot{} = snapshot) do
+    retained_assignment_ids =
+      snapshot.assignments
+      |> Enum.reject(&Assignment.terminal_status?/1)
+      |> Enum.map(& &1.id)
+      |> MapSet.new()
 
-  defp rehydrate_assignment(assignment) when map_size(assignment) == 0, do: %{}
+    recent = Enum.take(snapshot.contributions, -@default_contribution_window)
 
-  defp rehydrate_assignment(assignment) do
-    %{
-      id: first_field(assignment, ["id", "assignment_id"]),
-      assignment_id: field(assignment, "assignment_id"),
-      room_id: field(assignment, "room_id"),
-      participant_id: field(assignment, "participant_id"),
-      participant_role: field(assignment, "participant_role"),
-      target_id: field(assignment, "target_id"),
-      capability_id: field(assignment, "capability_id"),
-      phase: field(assignment, "phase"),
-      objective: field(assignment, "objective"),
-      payload: map_field(assignment, "payload"),
-      contribution_contract: map_field(assignment, "contribution_contract"),
-      context_view: map_field(assignment, "context_view"),
-      plan_slot_index: field_or(assignment, "plan_slot_index", 0),
-      status: field(assignment, "status"),
-      deadline: datetime_field(assignment, "deadline"),
-      task_context: map_field(assignment, "task_context"),
-      opened_at: datetime_field(assignment, "opened_at"),
-      inserted_at: first_datetime_field(assignment, ["inserted_at", "opened_at"]),
-      completed_at: datetime_field(assignment, "completed_at"),
-      session: map_field(assignment, "session"),
-      meta: map_field(assignment, "meta"),
-      result_summary: field(assignment, "result_summary")
-    }
-  end
-
-  defp rehydrate_context_object(context_object) do
-    %{
-      context_id: context_object["context_id"],
-      object_type: context_object["object_type"],
-      title: context_object["title"],
-      body: context_object["body"],
-      data: context_object["data"] || %{},
-      authored_by: context_object["authored_by"] || %{},
-      provenance: context_object["provenance"] || %{},
-      scope: rehydrate_scope(context_object["scope"] || %{}),
-      uncertainty: rehydrate_uncertainty(context_object["uncertainty"] || %{}),
-      relations: context_object["relations"] || [],
-      inserted_at: datetime_value(context_object["inserted_at"])
-    }
-  end
-
-  defp rehydrate_contribution(contribution) do
-    %{
-      id: first_field(contribution, ["id", "contribution_id"]),
-      contribution_id: field(contribution, "contribution_id"),
-      room_id: field(contribution, "room_id"),
-      assignment_id: field(contribution, "assignment_id"),
-      participant_id: field(contribution, "participant_id"),
-      participant_role: field(contribution, "participant_role"),
-      participant_kind: field(contribution, "participant_kind"),
-      target_id: field(contribution, "target_id"),
-      capability_id: field(contribution, "capability_id"),
-      kind: first_field(contribution, ["kind", "contribution_type"]),
-      payload: map_field(contribution, "payload"),
-      meta: map_field(contribution, "meta"),
-      inserted_at: datetime_field(contribution, "inserted_at"),
-      contribution_type: field(contribution, "contribution_type"),
-      authority_level: field(contribution, "authority_level"),
-      summary: field(contribution, "summary"),
-      consumed_context_ids: list_field(contribution, "consumed_context_ids"),
-      context_objects: list_field(contribution, "context_objects"),
-      artifacts: list_field(contribution, "artifacts"),
-      events: list_field(contribution, "events"),
-      tool_events: list_field(contribution, "tool_events"),
-      approvals: list_field(contribution, "approvals"),
-      execution: map_field(contribution, "execution"),
-      status: field(contribution, "status"),
-      schema_version: field(contribution, "schema_version")
-    }
-  end
-
-  defp rehydrate_dispatch_state(dispatch_state) do
-    %{
-      applied_event_ids: dispatch_state["applied_event_ids"] || [],
-      completed_slots: dispatch_state["completed_slots"] || 0,
-      total_slots: dispatch_state["total_slots"] || 0,
-      participant_ids: dispatch_state["participant_ids"] || [],
-      phases: dispatch_state["phases"] || []
-    }
-  end
-
-  defp rehydrate_context_config(context_config) do
-    participant_scopes =
-      context_config
-      |> Map.get("participant_scopes", %{})
-      |> Map.new(fn {participant_id, scope} ->
-        {participant_id,
-         %{
-           writable_types: rehydrate_dimension(scope["writable_types"]),
-           writable_node_ids: rehydrate_dimension(scope["writable_node_ids"]),
-           reference_hop_limit: scope["reference_hop_limit"] || 2
-         }}
+    referenced =
+      Enum.filter(snapshot.contributions, fn contribution ->
+        is_binary(contribution.assignment_id) and
+          MapSet.member?(retained_assignment_ids, contribution.assignment_id)
       end)
 
-    %{participant_scopes: participant_scopes}
+    contributions =
+      recent
+      |> Kernel.++(referenced)
+      |> Enum.uniq_by(& &1.id)
+
+    %{snapshot | contributions: contributions}
   end
 
-  defp rehydrate_dimension("all"), do: :all
-  defp rehydrate_dimension(nil), do: :all
-  defp rehydrate_dimension(values) when is_list(values), do: values
-  defp rehydrate_dimension(_values), do: :all
+  defp room_matches?(%RoomSnapshot{} = _snapshot, nil, nil), do: true
 
-  defp rehydrate_scope(scope) do
-    %{
-      read: scope["read"] || [],
-      write: scope["write"] || []
-    }
+  defp room_matches?(%RoomSnapshot{} = snapshot, participant_id, status) do
+    participant_match? =
+      case participant_id do
+        nil -> true
+        value -> Enum.any?(snapshot.participants, &(&1.id == value))
+      end
+
+    status_match? =
+      case status do
+        nil -> true
+        value -> snapshot.room.status == value
+      end
+
+    participant_match? and status_match?
   end
 
-  defp rehydrate_uncertainty(uncertainty) do
-    %{
-      status: uncertainty["status"],
-      confidence: uncertainty["confidence"],
-      rationale: uncertainty["rationale"]
-    }
-  end
-
-  defp rehydrate_room_event(%RoomEventRecord{} = record) do
-    {:ok, event} =
-      RoomEvent.new(%{
-        event_id: record.event_id,
-        room_id: record.room_id,
-        type: record.event_type,
-        payload: record.payload || %{},
-        causation_id: record.causation_id,
-        correlation_id: record.correlation_id,
-        recorded_at: record.inserted_at
-      })
-
-    event
-  end
-
-  defp snapshot_value(snapshot, key, default \\ nil), do: Map.get(snapshot, key, default)
-
-  defp snapshot_list(snapshot, key, mapper \\ & &1) do
-    snapshot
-    |> Map.get(key, [])
-    |> Enum.map(mapper)
-  end
-
-  defp snapshot_map(snapshot, key, mapper) do
-    snapshot
-    |> Map.get(key, %{})
-    |> mapper.()
+  defp matches_contribution_filters?(
+         %Contribution{} = contribution,
+         participant_id,
+         assignment_id,
+         kind
+       ) do
+    participant_match? = is_nil(participant_id) or contribution.participant_id == participant_id
+    assignment_match? = is_nil(assignment_id) or contribution.assignment_id == assignment_id
+    kind_match? = is_nil(kind) or contribution.kind == kind
+    participant_match? and assignment_match? and kind_match?
   end
 
   defp maybe_filter_status(query, nil), do: query
 
-  defp maybe_filter_status(query, status),
-    do: from(record in query, where: record.status == ^status)
-
-  defp datetime_value(nil), do: nil
-  defp datetime_value(%DateTime{} = value), do: value
-
-  defp datetime_value(value) when is_binary(value) do
-    case DateTime.from_iso8601(value) do
-      {:ok, datetime, _offset} -> datetime
-      _other -> nil
-    end
+  defp maybe_filter_status(query, status) do
+    from(record in query, where: record.status == ^status)
   end
 
-  defp datetime_value(_value), do: nil
+  defp maybe_limit(query, nil), do: query
+
+  defp maybe_limit(query, limit) when is_integer(limit) and limit > 0 do
+    from(record in query, limit: ^limit)
+  end
+
+  defp maybe_limit(query, _limit), do: query
+
+  defp maybe_take(list, nil), do: list
+  defp maybe_take(list, limit) when is_integer(limit) and limit > 0, do: Enum.take(list, limit)
+  defp maybe_take(list, _limit), do: list
+
+  defp reduce_room_snapshot(snapshot, acc, participant_id, status) do
+    case rehydrate_room_snapshot(snapshot) do
+      {:ok, room_snapshot} ->
+        next_acc =
+          if room_matches?(room_snapshot, participant_id, status),
+            do: acc ++ [room_snapshot],
+            else: acc
+
+        {:cont, {:ok, next_acc}}
+
+      {:error, reason} ->
+        {:halt, {:error, reason}}
+    end
+  end
 
   defp normalize(%_{} = struct) do
     struct
@@ -525,27 +577,4 @@ defmodule JidoHiveServer.Persistence do
 
   defp normalize_key(key) when is_atom(key), do: Atom.to_string(key)
   defp normalize_key(key), do: key
-
-  defp field(map, key), do: Map.get(map, key)
-
-  defp field_or(map, key, default), do: Map.get(map, key) || default
-
-  defp map_field(map, key), do: field_or(map, key, %{})
-
-  defp list_field(map, key), do: field_or(map, key, [])
-
-  defp first_field(map, keys) do
-    Enum.find_value(keys, fn key -> Map.get(map, key) end)
-  end
-
-  defp datetime_field(map, key), do: map |> field(key) |> datetime_value()
-
-  defp first_datetime_field(map, keys) do
-    keys
-    |> Enum.find_value(fn key ->
-      map
-      |> field(key)
-      |> datetime_value()
-    end)
-  end
 end

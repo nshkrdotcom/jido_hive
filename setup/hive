@@ -103,8 +103,15 @@ derive_live_demo_wait_budget_json() {
   local min_wait_timeout_ms='30000'
   local wait_timeout_ms='30000'
 
-  total_slots="$(jq -r '.data.dispatch_state.total_slots // 0' <<<"$room_json")"
-  completed_slots="$(jq -r '.data.dispatch_state.completed_slots // 0' <<<"$room_json")"
+  total_slots="$(
+    jq -r '
+      .data.dispatch_state.total_slots //
+      (.data.assignment_counts // {} | [.pending, .active, .completed, .expired] | map(. // 0) | add) //
+      (.data.participants | length) //
+      0
+    ' <<<"$room_json"
+  )"
+  completed_slots="$(jq -r '.data.dispatch_state.completed_slots // .data.assignment_counts.completed // 0' <<<"$room_json")"
 
   remaining_slots=$(( total_slots - completed_slots ))
   if (( remaining_slots < 0 )); then
@@ -168,16 +175,24 @@ build_room_payload() {
     --argjson targets "$targets_json" \
     --argjson rules "$rules_json" \
     '{
-      room_id: $room_id,
-      brief: $brief,
-      rules: $rules,
-      participants:
-        ($targets | map({
-          participant_id: .participant_id,
-          participant_role: (.participant_role // "worker"),
-          target_id: .target_id,
-          capability_id: .capability_id
-        }))
+      data: {
+        id: $room_id,
+        name: $brief,
+        config: {
+          rules: $rules
+        },
+        participants:
+          ($targets | map({
+            id: .participant_id,
+            kind: "agent",
+            handle: .participant_id,
+            meta: {
+              role: (.participant_role // "worker"),
+              target_id: .target_id,
+              capability_id: .capability_id
+            }
+          }))
+      }
     }'
 }
 
@@ -540,7 +555,7 @@ cmd_run_room() {
     )"
   fi
 
-  api_post "/rooms/$room_id/run_operations" "$payload"
+  api_post "/rooms/$room_id/runs" "{\"data\":$payload}"
 }
 
 cmd_show_run_operation() {
@@ -552,7 +567,7 @@ cmd_show_run_operation() {
   require_room_id "$room_id"
   [[ -n "$operation_id" ]] || die "operation id is required"
 
-  api_get "/rooms/$room_id/run_operations/$operation_id"
+  api_get "/rooms/$room_id/runs/$operation_id"
 }
 
 cmd_wait_run_operation() {
@@ -594,15 +609,15 @@ cmd_wait_run_operation() {
   deadline_ms=$(( $(date +%s%3N) + timeout_ms ))
 
   while true; do
-    perform_request GET "${JIDO_HIVE_API_BASE}/rooms/${room_id}/run_operations/${operation_id}" ""
+    perform_request GET "${JIDO_HIVE_API_BASE}/rooms/${room_id}/runs/${operation_id}" ""
 
     case "$JIDO_HIVE_HTTP_STATUS" in
       200)
         local status=''
-        status="$(jq -r '.data.status // empty' "$JIDO_HIVE_HTTP_BODY_FILE")"
+        status="$(jq -r '.data.run.status // empty' "$JIDO_HIVE_HTTP_BODY_FILE")"
 
         case "$status" in
-          accepted|running)
+          queued|running)
             cleanup_http_response
             ;;
 
@@ -612,7 +627,7 @@ cmd_wait_run_operation() {
             return 0
             ;;
 
-          failed)
+          failed|cancelled)
             json_print_file "$JIDO_HIVE_HTTP_BODY_FILE" >&2
             cleanup_http_response
             return 1
@@ -631,7 +646,7 @@ cmd_wait_run_operation() {
         ;;
 
       *)
-        log "GET ${JIDO_HIVE_API_BASE}/rooms/${room_id}/run_operations/${operation_id} failed with HTTP $JIDO_HIVE_HTTP_STATUS"
+        log "GET ${JIDO_HIVE_API_BASE}/rooms/${room_id}/runs/${operation_id} failed with HTTP $JIDO_HIVE_HTTP_STATUS"
         json_print_file "$JIDO_HIVE_HTTP_BODY_FILE" >&2 || cat "$JIDO_HIVE_HTTP_BODY_FILE" >&2
         cleanup_http_response
         return 1
@@ -795,7 +810,7 @@ cmd_live_demo() {
   printf '%s\n' "$run_operation_json"
 
   local run_operation_id
-  run_operation_id="$(jq -r '.data.operation_id // empty' <<<"$run_operation_json")"
+  run_operation_id="$(jq -r '.data.run.id // .data.run.run_id // empty' <<<"$run_operation_json")"
   [[ -n "$run_operation_id" ]] || die "run-room did not return an operation id"
 
   printf '\n=== Waiting For Run Operation %s (%s) ===\n' "$room_id" "$run_operation_id"

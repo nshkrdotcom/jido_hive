@@ -1,519 +1,376 @@
 defmodule JidoHiveServer.Collaboration do
   @moduledoc false
 
-  alias JidoHiveContextGraph.ContextGraph
+  alias JidoHiveServer.Collaboration.DispatchPolicies.RoundRobin
   alias JidoHiveServer.Collaboration.DispatchPolicy.Registry, as: PolicyRegistry
-  alias JidoHiveServer.Collaboration.RoomServer
-  alias JidoHiveServer.Collaboration.RoomTimeline
-  alias JidoHiveServer.Collaboration.Schema.{Assignment, Participant, RoomEvent}
-  alias JidoHiveServer.Collaboration.SnapshotProjection
+  alias JidoHiveServer.Collaboration.{EventReducer, ParticipantSessionRegistry, RoomServer}
+  alias JidoHiveServer.Collaboration.Schema.{Participant, Room, RoomEvent, RoomSnapshot}
   alias JidoHiveServer.Persistence
-  alias JidoHiveServer.Publications
-  alias JidoHiveServer.RemoteExec
 
+  @spec list_rooms(keyword()) :: {:ok, [RoomSnapshot.t()]} | {:error, term()}
+  def list_rooms(opts \\ []) do
+    Persistence.list_rooms(opts)
+  end
+
+  @spec create_room(map()) :: {:ok, RoomSnapshot.t()} | {:error, term()}
   def create_room(attrs) when is_map(attrs) do
-    room_id = value(attrs, "room_id")
-    name = value(attrs, "name") || value(attrs, "brief")
-    brief = name
-    rules = list_value(attrs, "rules")
-    config = normalize_room_config(attrs)
-    dispatch_policy_id = Map.get(config, "dispatch_policy", "round_robin/v2")
-    dispatch_policy_config = Map.get(config, "dispatch_policy_opts", %{})
-    context_config = Map.get(config, "context_graph", %{})
+    room_id = string_value(attrs, "id") || generated_room_id()
+    name = string_value(attrs, "name")
+    phase = value(attrs, "phase")
+    config = map_value(attrs, "config")
+    participants_attrs = list_value(attrs, "participants")
+    now = DateTime.utc_now()
 
-    with true <-
-           (is_binary(room_id) and String.trim(room_id) != "") or {:error, :room_id_required},
-         true <- (is_binary(brief) and String.trim(brief) != "") or {:error, :brief_required},
-         {:ok, participants} <-
-           normalize_participants(
-             Map.get(attrs, :participants) || Map.get(attrs, "participants", [])
-           ),
-         {:ok, policy_module} <- PolicyRegistry.fetch_module(dispatch_policy_id),
-         snapshot <-
-           base_snapshot(%{
-             room_id: room_id,
-             name: name,
-             brief: brief,
-             rules: rules,
-             participants: participants,
-             config: config,
-             context_config: context_config,
-             dispatch_policy_id: dispatch_policy_id,
-             dispatch_policy_config: dispatch_policy_config,
-             policy_module: policy_module
+    with {:ok, room} <-
+           Room.new(%{
+             "id" => room_id,
+             "name" => name,
+             "status" => "waiting",
+             "phase" => phase,
+             "config" => config,
+             "inserted_at" => now,
+             "updated_at" => now
            }),
+         {:ok, participants} <- build_participants(room_id, participants_attrs),
+         policy_id <- Map.get(config, "dispatch_policy", RoundRobin.id()),
+         {:ok, policy_module} <- PolicyRegistry.fetch_module(policy_id),
+         provisional_snapshot <- %RoomSnapshot{
+           RoomSnapshot.initial(room, policy_id, %{})
+           | participants: participants
+         },
+         {:ok, policy_state, room_patch} <- policy_module.init(provisional_snapshot, %{}),
+         initial_snapshot <- put_in(provisional_snapshot.dispatch.policy_state, policy_state),
+         requests <- initial_room_requests(room, participants, room_patch),
+         {:ok, snapshot, events} <-
+           apply_initial_requests(initial_snapshot, policy_module, requests),
          :ok <- replace_room_server(room_id),
          :ok <- Persistence.delete_room_events(room_id),
-         :ok <- persist_room_created(snapshot),
-         {:ok, _pid} <- ensure_room_server(snapshot) do
-      fetch_room(room_id)
-    else
-      false -> {:error, :invalid_room}
-      {:error, _reason} = error -> error
-    end
-  end
-
-  def fetch_room(room_id) when is_binary(room_id) do
-    with {:ok, snapshot} <- load_room_snapshot(room_id),
-         {:ok, _pid} <- ensure_room_server(snapshot),
-         [{pid, _value}] <- Registry.lookup(JidoHiveServer.Collaboration.Registry, room_id),
-         {:ok, current} <- RoomServer.snapshot(pid) do
-      {:ok, current}
-    else
-      [] -> {:error, :room_not_found}
-      {:error, _} = error -> error
-    end
-  end
-
-  def receive_contribution(%{"room_id" => room_id} = payload),
-    do: receive_contribution_internal(room_id, payload)
-
-  def receive_contribution(%{room_id: room_id} = payload),
-    do: receive_contribution_internal(room_id, payload)
-
-  def receive_contribution(_payload), do: {:error, :invalid_payload}
-
-  def record_manual_contribution(room_id, attrs) when is_binary(room_id) and is_map(attrs) do
-    contribution =
-      attrs
-      |> put_default("room_id", room_id)
-      |> put_default("participant_id", value(attrs, "participant_id") || "human")
-      |> put_default("participant_role", value(attrs, "participant_role") || "reviewer")
-      |> put_default("participant_kind", value(attrs, "participant_kind") || "human")
-      |> put_default("contribution_type", value(attrs, "contribution_type") || "perspective")
-      |> put_default("authority_level", value(attrs, "authority_level") || "binding")
-      |> put_default("summary", value(attrs, "summary") || "manual contribution")
-      |> put_default("context_objects", [])
-      |> put_default("execution", %{"status" => "completed"})
-      |> put_default("status", "completed")
-      |> put_default("schema_version", "jido_hive/contribution.submit.v1")
-
-    receive_contribution(contribution)
-  end
-
-  def run_first_slice(room_id) when is_binary(room_id) do
-    run_room(room_id, max_assignments: 1)
-  end
-
-  def run_room(room_id, opts \\ []) when is_binary(room_id) and is_list(opts) do
-    assignment_timeout_ms =
-      Keyword.get(opts, :assignment_timeout_ms, assignment_wait_timeout_ms())
-
-    with {:ok, snapshot} <- fetch_room(room_id) do
-      completed_slots = snapshot.dispatch_state.completed_slots || 0
-      total_slots = snapshot.dispatch_state.total_slots || 0
-      requested_assignments = Keyword.get(opts, :max_assignments, total_slots)
-      target_completed_slots = min(completed_slots + requested_assignments, total_slots)
-      do_run_room(room_id, snapshot, target_completed_slots, assignment_timeout_ms)
-    end
-  end
-
-  def publication_plan(room_id) when is_binary(room_id) do
-    with {:ok, snapshot} <- fetch_room(room_id) do
-      {:ok, Publications.build_plan(snapshot)}
-    end
-  end
-
-  def publication_runs(room_id) when is_binary(room_id) do
-    with {:ok, _snapshot} <- fetch_room(room_id) do
-      {:ok, Persistence.list_publication_runs(room_id)}
-    end
-  end
-
-  def execute_publications(room_id, attrs) when is_binary(room_id) and is_map(attrs) do
-    with {:ok, snapshot} <- fetch_room(room_id) do
-      Publications.execute(snapshot, attrs)
-    end
-  end
-
-  def list_context_objects(room_id) when is_binary(room_id) do
-    with {:ok, snapshot} <- fetch_room(room_id) do
-      projected = SnapshotProjection.project(snapshot)
-      {:ok, Enum.map(projected.context_objects, &decorate_context_object(&1, projected))}
-    end
-  end
-
-  def fetch_context_object(room_id, context_id)
-      when is_binary(room_id) and is_binary(context_id) do
-    with {:ok, snapshot} <- fetch_room(room_id),
-         projected <- SnapshotProjection.project(snapshot),
-         context_object when not is_nil(context_object) <-
-           Enum.find(projected.context_objects, &(&1.context_id == context_id)) do
-      {:ok, decorate_context_object(context_object, projected)}
-    else
-      nil -> {:error, :context_object_not_found}
-      {:error, _} = error -> error
-    end
-  end
-
-  def room_sync(room_id, opts \\ []) when is_binary(room_id) and is_list(opts) do
-    after_cursor = Keyword.get(opts, :after)
-
-    with {:ok, snapshot} <- fetch_room(room_id) do
-      projected = SnapshotProjection.project(snapshot)
-
-      timeline =
-        room_id
-        |> Persistence.list_room_events()
-        |> RoomTimeline.project(after: after_cursor)
-
-      {:ok,
-       %{
-         room: snapshot,
-         timeline: timeline,
-         next_cursor: RoomTimeline.next_cursor(timeline),
-         context_objects:
-           projected
-           |> Map.get(:context_objects, [])
-           |> Enum.map(&decorate_context_object(&1, projected))
-       }}
-    end
-  end
-
-  defp receive_contribution_internal(room_id, payload) do
-    with {:ok, snapshot} <- load_room_snapshot(room_id),
-         {:ok, _pid} <- ensure_room_server(snapshot),
-         [{pid, _value}] <- Registry.lookup(JidoHiveServer.Collaboration.Registry, room_id),
-         {:ok, next_snapshot} <- RoomServer.record_contribution(pid, %{"contribution" => payload}) do
-      {:ok, next_snapshot}
-    else
-      [] -> {:error, :room_not_found}
-      {:error, _} = error -> error
-    end
-  end
-
-  defp do_run_room(room_id, snapshot, target_completed_slots, _timeout_ms)
-       when snapshot.dispatch_state.completed_slots >= target_completed_slots,
-       do: fetch_room(room_id)
-
-  defp do_run_room(room_id, snapshot, target_completed_slots, assignment_timeout_ms) do
-    case next_action(snapshot, available_target_ids()) do
-      {:complete, _status} ->
-        fetch_room(room_id)
-
-      {:awaiting_authority, status} ->
-        set_room_status(room_id, status)
-
-      {:blocked, status} ->
-        set_room_status(room_id, status)
-
-      {:ok, assignment_attrs} ->
-        with {:ok, _result} <-
-               run_assignment(room_id, snapshot, assignment_attrs, assignment_timeout_ms),
-             {:ok, refreshed} <- fetch_room(room_id) do
-          do_run_room(room_id, refreshed, target_completed_slots, assignment_timeout_ms)
-        end
-    end
-  end
-
-  defp run_assignment(room_id, snapshot, assignment_attrs, assignment_timeout_ms) do
-    assignment_id = "asn-#{snapshot.next_assignment_seq}"
-    server = RoomServer.via(room_id)
-
-    with {:ok, target} <- RemoteExec.fetch_target(assignment_attrs.target_id),
-         {:ok, session} <- session_request(target),
-         {:ok, assignment} <-
-           Assignment.new(
-             Map.merge(assignment_attrs, %{
-               assignment_id: assignment_id,
-               room_id: room_id,
-               session: session
-             })
+         {:ok, persisted} <-
+           Persistence.persist_room_transition(
+             room_id,
+             events,
+             finalize_checkpoint(snapshot, events)
            ),
-         assignment_map <- Map.from_struct(assignment),
-         {:ok, _opened} <- RoomServer.open_assignment(server, %{"assignment" => assignment_map}),
-         :ok <- RemoteExec.dispatch_assignment(assignment_map.target_id, assignment_map),
-         {:ok, result_assignment} <-
-           wait_for_assignment(room_id, assignment_id, assignment_timeout_ms) do
-      assignment_result(result_assignment)
-    else
-      {:error, :unknown_target} ->
-        RoomServer.abandon_assignment(server, %{
-          "assignment_id" => assignment_id,
-          "reason" => "target unavailable before dispatch"
-        })
-
-        {:ok, :abandoned}
-
-      {:error, :assignment_timeout} ->
-        RoomServer.abandon_assignment(server, %{
-          "assignment_id" => assignment_id,
-          "reason" => "assignment timed out before a client contribution was received"
-        })
-
-        {:ok, :abandoned}
-
-      {:error, _reason} = error ->
-        error
+         {:ok, _pid} <- ensure_room_server(persisted) do
+      {:ok, persisted}
     end
   end
 
-  defp assignment_result(%{status: "completed"}), do: {:ok, :completed}
-  defp assignment_result(%{status: "failed"}), do: {:ok, :failed}
-  defp assignment_result(%{status: "abandoned"}), do: {:ok, :abandoned}
-
-  defp session_request(target) do
-    {:ok,
-     %{
-       "runtime_driver" => target.runtime_driver || "asm",
-       "provider" => target.provider || "codex",
-       "workspace_root" => target.workspace_root,
-       "execution_surface" => target.execution_surface,
-       "execution_environment" => target.execution_environment,
-       "provider_options" => target.provider_options
-     }
-     |> Enum.reject(fn {_key, value} -> is_nil(value) end)
-     |> Map.new()}
-  end
-
-  defp next_action(snapshot, available_target_ids) do
-    case PolicyRegistry.fetch_module(snapshot.dispatch_policy_id) do
-      {:ok, module} -> module.next_action(snapshot, available_target_ids)
-      {:error, :unknown_policy} -> {:blocked, "failed"}
+  @spec fetch_room_snapshot(String.t()) :: {:ok, RoomSnapshot.t()} | {:error, term()}
+  def fetch_room_snapshot(room_id) when is_binary(room_id) do
+    with {:ok, snapshot} <- Persistence.fetch_room_snapshot(room_id),
+         {:ok, pid} <- ensure_room_server(snapshot) do
+      RoomServer.snapshot(pid)
     end
   end
 
-  defp set_room_status(room_id, status) do
-    with {:ok, _snapshot} <-
-           RoomServer.set_runtime_state(RoomServer.via(room_id), %{"status" => status}) do
-      fetch_room(room_id)
+  @spec patch_room(String.t(), map()) :: {:ok, RoomSnapshot.t()} | {:error, term()}
+  def patch_room(room_id, attrs) when is_binary(room_id) and is_map(attrs) do
+    with {:ok, server} <- fetch_room_server(room_id), do: RoomServer.patch_room(server, attrs)
+  end
+
+  @spec close_room(String.t()) :: {:ok, RoomSnapshot.t()} | {:error, term()}
+  def close_room(room_id) when is_binary(room_id) do
+    with {:ok, snapshot} <- patch_room(room_id, %{"status" => "closed"}) do
+      ParticipantSessionRegistry.disconnect_room(room_id)
+      {:ok, snapshot}
     end
   end
 
-  defp wait_for_assignment(room_id, assignment_id, timeout_ms) do
-    deadline = System.monotonic_time(:millisecond) + timeout_ms
-    do_wait_for_assignment(room_id, assignment_id, deadline)
-  end
-
-  defp do_wait_for_assignment(room_id, assignment_id, deadline_ms) do
-    case fetch_room(room_id) do
-      {:ok, snapshot} ->
-        snapshot
-        |> find_assignment_result(assignment_id)
-        |> wait_or_timeout(room_id, assignment_id, deadline_ms)
-
-      {:error, _} = error ->
-        error
+  @spec list_participants(String.t()) :: {:ok, [Participant.t()]} | {:error, term()}
+  def list_participants(room_id) when is_binary(room_id) do
+    with {:ok, snapshot} <- fetch_room_snapshot(room_id) do
+      {:ok, snapshot.participants}
     end
   end
 
-  defp find_assignment_result(snapshot, assignment_id) do
-    Enum.find(
-      snapshot.assignments,
-      &(&1.assignment_id == assignment_id and &1.status in ["completed", "failed", "abandoned"])
-    )
+  @spec upsert_participant(String.t(), map()) :: {:ok, RoomSnapshot.t()} | {:error, term()}
+  def upsert_participant(room_id, attrs) when is_binary(room_id) and is_map(attrs) do
+    with {:ok, server} <- fetch_room_server(room_id),
+         do: RoomServer.register_participant(server, attrs)
   end
 
-  defp wait_or_timeout(nil, room_id, assignment_id, deadline_ms) do
-    remaining_ms = deadline_ms - System.monotonic_time(:millisecond)
+  @spec remove_participant(String.t(), String.t()) :: {:ok, RoomSnapshot.t()} | {:error, term()}
+  def remove_participant(room_id, participant_id)
+      when is_binary(room_id) and is_binary(participant_id) do
+    with {:ok, server} <- fetch_room_server(room_id),
+         do: RoomServer.remove_participant(server, participant_id)
+  end
 
-    if remaining_ms <= 0 do
-      {:error, :assignment_timeout}
-    else
-      Process.sleep(min(assignment_wait_poll_ms(), remaining_ms))
-      do_wait_for_assignment(room_id, assignment_id, deadline_ms)
+  @spec submit_contribution(String.t(), map()) :: {:ok, RoomSnapshot.t()} | {:error, term()}
+  def submit_contribution(room_id, attrs) when is_binary(room_id) and is_map(attrs) do
+    with {:ok, server} <- fetch_room_server(room_id),
+         do: RoomServer.submit_contribution(server, attrs)
+  end
+
+  @spec list_assignments(String.t(), keyword()) :: {:ok, list()} | {:error, term()}
+  def list_assignments(room_id, opts \\ []) when is_binary(room_id) and is_list(opts) do
+    with {:ok, snapshot} <- fetch_room_snapshot(room_id) do
+      assignments =
+        snapshot.assignments
+        |> Enum.filter(fn assignment ->
+          participant_match?(assignment.participant_id, Keyword.get(opts, :participant_id)) and
+            status_match?(assignment.status, Keyword.get(opts, :status))
+        end)
+        |> maybe_limit(Keyword.get(opts, :limit))
+
+      {:ok, assignments}
     end
   end
 
-  defp wait_or_timeout(assignment, _room_id, _assignment_id, _deadline_ms), do: {:ok, assignment}
-
-  defp available_target_ids do
-    RemoteExec.list_targets()
-    |> Enum.map(& &1.target_id)
+  @spec update_assignment(String.t(), String.t(), String.t()) ::
+          {:ok, RoomSnapshot.t()} | {:error, term()}
+  def update_assignment(room_id, assignment_id, status)
+      when is_binary(room_id) and is_binary(assignment_id) and is_binary(status) do
+    with {:ok, server} <- fetch_room_server(room_id),
+         do: RoomServer.update_assignment(server, assignment_id, status)
   end
 
-  defp normalize_participants(participants) when is_list(participants) do
-    participants
-    |> Enum.map(&Participant.new/1)
-    |> Enum.reduce_while({:ok, []}, fn
-      {:ok, participant}, {:ok, acc} -> {:cont, {:ok, acc ++ [Map.from_struct(participant)]}}
-      {:error, reason}, _acc -> {:halt, {:error, reason}}
+  @spec list_events(String.t(), keyword()) :: {:ok, [RoomEvent.t()]} | {:error, term()}
+  def list_events(room_id, opts \\ []) when is_binary(room_id) and is_list(opts) do
+    Persistence.list_room_events(room_id, opts)
+  end
+
+  @spec list_contributions(String.t(), keyword()) :: {:ok, [map()]} | {:error, term()}
+  def list_contributions(room_id, opts \\ []) when is_binary(room_id) and is_list(opts) do
+    Persistence.list_contributions(room_id, opts)
+  end
+
+  defp initial_room_requests(room, participants, room_patch) do
+    room_request = {:room_created, %{"room" => room_map(room)}}
+
+    participant_requests =
+      Enum.map(participants, fn participant ->
+        {:participant_joined, %{"participant" => Participant.to_map(participant)}}
+      end)
+
+    [room_request] ++ participant_requests ++ materialize_room_patch_requests(room, room_patch)
+  end
+
+  defp apply_initial_requests(snapshot, policy_module, requests) do
+    Enum.reduce_while(requests, {:ok, snapshot, []}, fn {type, data},
+                                                        {:ok, current_snapshot, acc_events} ->
+      case build_event(current_snapshot, type, data) do
+        {:ok, event} ->
+          next_snapshot = EventReducer.apply_event(current_snapshot, event)
+
+          {:ok, policy_state, room_patch} =
+            policy_module.handle_event(
+              event,
+              next_snapshot,
+              next_snapshot.dispatch.policy_state,
+              %{
+                availability: %{},
+                policy_state: next_snapshot.dispatch.policy_state,
+                now: DateTime.utc_now()
+              }
+            )
+
+          continue_initial_request(
+            next_snapshot,
+            policy_module,
+            event,
+            acc_events,
+            policy_state,
+            room_patch
+          )
+
+        {:error, reason} ->
+          {:halt, {:error, reason}}
+      end
     end)
   end
 
-  defp base_snapshot(%{
-         room_id: room_id,
-         name: name,
-         brief: brief,
-         rules: rules,
-         participants: participants,
-         config: config,
-         context_config: context_config,
-         dispatch_policy_id: dispatch_policy_id,
-         dispatch_policy_config: dispatch_policy_config,
-         policy_module: policy_module
-       }) do
-    snapshot = %{
-      room_id: room_id,
-      name: name,
-      session_id: "room-session-#{room_id}",
-      brief: brief,
-      rules: rules,
-      status: "idle",
-      phase: initial_phase(dispatch_policy_config),
-      config: config,
-      participants: participants,
-      current_assignment: %{},
-      assignments: [],
-      context_objects: [],
-      contributions: [],
-      context_config: context_config,
-      context_graph: %{outgoing: %{}, incoming: %{}},
-      context_annotations: %{},
-      dispatch_policy_id: dispatch_policy_id,
-      dispatch_policy_config: dispatch_policy_config,
-      dispatch_state: %{},
-      next_context_seq: 1,
-      next_assignment_seq: 1,
-      next_contribution_seq: 1
-    }
+  defp continue_initial_request(
+         next_snapshot,
+         policy_module,
+         event,
+         acc_events,
+         policy_state,
+         room_patch
+       ) do
+    next_snapshot = put_in(next_snapshot.dispatch.policy_state, policy_state)
+    patch_requests = materialize_room_patch_requests(next_snapshot.room, room_patch)
 
-    snapshot
-    |> Map.put(:dispatch_state, policy_module.init_state(snapshot))
-    |> SnapshotProjection.project()
-  end
+    case apply_initial_requests(next_snapshot, policy_module, patch_requests) do
+      {:ok, final_snapshot, patch_events} ->
+        {:cont, {:ok, final_snapshot, acc_events ++ [event] ++ patch_events}}
 
-  defp load_room_snapshot(room_id) do
-    case Registry.lookup(JidoHiveServer.Collaboration.Registry, room_id) do
-      [{pid, _value}] -> RoomServer.snapshot(pid)
-      [] -> Persistence.fetch_room_snapshot(room_id)
+      {:error, reason} ->
+        {:halt, {:error, reason}}
     end
   end
 
-  defp ensure_room_server(snapshot) do
-    spec = {RoomServer, room_id: snapshot.room_id, snapshot: snapshot}
+  defp build_participants(room_id, participants) do
+    participants
+    |> Enum.reduce_while({:ok, []}, fn attrs, {:ok, acc} ->
+      normalized =
+        attrs
+        |> map_value("meta")
+        |> then(fn _meta ->
+          attrs
+          |> Map.put("room_id", room_id)
+          |> Map.put_new("kind", string_value(attrs, "kind") || "human")
+          |> Map.put_new("joined_at", DateTime.utc_now())
+        end)
 
-    case DynamicSupervisor.start_child(JidoHiveServer.Collaboration.RoomSupervisor, spec) do
-      {:ok, pid} -> {:ok, pid}
-      {:error, {:already_started, pid}} -> {:ok, pid}
-      {:error, {:already_present, _}} -> {:ok, RoomServer.via(snapshot.room_id)}
-      other -> other
+      case Participant.new(normalized) do
+        {:ok, participant} -> {:cont, {:ok, acc ++ [participant]}}
+        {:error, reason} -> {:halt, {:error, reason}}
+      end
+    end)
+  end
+
+  defp materialize_room_patch_requests(_room, room_patch) when room_patch in [%{}, nil], do: []
+
+  defp materialize_room_patch_requests(room, room_patch) do
+    []
+    |> maybe_patch_phase(room, room_patch)
+    |> maybe_patch_status(room, room_patch)
+  end
+
+  defp maybe_patch_phase(requests, room, room_patch) do
+    if Map.has_key?(room_patch, :phase) and Map.get(room_patch, :phase) != room.phase do
+      requests ++
+        [
+          {:room_phase_changed,
+           %{"phase" => Map.get(room_patch, :phase), "inserted_at" => DateTime.utc_now()}}
+        ]
+    else
+      requests
+    end
+  end
+
+  defp maybe_patch_status(requests, room, room_patch) do
+    if Map.has_key?(room_patch, :status) and Map.get(room_patch, :status) != room.status do
+      requests ++
+        [
+          {:room_status_changed,
+           %{"status" => Map.get(room_patch, :status), "inserted_at" => DateTime.utc_now()}}
+        ]
+    else
+      requests
+    end
+  end
+
+  defp room_map(room) do
+    %{
+      id: room.id,
+      name: room.name,
+      status: room.status,
+      phase: room.phase,
+      config: room.config,
+      inserted_at: room.inserted_at,
+      updated_at: room.updated_at
+    }
+  end
+
+  defp build_event(snapshot, type, data) do
+    RoomEvent.new(%{
+      "id" => "evt-#{snapshot.room.id}-#{snapshot.clocks.next_event_sequence}",
+      "room_id" => snapshot.room.id,
+      "sequence" => snapshot.clocks.next_event_sequence,
+      "type" => type,
+      "data" => data,
+      "inserted_at" => DateTime.utc_now()
+    })
+  end
+
+  defp finalize_checkpoint(snapshot, events) do
+    checkpoint =
+      case List.last(events) do
+        %RoomEvent{sequence: sequence} -> sequence
+        _other -> snapshot.replay.checkpoint_event_sequence
+      end
+
+    put_in(snapshot.replay.checkpoint_event_sequence, checkpoint)
+  end
+
+  defp fetch_room_server(room_id) do
+    with {:ok, _snapshot} <- fetch_room_snapshot(room_id),
+         [{pid, _value}] <- Registry.lookup(JidoHiveServer.Collaboration.Registry, room_id) do
+      {:ok, pid}
+    else
+      [] -> {:error, :room_not_found}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  defp ensure_room_server(%RoomSnapshot{} = snapshot) do
+    case Registry.lookup(JidoHiveServer.Collaboration.Registry, snapshot.room.id) do
+      [{pid, _value}] ->
+        {:ok, pid}
+
+      [] ->
+        spec = {RoomServer, room_id: snapshot.room.id, snapshot: snapshot}
+
+        case DynamicSupervisor.start_child(JidoHiveServer.Collaboration.RoomSupervisor, spec) do
+          {:ok, pid} -> {:ok, pid}
+          {:error, {:already_started, pid}} -> {:ok, pid}
+          {:error, reason} -> {:error, reason}
+        end
     end
   end
 
   defp replace_room_server(room_id) do
     case Registry.lookup(JidoHiveServer.Collaboration.Registry, room_id) do
       [{pid, _value}] ->
-        case DynamicSupervisor.terminate_child(JidoHiveServer.Collaboration.RoomSupervisor, pid) do
-          :ok -> :ok
-          {:error, :not_found} -> :ok
-        end
+        GenServer.stop(pid, :normal)
+        :ok
 
       [] ->
         :ok
     end
   end
 
-  defp persist_room_created(snapshot) do
-    {:ok, event} =
-      RoomEvent.new(%{
-        event_id: unique_id("evt"),
-        room_id: snapshot.room_id,
-        type: :room_created,
-        payload: snapshot,
-        recorded_at: DateTime.utc_now()
-      })
+  defp participant_match?(_assignment_value, nil), do: true
+  defp participant_match?(assignment_value, expected), do: assignment_value == expected
 
-    case Persistence.persist_room_transition(snapshot, [event]) do
-      {:ok, _snapshot} -> :ok
-      {:error, reason} -> {:error, reason}
-    end
+  defp status_match?(_assignment_value, nil), do: true
+  defp status_match?(assignment_value, expected), do: assignment_value == expected
+
+  defp maybe_limit(list, nil), do: list
+  defp maybe_limit(list, limit) when is_integer(limit) and limit > 0, do: Enum.take(list, limit)
+  defp maybe_limit(list, _limit), do: list
+
+  defp generated_room_id do
+    "room-#{System.unique_integer([:positive])}"
   end
 
-  defp assignment_wait_timeout_ms do
-    Application.get_env(:jido_hive_server, :assignment_wait_timeout_ms, 180_000)
-  end
-
-  defp assignment_wait_poll_ms do
-    Application.get_env(:jido_hive_server, :assignment_wait_poll_ms, 250)
-  end
-
-  defp unique_id(prefix) do
-    "#{prefix}-#{System.unique_integer([:positive, :monotonic])}"
-  end
-
-  defp value(map, key) when is_map(map) and is_binary(key) do
+  defp value(map, key) when is_map(map) do
     Map.get(map, key) || Map.get(map, existing_atom_key(key))
+  end
+
+  defp string_value(map, key) do
+    case value(map, key) do
+      value when is_binary(value) ->
+        case String.trim(value) do
+          "" -> nil
+          trimmed -> trimmed
+        end
+
+      _other ->
+        nil
+    end
   end
 
   defp map_value(map, key) do
     case value(map, key) do
-      %{} = value -> value
+      %{} = nested -> nested
       _other -> %{}
     end
   end
 
   defp list_value(map, key) do
     case value(map, key) do
-      list when is_list(list) -> list
+      values when is_list(values) -> values
       _other -> []
     end
   end
 
-  defp put_default(map, key, value) do
-    map
-    |> Map.put_new(key, value)
-    |> maybe_put_new_atom_key(key, value)
-  end
-
-  defp maybe_put_new_atom_key(map, key, value) when is_binary(key) do
-    case existing_atom_key(key) do
-      nil -> map
-      atom_key -> Map.put_new(map, atom_key, value)
-    end
-  end
-
-  defp existing_atom_key(key) when is_binary(key) do
+  defp existing_atom_key(key) do
     String.to_existing_atom(key)
   rescue
     ArgumentError -> nil
   end
-
-  defp decorate_context_object(context_object, snapshot) do
-    decorated =
-      case Map.get(snapshot, :context_annotations, %{})[context_object.context_id] do
-        nil -> context_object
-        annotation -> Map.put(context_object, :derived, annotation)
-      end
-
-    Map.put(decorated, :adjacency, ContextGraph.adjacency(snapshot, context_object.context_id))
-  end
-
-  defp normalize_room_config(attrs) do
-    config = map_value(attrs, "config")
-
-    dispatch_policy_id =
-      value(attrs, "dispatch_policy_id") || Map.get(config, "dispatch_policy") || "round_robin/v2"
-
-    dispatch_policy_opts =
-      case map_value(attrs, "dispatch_policy_config") do
-        %{} = opts when map_size(opts) > 0 -> opts
-        _other -> map_value(config, "dispatch_policy_opts")
-      end
-
-    context_graph =
-      case map_value(attrs, "context_config") do
-        %{} = opts when map_size(opts) > 0 -> opts
-        _other -> map_value(config, "context_graph")
-      end
-
-    config
-    |> Map.put_new("dispatch_policy", dispatch_policy_id)
-    |> Map.put_new("dispatch_policy_opts", dispatch_policy_opts)
-    |> Map.put_new("context_graph", context_graph)
-  end
-
-  defp initial_phase(dispatch_policy_config) when is_map(dispatch_policy_config) do
-    dispatch_policy_config
-    |> Map.get("phases", [])
-    |> List.first()
-    |> case do
-      %{} = phase -> Map.get(phase, "phase") || Map.get(phase, :phase)
-      phase when is_binary(phase) -> phase
-      phase when is_atom(phase) -> Atom.to_string(phase)
-      _other -> nil
-    end
-  end
-
-  defp initial_phase(_dispatch_policy_config), do: nil
 end

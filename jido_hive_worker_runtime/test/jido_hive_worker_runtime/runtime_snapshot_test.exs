@@ -45,7 +45,7 @@ defmodule JidoHiveWorkerRuntime.RuntimeSnapshotTest do
 
   test "tracks assignment lifecycle transitions" do
     assignment = %{
-      "assignment_id" => "asn-1",
+      "id" => "asn-1",
       "room_id" => "room-1",
       "participant_id" => "participant-1",
       "participant_role" => "analyst"
@@ -53,7 +53,8 @@ defmodule JidoHiveWorkerRuntime.RuntimeSnapshotTest do
 
     contribution = %{
       "status" => "completed",
-      "summary" => "completed",
+      "kind" => "reasoning",
+      "payload" => %{"summary" => "completed"},
       "execution" => %{"status" => "completed"}
     }
 
@@ -75,7 +76,7 @@ defmodule JidoHiveWorkerRuntime.RuntimeSnapshotTest do
   end
 
   test "tracks failed assignments and last_error" do
-    assignment = %{"assignment_id" => "asn-2", "room_id" => "room-1"}
+    assignment = %{"id" => "asn-2", "room_id" => "room-1"}
 
     snapshot =
       runtime_opts()

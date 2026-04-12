@@ -8,6 +8,7 @@ defmodule JidoHiveServer.Persistence.RoomEventRecord do
   schema "room_events" do
     field(:event_id, :string)
     field(:room_id, :string)
+    field(:sequence, :integer)
     field(:event_type, :string)
     field(:causation_id, :string)
     field(:correlation_id, :string)
@@ -18,8 +19,17 @@ defmodule JidoHiveServer.Persistence.RoomEventRecord do
 
   def changeset(record, attrs) do
     record
-    |> cast(attrs, [:event_id, :room_id, :event_type, :causation_id, :correlation_id, :payload])
-    |> validate_required([:event_id, :room_id, :event_type, :payload])
+    |> cast(attrs, [
+      :event_id,
+      :room_id,
+      :sequence,
+      :event_type,
+      :causation_id,
+      :correlation_id,
+      :payload
+    ])
+    |> validate_required([:event_id, :room_id, :sequence, :event_type, :payload])
     |> unique_constraint(:event_id)
+    |> unique_constraint(:sequence, name: :room_events_room_id_sequence_index)
   end
 end

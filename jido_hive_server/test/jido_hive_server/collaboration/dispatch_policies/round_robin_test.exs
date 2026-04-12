@@ -2,91 +2,87 @@ defmodule JidoHiveServer.Collaboration.DispatchPolicies.RoundRobinTest do
   use ExUnit.Case, async: true
 
   alias JidoHiveServer.Collaboration.DispatchPolicies.RoundRobin
+  alias JidoHiveServer.Collaboration.Schema.{Participant, Room, RoomSnapshot}
 
-  test "selects the next participant and phase from dispatch state" do
-    snapshot = %{
-      room_id: "room-1",
-      brief: "Design a substrate.",
-      rules: [],
-      participants: [
-        %{
-          participant_id: "worker-01",
-          target_id: "target-worker-01",
-          participant_kind: "runtime",
-          participant_role: "worker"
-        },
-        %{
-          participant_id: "worker-02",
-          target_id: "target-worker-02",
-          participant_kind: "runtime",
-          participant_role: "worker"
-        }
-      ],
-      context_objects: [],
-      dispatch_policy_config: %{},
-      dispatch_state:
-        RoundRobin.init_state(%{
-          participants: [
-            %{
-              participant_id: "worker-01",
-              target_id: "target-worker-01",
-              participant_kind: "runtime",
-              participant_role: "worker"
-            },
-            %{
-              participant_id: "worker-02",
-              target_id: "target-worker-02",
-              participant_kind: "runtime",
-              participant_role: "worker"
-            }
-          ],
-          dispatch_policy_config: %{}
-        })
-    }
+  test "selects the next available agent and advances phase by completed assignment count" do
+    snapshot = snapshot()
 
-    assert {:ok, assignment} =
-             RoundRobin.next_assignment(snapshot, ["target-worker-01", "target-worker-02"])
+    {:ok, policy_state, patch} = RoundRobin.init(snapshot, %{})
+    assert patch == %{phase: "analysis"}
 
-    assert assignment.participant_id == "worker-01"
-    assert assignment.phase == "analysis"
+    assert {:dispatch, ["agent-1"], next_state, %{status: "active", phase: "analysis"}} =
+             RoundRobin.select(snapshot, %{
+               availability: %{"agent-1" => %{}, "agent-2" => %{}},
+               policy_state: policy_state,
+               now: DateTime.utc_now()
+             })
+
+    assert next_state.cursor == 1
   end
 
-  test "normalizes string phase names from dispatch state before building the assignment" do
-    snapshot = %{
-      room_id: "room-strings-1",
-      brief: "Design a substrate.",
-      rules: [],
-      participants: [
-        %{
-          participant_id: "worker-01",
-          target_id: "target-worker-01",
-          participant_kind: "runtime",
-          participant_role: "worker",
-          capability_id: "workspace.exec.session"
-        }
-      ],
-      context_objects: [],
-      dispatch_policy_config: %{"phases" => ["analysis"]},
-      dispatch_state: %{
-        applied_event_ids: [],
-        completed_slots: 0,
-        total_slots: 1,
-        participant_ids: ["worker-01"],
-        phases: ["analysis"]
-      }
+  test "completes once the assignment limit is reached" do
+    snapshot =
+      snapshot(%{
+        room: room(%{config: %{"assignment_limit" => 1}}),
+        assignments: [
+          %{
+            id: "asg-1",
+            room_id: "room-1",
+            participant_id: "agent-1",
+            payload: %{},
+            status: "completed",
+            deadline: nil,
+            inserted_at: DateTime.utc_now(),
+            meta: %{}
+          }
+        ]
+      })
+
+    {:ok, policy_state, _patch} = RoundRobin.init(snapshot, %{})
+
+    assert {:complete, %{reason: :assignment_limit_reached}, ^policy_state,
+            %{status: "completed"}} =
+             RoundRobin.select(snapshot, %{
+               availability: %{"agent-1" => %{}},
+               policy_state: policy_state,
+               now: DateTime.utc_now()
+             })
+  end
+
+  defp snapshot(overrides \\ %{}) do
+    base = %RoomSnapshot{
+      RoomSnapshot.initial(room(), RoundRobin.id(), %{})
+      | participants: [participant("agent-1"), participant("agent-2")]
     }
 
-    assert {:ok, assignment} = RoundRobin.next_assignment(snapshot, ["target-worker-01"])
+    struct(base, overrides)
+  end
 
-    assert assignment.phase == "analysis"
-    assert assignment.objective == "Analyze the brief and add room-scoped context."
+  defp room(overrides \\ %{}) do
+    {:ok, room} =
+      Room.new(%{
+        id: "room-1",
+        name: "Round robin room",
+        status: "waiting",
+        phase: nil,
+        config: %{},
+        inserted_at: DateTime.utc_now(),
+        updated_at: DateTime.utc_now()
+      })
 
-    assert assignment.contribution_contract == %{
-             allowed_contribution_types: ["reasoning"],
-             allowed_object_types: ["belief", "note", "question"],
-             allowed_relation_types: ["derives_from", "references", "contradicts"],
-             authority_mode: "advisory_only",
-             format: "json_object"
-           }
+    struct(room, overrides)
+  end
+
+  defp participant(id) do
+    {:ok, participant} =
+      Participant.new(%{
+        id: id,
+        room_id: "room-1",
+        kind: "agent",
+        handle: id,
+        meta: %{}
+      })
+
+    participant
   end
 end

@@ -1,316 +1,201 @@
 defmodule JidoHiveServer.Collaboration.EventReducer do
   @moduledoc false
 
-  alias JidoHiveServer.Collaboration.DispatchPolicy.Registry, as: PolicyRegistry
-  alias JidoHiveServer.Collaboration.Schema.{Assignment, Contribution, RoomEvent}
-  alias JidoHiveServer.Collaboration.SnapshotProjection
+  alias JidoHiveServer.Collaboration.Schema.{
+    Assignment,
+    Contribution,
+    Participant,
+    Room,
+    RoomEvent,
+    RoomSnapshot
+  }
 
-  @max_tracked_event_ids 256
-
-  @spec apply_event(map(), RoomEvent.t()) :: map()
-  def apply_event(snapshot, %RoomEvent{} = event) when is_map(snapshot) do
-    if applied_event?(snapshot, event.event_id) do
-      snapshot
-    else
-      snapshot
-      |> reduce_event(event)
-      |> SnapshotProjection.project()
-      |> remember_event_id(event.event_id)
-    end
+  @spec apply_event(RoomSnapshot.t(), RoomEvent.t()) :: RoomSnapshot.t()
+  def apply_event(%RoomSnapshot{} = snapshot, %RoomEvent{} = event) do
+    snapshot
+    |> reduce_event(event)
+    |> advance_event_clock(event)
   end
 
-  @spec reduce(map(), [RoomEvent.t()]) :: map()
-  def reduce(snapshot, events) when is_map(snapshot) and is_list(events) do
+  @spec reduce(RoomSnapshot.t(), [RoomEvent.t()]) :: RoomSnapshot.t()
+  def reduce(%RoomSnapshot{} = snapshot, events) when is_list(events) do
     Enum.reduce(events, snapshot, &apply_event(&2, &1))
   end
 
-  defp reduce_event(snapshot, %RoomEvent{type: :room_created, payload: payload}) do
-    Map.merge(snapshot, payload)
+  defp reduce_event(snapshot, %RoomEvent{type: :room_created, data: data}) do
+    case Room.new(data["room"] || data[:room] || data) do
+      {:ok, room} -> %{snapshot | room: room}
+      {:error, _reason} -> snapshot
+    end
   end
 
-  defp reduce_event(snapshot, %RoomEvent{type: :room_status_changed, payload: payload}) do
-    %{snapshot | status: value(payload, "status") || snapshot.status}
-  end
-
-  defp reduce_event(snapshot, %RoomEvent{type: :room_phase_changed, payload: payload}) do
-    Map.put(snapshot, :phase, value(payload, "phase"))
-  end
-
-  defp reduce_event(snapshot, %RoomEvent{type: :participant_joined, payload: payload}) do
-    participant = map_value(payload, "participant")
-    participant_id = value(participant, "participant_id") || value(participant, "id")
-
-    participants =
+  defp reduce_event(snapshot, %RoomEvent{type: :room_status_changed, data: data}) do
+    %{
       snapshot
-      |> Map.get(:participants, [])
-      |> Enum.reject(fn existing ->
-        value(existing, "participant_id") == participant_id or
-          value(existing, "id") == participant_id
-      end)
-      |> Kernel.++([participant])
-
-    Map.put(snapshot, :participants, participants)
-  end
-
-  defp reduce_event(snapshot, %RoomEvent{type: :participant_left, payload: payload}) do
-    participant_id = value(payload, "participant_id") || value(payload, "id")
-
-    participants =
-      snapshot
-      |> Map.get(:participants, [])
-      |> Enum.reject(fn existing ->
-        value(existing, "participant_id") == participant_id or
-          value(existing, "id") == participant_id
-      end)
-
-    Map.put(snapshot, :participants, participants)
-  end
-
-  defp reduce_event(snapshot, %RoomEvent{type: :assignment_created, payload: payload}) do
-    assignment_payload = map_value(payload, "assignment")
-
-    assignment_payload =
-      if assignment_payload == %{}, do: payload, else: assignment_payload
-
-    case Assignment.new(assignment_payload) do
-      {:ok, assignment} ->
-        assignment_map = Map.from_struct(assignment)
-
-        %{
-          snapshot
-          | current_assignment: assignment_map,
-            assignments: upsert_assignment(snapshot.assignments, assignment_map),
-            next_assignment_seq: snapshot.next_assignment_seq + 1,
-            status: "running"
+      | room: %{
+          snapshot.room
+          | status: value(data, "status") || snapshot.room.status,
+            updated_at: timestamp(data, snapshot.room.updated_at)
         }
+    }
+  end
+
+  defp reduce_event(snapshot, %RoomEvent{type: :room_phase_changed, data: data}) do
+    %{
+      snapshot
+      | room: %{
+          snapshot.room
+          | phase: phase_value(data),
+            updated_at: timestamp(data, snapshot.room.updated_at)
+        }
+    }
+  end
+
+  defp reduce_event(snapshot, %RoomEvent{type: :participant_joined, data: data}) do
+    participant_data = data["participant"] || data[:participant] || data
+
+    case Participant.new(participant_data) do
+      {:ok, participant} ->
+        participants =
+          snapshot.participants
+          |> Enum.reject(&(&1.id == participant.id))
+          |> Kernel.++([participant])
+
+        %{snapshot | participants: participants}
 
       {:error, _reason} ->
         snapshot
     end
   end
 
-  defp reduce_event(snapshot, %RoomEvent{type: :assignment_opened, payload: payload}) do
-    reduce_event(snapshot, %RoomEvent{type: :assignment_created, payload: payload})
+  defp reduce_event(snapshot, %RoomEvent{type: :participant_left, data: data}) do
+    participant_id = value(data, "participant_id") || value(data, "id")
+
+    participants =
+      Enum.reject(snapshot.participants, &(&1.id == participant_id))
+
+    %{snapshot | participants: participants}
   end
 
-  defp reduce_event(snapshot, %RoomEvent{type: :contribution_submitted, payload: payload}) do
-    contribution_payload =
-      payload
-      |> map_value("contribution")
-      |> case do
-        %{} = nested when map_size(nested) > 0 ->
-          nested
+  defp reduce_event(snapshot, %RoomEvent{type: :assignment_created, data: data}) do
+    assignment_data = data["assignment"] || data[:assignment] || data
 
-        _other ->
-          payload
-      end
-      |> Map.put_new("contribution_id", "contrib-#{snapshot.next_contribution_seq}")
+    case Assignment.new(assignment_data) do
+      {:ok, assignment} ->
+        existing? = Enum.any?(snapshot.assignments, &(&1.id == assignment.id))
 
-    case Contribution.new(contribution_payload) do
+        assignments =
+          snapshot.assignments
+          |> Enum.reject(&(&1.id == assignment.id))
+          |> Kernel.++([assignment])
+
+        dispatch =
+          snapshot.dispatch
+          |> Map.update!(:active_assignment_ids, &Enum.uniq(&1 ++ [assignment.id]))
+          |> Map.update!(
+            :completed_assignment_ids,
+            &Enum.reject(&1, fn id -> id == assignment.id end)
+          )
+
+        clocks =
+          if existing? do
+            snapshot.clocks
+          else
+            Map.update!(snapshot.clocks, :next_assignment_seq, &(&1 + 1))
+          end
+
+        %{snapshot | assignments: assignments, dispatch: dispatch, clocks: clocks}
+
+      {:error, _reason} ->
+        snapshot
+    end
+  end
+
+  defp reduce_event(snapshot, %RoomEvent{type: :assignment_completed, data: data}) do
+    assignment_id = value(data, "assignment_id")
+    update_assignment_terminal(snapshot, assignment_id, "completed")
+  end
+
+  defp reduce_event(snapshot, %RoomEvent{type: :assignment_expired, data: data}) do
+    assignment_id = value(data, "assignment_id")
+    update_assignment_terminal(snapshot, assignment_id, "expired")
+  end
+
+  defp reduce_event(snapshot, %RoomEvent{type: :contribution_submitted, data: data}) do
+    contribution_data = data["contribution"] || data[:contribution] || data
+
+    case Contribution.new(contribution_data) do
       {:ok, contribution} ->
-        contribution_map = Map.from_struct(contribution)
-
-        snapshot
-        |> Map.put(:contributions, snapshot.contributions ++ [contribution_map])
-        |> Map.put(:next_contribution_seq, snapshot.next_contribution_seq + 1)
+        clocks = Map.update!(snapshot.clocks, :next_contribution_seq, &(&1 + 1))
+        %{snapshot | contributions: snapshot.contributions ++ [contribution], clocks: clocks}
 
       {:error, _reason} ->
         snapshot
     end
-  end
-
-  defp reduce_event(snapshot, %RoomEvent{type: :contribution_recorded, payload: payload}) do
-    contribution_payload =
-      payload
-      |> map_value("contribution")
-      |> case do
-        %{} = nested when map_size(nested) > 0 ->
-          nested
-
-        _other ->
-          payload
-      end
-      |> Map.put_new("contribution_id", "contrib-#{snapshot.next_contribution_seq}")
-
-    case Contribution.new(contribution_payload) do
-      {:ok, contribution} ->
-        contribution_map = Map.from_struct(contribution)
-        assignment_id = contribution.assignment_id
-
-        updated =
-          snapshot
-          |> Map.put(:contributions, snapshot.contributions ++ [contribution_map])
-          |> Map.put(:next_contribution_seq, snapshot.next_contribution_seq + 1)
-
-        if is_binary(assignment_id) and assignment_id != "" do
-          updated =
-            updated
-            |> Map.put(
-              :current_assignment,
-              clear_current_assignment(snapshot.current_assignment, assignment_id)
-            )
-            |> Map.put(
-              :assignments,
-              update_assignment_status(
-                snapshot.assignments,
-                assignment_id,
-                contribution.status,
-                contribution.summary
-              )
-            )
-            |> increment_completed_slots(assignment_id)
-
-          %{updated | status: policy_status(updated)}
-        else
-          updated
-        end
-
-      {:error, _reason} ->
-        snapshot
-    end
-  end
-
-  defp reduce_event(snapshot, %RoomEvent{type: :assignment_completed, payload: payload}) do
-    assignment_id = value(payload, "assignment_id")
-    result_summary = value(payload, "result_summary")
-    status = value(payload, "status") || "completed"
-
-    updated =
-      snapshot
-      |> Map.put(
-        :current_assignment,
-        clear_current_assignment(snapshot.current_assignment, assignment_id)
-      )
-      |> Map.put(
-        :assignments,
-        update_assignment_status(snapshot.assignments, assignment_id, status, result_summary)
-      )
-      |> increment_completed_slots(assignment_id)
-
-    %{updated | status: policy_status(updated)}
-  end
-
-  defp reduce_event(snapshot, %RoomEvent{type: :assignment_expired, payload: payload}) do
-    assignment_id = value(payload, "assignment_id")
-    reason = value(payload, "reason")
-
-    updated =
-      snapshot
-      |> Map.put(
-        :current_assignment,
-        clear_current_assignment(snapshot.current_assignment, assignment_id)
-      )
-      |> Map.put(
-        :assignments,
-        update_assignment_status(snapshot.assignments, assignment_id, "expired", reason)
-      )
-      |> increment_completed_slots(assignment_id)
-
-    %{updated | status: policy_status(updated)}
-  end
-
-  defp reduce_event(snapshot, %RoomEvent{type: :assignment_abandoned, payload: payload}) do
-    assignment_id = value(payload, "assignment_id")
-    reason = value(payload, "reason")
-
-    updated =
-      snapshot
-      |> Map.put(
-        :current_assignment,
-        clear_current_assignment(snapshot.current_assignment, assignment_id)
-      )
-      |> Map.put(
-        :assignments,
-        update_assignment_status(snapshot.assignments, assignment_id, "abandoned", reason)
-      )
-      |> increment_completed_slots(assignment_id)
-
-    %{updated | status: policy_status(updated)}
   end
 
   defp reduce_event(snapshot, _event), do: snapshot
 
-  defp upsert_assignment(assignments, assignment) do
-    assignment_id = Map.get(assignment, :assignment_id)
+  defp update_assignment_terminal(%RoomSnapshot{} = snapshot, assignment_id, status) do
+    assignments =
+      Enum.map(snapshot.assignments, fn assignment ->
+        if assignment.id == assignment_id do
+          %{assignment | status: status}
+        else
+          assignment
+        end
+      end)
 
-    assignments
-    |> Enum.reject(&(Map.get(&1, :assignment_id) == assignment_id))
-    |> Kernel.++([assignment])
+    dispatch =
+      snapshot.dispatch
+      |> Map.update!(:active_assignment_ids, &Enum.reject(&1, fn id -> id == assignment_id end))
+      |> maybe_track_completed_assignment(status, assignment_id)
+
+    %{snapshot | assignments: assignments, dispatch: dispatch}
   end
 
-  defp update_assignment_status(assignments, assignment_id, status, result_summary) do
-    Enum.map(assignments, fn assignment ->
-      if assignment.assignment_id == assignment_id do
-        assignment
-        |> Map.put(:status, status)
-        |> Map.put(:completed_at, DateTime.utc_now())
-        |> Map.put(:result_summary, result_summary)
-      else
-        assignment
-      end
-    end)
+  defp maybe_track_completed_assignment(dispatch, "completed", assignment_id) do
+    Map.update!(dispatch, :completed_assignment_ids, &Enum.uniq(&1 ++ [assignment_id]))
   end
 
-  defp clear_current_assignment(current_assignment, assignment_id) do
-    if current_assignment == %{} or current_assignment.assignment_id != assignment_id do
-      current_assignment
-    else
-      %{}
+  defp maybe_track_completed_assignment(dispatch, _status, _assignment_id), do: dispatch
+
+  defp advance_event_clock(%RoomSnapshot{} = snapshot, %RoomEvent{sequence: sequence}) do
+    put_in(
+      snapshot.clocks.next_event_sequence,
+      max(snapshot.clocks.next_event_sequence, sequence + 1)
+    )
+  end
+
+  defp phase_value(data) do
+    case value(data, "phase") do
+      value when is_binary(value) -> value
+      nil -> nil
+      _other -> nil
     end
   end
 
-  defp increment_completed_slots(snapshot, nil), do: snapshot
+  defp timestamp(data, default) do
+    case value(data, "inserted_at") do
+      %DateTime{} = value ->
+        value
 
-  defp increment_completed_slots(snapshot, assignment_id) do
-    if Enum.any?(snapshot.assignments, &(&1.assignment_id == assignment_id)) do
-      update_in(snapshot, [:dispatch_state, :completed_slots], fn value -> (value || 0) + 1 end)
-    else
-      snapshot
+      value when is_binary(value) ->
+        case DateTime.from_iso8601(value) do
+          {:ok, datetime, _offset} -> datetime
+          _other -> default
+        end
+
+      _other ->
+        default
     end
   end
 
-  defp policy_status(snapshot) do
-    case PolicyRegistry.fetch_module(snapshot.dispatch_policy_id) do
-      {:ok, module} -> module.status(snapshot)
-      {:error, _reason} -> snapshot.status || "idle"
-    end
-  end
-
-  defp applied_event?(snapshot, event_id) when is_binary(event_id) do
-    snapshot
-    |> Map.get(:dispatch_state, %{})
-    |> Map.get(:applied_event_ids, [])
-    |> Enum.member?(event_id)
-  end
-
-  defp applied_event?(_snapshot, _event_id), do: false
-
-  defp remember_event_id(snapshot, nil), do: snapshot
-
-  defp remember_event_id(snapshot, event_id) do
-    ids =
-      snapshot
-      |> Map.get(:dispatch_state, %{})
-      |> Map.get(:applied_event_ids, [])
-      |> Kernel.++([event_id])
-      |> Enum.uniq()
-      |> Enum.take(-@max_tracked_event_ids)
-
-    put_in(snapshot, [:dispatch_state, :applied_event_ids], ids)
-  end
-
-  defp map_value(map, key) do
-    case value(map, key) do
-      %{} = value -> value
-      _other -> %{}
-    end
-  end
-
-  defp value(map, key) when is_map(map) and is_binary(key) do
+  defp value(map, key) when is_map(map) do
     Map.get(map, key) || Map.get(map, existing_atom_key(key))
   end
 
-  defp existing_atom_key(key) when is_binary(key) do
+  defp existing_atom_key(key) do
     String.to_existing_atom(key)
   rescue
     ArgumentError -> nil

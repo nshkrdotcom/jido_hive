@@ -3,6 +3,7 @@ defmodule JidoHiveClient.Operator do
   Headless operator API shared by the CLI, scripts, and interactive clients.
   """
 
+  alias JidoHiveClient.CanonicalTransport
   alias JidoHiveClient.Operator.{Config, HTTP}
 
   @channels ~w[github notion]
@@ -68,29 +69,18 @@ defmodule JidoHiveClient.Operator do
           {:ok, %{entries: list(map()), next_cursor: String.t() | nil}} | {:error, term()}
   def fetch_room_timeline(api_base_url, room_id, opts \\ [])
       when is_binary(api_base_url) and is_binary(room_id) and is_list(opts) do
-    after_cursor =
-      case Keyword.get(opts, :after) do
-        after_cursor when is_binary(after_cursor) and after_cursor != "" ->
-          "?after=#{URI.encode_www_form(after_cursor)}"
-
-        _other ->
-          ""
-      end
-
     http_opts =
       []
       |> Keyword.put(:lane, Keyword.get(opts, :lane, :operator_timeline))
       |> maybe_put_option(:operation_id, Keyword.get(opts, :operation_id))
 
-    case HTTP.get(api_base_url, "/rooms/#{room_id}/timeline#{after_cursor}", http_opts) do
-      {:ok, %{"data" => entries} = payload} when is_list(entries) ->
-        {:ok, %{entries: entries, next_cursor: Map.get(payload, "next_cursor")}}
-
-      {:ok, payload} ->
-        {:error, {:unexpected_payload, payload}}
-
-      {:error, reason} ->
-        {:error, reason}
+    with {:ok, %{"data" => events, "meta" => meta}} when is_list(events) <-
+           HTTP.get(api_base_url, "/rooms/#{room_id}/events#{after_query(opts)}", http_opts) do
+      {:ok,
+       %{
+         entries: CanonicalTransport.event_entries(events),
+         next_cursor: CanonicalTransport.next_cursor(Map.get(meta, "next_after_sequence"))
+       }}
     end
   end
 
@@ -102,7 +92,11 @@ defmodule JidoHiveClient.Operator do
       |> Keyword.put(:lane, Keyword.get(opts, :lane, :operator_room))
       |> maybe_put_option(:operation_id, Keyword.get(opts, :operation_id))
 
-    unwrap_data(HTTP.get(api_base_url, "/rooms/#{room_id}", http_opts))
+    with {:ok, room_resource} <- fetch_room_resource(api_base_url, room_id, http_opts),
+         {:ok, assignments} <- fetch_assignments(api_base_url, room_id, http_opts),
+         {:ok, contributions} <- fetch_all_contributions(api_base_url, room_id, http_opts) do
+      {:ok, CanonicalTransport.room_snapshot(room_resource, assignments, contributions)}
+    end
   end
 
   @spec fetch_room_sync(String.t(), String.t(), keyword()) ::
@@ -117,9 +111,26 @@ defmodule JidoHiveClient.Operator do
           | {:error, term()}
   def fetch_room_sync(api_base_url, room_id, opts \\ [])
       when is_binary(api_base_url) and is_binary(room_id) and is_list(opts) do
-    api_base_url
-    |> HTTP.get("/rooms/#{room_id}/sync#{after_query(opts)}", sync_http_opts(opts))
-    |> decode_room_sync_response()
+    http_opts = sync_http_opts(opts)
+
+    with {:ok, room_resource} <- fetch_room_resource(api_base_url, room_id, http_opts),
+         {:ok, assignments} <- fetch_assignments(api_base_url, room_id, http_opts),
+         {:ok, contributions} <- fetch_all_contributions(api_base_url, room_id, http_opts),
+         {:ok, %{"data" => events, "meta" => events_meta}} when is_list(events) <-
+           HTTP.get(api_base_url, "/rooms/#{room_id}/events#{after_query(opts)}", http_opts) do
+      room_snapshot = CanonicalTransport.room_snapshot(room_resource, assignments, contributions)
+      entries = CanonicalTransport.event_entries(events)
+
+      {:ok,
+       %{
+         room_snapshot: room_snapshot,
+         entries: entries,
+         next_cursor: CanonicalTransport.next_cursor(Map.get(events_meta, "next_after_sequence")),
+         context_objects:
+           Map.get(room_snapshot, :context_objects, Map.get(room_snapshot, "context_objects", [])),
+         operations: []
+       }}
+    end
   end
 
   @spec fetch_publication_plan(String.t(), String.t()) :: {:ok, map()} | {:error, term()}
@@ -139,7 +150,11 @@ defmodule JidoHiveClient.Operator do
       |> maybe_put_option(:request_timeout_ms, Keyword.get(opts, :request_timeout_ms))
       |> maybe_put_option(:connect_timeout_ms, Keyword.get(opts, :connect_timeout_ms))
 
-    unwrap_data(HTTP.post(api_base_url, "/rooms/#{room_id}/contributions", payload, http_opts))
+    canonical_payload = %{"data" => CanonicalTransport.contribution_payload(payload, room_id)}
+
+    unwrap_data(
+      HTTP.post(api_base_url, "/rooms/#{room_id}/contributions", canonical_payload, http_opts)
+    )
   end
 
   @spec publish_room(String.t(), String.t(), map()) :: {:ok, map()} | {:error, term()}
@@ -150,7 +165,12 @@ defmodule JidoHiveClient.Operator do
 
   @spec create_room(String.t(), map()) :: {:ok, map()} | {:error, term()}
   def create_room(api_base_url, payload) when is_binary(api_base_url) and is_map(payload) do
-    unwrap_data(HTTP.post(api_base_url, "/rooms", payload))
+    with {:ok, room_resource} <-
+           api_base_url
+           |> HTTP.post("/rooms", %{"data" => canonical_room_payload(payload)})
+           |> unwrap_data() do
+      {:ok, CanonicalTransport.room_snapshot(room_resource, [], [])}
+    end
   end
 
   @spec start_room_run_operation(String.t(), String.t(), keyword()) ::
@@ -160,12 +180,6 @@ defmodule JidoHiveClient.Operator do
     assignment_timeout_ms =
       Keyword.get(opts, :assignment_timeout_ms, @default_run_assignment_timeout_ms)
 
-    payload =
-      %{}
-      |> maybe_put_string("client_operation_id", Keyword.get(opts, :client_operation_id))
-      |> maybe_put_integer("max_assignments", Keyword.get(opts, :max_assignments))
-      |> maybe_put_integer("assignment_timeout_ms", assignment_timeout_ms)
-
     http_opts =
       []
       |> Keyword.put(:lane, Keyword.get(opts, :lane, :room_run_control))
@@ -173,7 +187,17 @@ defmodule JidoHiveClient.Operator do
       |> maybe_put_option(:request_timeout_ms, Keyword.get(opts, :request_timeout_ms))
       |> maybe_put_option(:connect_timeout_ms, Keyword.get(opts, :connect_timeout_ms))
 
-    unwrap_data(HTTP.post(api_base_url, "/rooms/#{room_id}/run_operations", payload, http_opts))
+    payload =
+      %{}
+      |> maybe_put_string("client_operation_id", Keyword.get(opts, :client_operation_id))
+      |> maybe_put_integer("max_assignments", Keyword.get(opts, :max_assignments))
+      |> maybe_put_integer("assignment_timeout_ms", assignment_timeout_ms)
+      |> Map.put("until", normalize_run_until(Keyword.get(opts, :until)))
+
+    with {:ok, %{"data" => %{"run" => run}}} <-
+           HTTP.post(api_base_url, "/rooms/#{room_id}/runs", %{"data" => payload}, http_opts) do
+      {:ok, CanonicalTransport.run_operation(run, Keyword.get(opts, :client_operation_id))}
+    end
   end
 
   @spec fetch_room_run_operation(String.t(), String.t(), String.t(), keyword()) ::
@@ -188,9 +212,10 @@ defmodule JidoHiveClient.Operator do
       |> maybe_put_option(:request_timeout_ms, Keyword.get(opts, :request_timeout_ms))
       |> maybe_put_option(:connect_timeout_ms, Keyword.get(opts, :connect_timeout_ms))
 
-    unwrap_data(
-      HTTP.get(api_base_url, "/rooms/#{room_id}/run_operations/#{operation_id}", http_opts)
-    )
+    with {:ok, %{"data" => %{"run" => run}}} <-
+           HTTP.get(api_base_url, "/rooms/#{room_id}/runs/#{operation_id}", http_opts) do
+      {:ok, CanonicalTransport.run_operation(run)}
+    end
   end
 
   @spec list_targets(String.t()) :: {:ok, list(map())} | {:error, term()}
@@ -357,10 +382,6 @@ defmodule JidoHiveClient.Operator do
 
   defp expired?(_credential), do: false
 
-  defp stringify_keys(map) do
-    Map.new(map, fn {key, value} -> {to_string(key), value} end)
-  end
-
   defp random_code do
     4
     |> :crypto.strong_rand_bytes()
@@ -388,32 +409,6 @@ defmodule JidoHiveClient.Operator do
   defp maybe_put_option(opts, _key, nil), do: opts
   defp maybe_put_option(opts, key, value), do: Keyword.put(opts, key, value)
 
-  defp decode_room_sync_response({:ok, payload}), do: decode_room_sync_payload(payload)
-  defp decode_room_sync_response({:error, reason}), do: {:error, reason}
-
-  defp decode_room_sync_payload(%{
-         "data" => %{
-           "room" => room_snapshot,
-           "timeline" => entries,
-           "next_cursor" => next_cursor,
-           "context_objects" => context_objects,
-           "operations" => operations
-         }
-       })
-       when is_map(room_snapshot) and is_list(entries) and is_list(context_objects) and
-              is_list(operations) do
-    {:ok,
-     %{
-       room_snapshot: room_snapshot,
-       entries: entries,
-       next_cursor: next_cursor,
-       context_objects: context_objects,
-       operations: operations
-     }}
-  end
-
-  defp decode_room_sync_payload(payload), do: {:error, {:unexpected_payload, payload}}
-
   defp sync_http_opts(opts) do
     []
     |> Keyword.put(:lane, Keyword.get(opts, :lane, :room_sync))
@@ -425,8 +420,144 @@ defmodule JidoHiveClient.Operator do
       after_cursor when is_binary(after_cursor) and after_cursor != "" ->
         "?after=#{URI.encode_www_form(after_cursor)}"
 
+      after_cursor when is_integer(after_cursor) and after_cursor >= 0 ->
+        "?after=#{after_cursor}"
+
       _other ->
         ""
     end
   end
+
+  defp fetch_room_resource(api_base_url, room_id, http_opts) do
+    with {:ok, %{"data" => room_resource}} when is_map(room_resource) <-
+           HTTP.get(api_base_url, "/rooms/#{room_id}", http_opts) do
+      {:ok, room_resource}
+    end
+  end
+
+  defp fetch_assignments(api_base_url, room_id, http_opts) do
+    with {:ok, %{"data" => assignments}} when is_list(assignments) <-
+           HTTP.get(api_base_url, "/rooms/#{room_id}/assignments", http_opts) do
+      {:ok, assignments}
+    end
+  end
+
+  defp fetch_all_contributions(api_base_url, room_id, http_opts, after_sequence \\ 0, acc \\ [])
+
+  defp fetch_all_contributions(api_base_url, room_id, http_opts, after_sequence, acc) do
+    path =
+      "/rooms/#{room_id}/contributions?limit=200&after_sequence=#{after_sequence}"
+
+    with {:ok, %{"data" => entries, "meta" => meta}} when is_list(entries) <-
+           HTTP.get(api_base_url, path, http_opts) do
+      next_acc = acc ++ entries
+
+      if Map.get(meta, "has_more") do
+        fetch_all_contributions(
+          api_base_url,
+          room_id,
+          http_opts,
+          Map.get(meta, "next_after_sequence", after_sequence),
+          next_acc
+        )
+      else
+        {:ok, next_acc}
+      end
+    end
+  end
+
+  defp canonical_room_payload(payload) do
+    payload = stringify_keys(payload)
+    config = map_value(payload, "config")
+
+    participants =
+      payload
+      |> list_value("participants")
+      |> Enum.map(&canonical_participant_payload/1)
+
+    %{}
+    |> maybe_put_string("id", Map.get(payload, "id") || Map.get(payload, "room_id"))
+    |> maybe_put_string("name", Map.get(payload, "name") || Map.get(payload, "brief"))
+    |> maybe_put_string("phase", Map.get(payload, "phase"))
+    |> Map.put(
+      "config",
+      config
+      |> maybe_put("dispatch_policy", Map.get(payload, "dispatch_policy_id"))
+      |> maybe_put("dispatch_policy_config", map_value(payload, "dispatch_policy_config"))
+      |> maybe_put("rules", list_value(payload, "rules"))
+    )
+    |> Map.put("participants", participants)
+  end
+
+  defp canonical_participant_payload(participant) do
+    participant = stringify_keys(participant)
+
+    meta =
+      %{}
+      |> maybe_put("role", Map.get(participant, "participant_role"))
+      |> maybe_put("authority_level", Map.get(participant, "authority_level"))
+      |> maybe_put("target_id", Map.get(participant, "target_id"))
+      |> maybe_put("capability_id", Map.get(participant, "capability_id"))
+      |> maybe_put("runtime_driver", Map.get(participant, "runtime_driver"))
+      |> maybe_put("provider", Map.get(participant, "provider"))
+      |> maybe_put("workspace_root", Map.get(participant, "workspace_root"))
+      |> maybe_put(
+        "runtime_kind",
+        case Map.get(participant, "participant_kind") do
+          "runtime" -> "runtime"
+          "agent" -> "agent"
+          other -> other
+        end
+      )
+      |> Map.merge(map_value(participant, "meta"))
+
+    %{}
+    |> maybe_put_string(
+      "id",
+      Map.get(participant, "id") || Map.get(participant, "participant_id")
+    )
+    |> maybe_put_string(
+      "kind",
+      canonical_kind(Map.get(participant, "kind") || Map.get(participant, "participant_kind"))
+    )
+    |> maybe_put_string(
+      "handle",
+      Map.get(participant, "handle") || Map.get(participant, "participant_id")
+    )
+    |> Map.put("meta", meta)
+  end
+
+  defp canonical_kind("runtime"), do: "agent"
+  defp canonical_kind(nil), do: "human"
+  defp canonical_kind(kind), do: kind
+
+  defp normalize_run_until(%{"kind" => _kind} = until), do: until
+  defp normalize_run_until(%{kind: kind} = until) when is_binary(kind), do: stringify_keys(until)
+  defp normalize_run_until(_until), do: %{"kind" => "policy_complete"}
+
+  defp maybe_put(map, _key, nil), do: map
+  defp maybe_put(map, _key, []), do: map
+  defp maybe_put(map, _key, %{} = value) when map_size(value) == 0, do: map
+  defp maybe_put(map, key, value), do: Map.put(map, key, value)
+
+  defp map_value(map, key) when is_map(map) do
+    case Map.get(map, key) do
+      %{} = value -> value
+      _other -> %{}
+    end
+  end
+
+  defp list_value(map, key) when is_map(map) do
+    case Map.get(map, key) do
+      values when is_list(values) -> values
+      _other -> []
+    end
+  end
+
+  defp stringify_keys(map) when is_map(map) do
+    Map.new(map, fn {key, value} -> {to_string(key), stringify_keys(value)} end)
+  end
+
+  defp stringify_keys(list) when is_list(list), do: Enum.map(list, &stringify_keys/1)
+  defp stringify_keys(value), do: value
 end

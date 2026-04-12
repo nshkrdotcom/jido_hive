@@ -3,35 +3,12 @@ defmodule JidoHiveServer.Collaboration.DispatchPolicies.RoundRobin do
 
   @behaviour JidoHiveServer.Collaboration.DispatchPolicy
 
-  alias JidoHiveContextGraph
-  alias JidoHiveServer.Collaboration.DispatchPhaseConfig
+  alias JidoHiveServer.Collaboration.Schema.{Participant, RoomSnapshot}
 
   @policy_id "round_robin/v2"
+  @default_phase_cycle ["analysis", "critique", "synthesis"]
 
-  @default_phases [
-    %{
-      "phase" => "analysis",
-      "objective" => "Analyze the brief and add room-scoped context.",
-      "allowed_contribution_types" => ["reasoning"],
-      "allowed_object_types" => ["belief", "note", "question"],
-      "allowed_relation_types" => ["derives_from", "references", "contradicts"]
-    },
-    %{
-      "phase" => "critique",
-      "objective" => "Critique the current room context and surface gaps.",
-      "allowed_contribution_types" => ["reasoning", "constraint"],
-      "allowed_object_types" => ["question", "constraint", "note"],
-      "allowed_relation_types" => ["contradicts", "references", "derives_from"]
-    },
-    %{
-      "phase" => "synthesis",
-      "objective" => "Synthesize the current context into decisions or artifacts.",
-      "allowed_contribution_types" => ["reasoning", "decision", "artifact"],
-      "allowed_object_types" => ["decision", "artifact", "note"],
-      "allowed_relation_types" => ["derives_from", "references", "resolves"]
-    }
-  ]
-
+  @impl true
   def id, do: @policy_id
 
   @impl true
@@ -39,172 +16,161 @@ defmodule JidoHiveServer.Collaboration.DispatchPolicies.RoundRobin do
     %{
       policy_id: @policy_id,
       config: %{
-        phases: @default_phases
+        assignment_limit: "participant_count * 3 by default",
+        phase_cycle: @default_phase_cycle
       }
     }
   end
 
   @impl true
-  def init_state(snapshot) do
-    participants = runtime_participants(snapshot)
-    phases = phases(snapshot)
+  def init(%RoomSnapshot{} = snapshot, _context) do
+    phase_cycle = phase_cycle(snapshot)
 
-    %{
-      applied_event_ids: [],
-      completed_slots: 0,
-      total_slots: length(participants) * length(phases),
-      participant_ids: Enum.map(participants, & &1.participant_id),
-      phases: phases
-    }
+    {:ok,
+     %{
+       cursor: 0,
+       assignment_limit: assignment_limit(snapshot),
+       phase_cycle: phase_cycle
+     }, phase_patch(snapshot, phase_cycle, completed_assignment_count(snapshot))}
   end
 
   @impl true
-  def next_assignment(snapshot, available_target_ids) do
-    participants = runtime_participants(snapshot)
-    phases = phases(snapshot)
-    completed_slots = completed_slots(snapshot)
-
-    cond do
-      participants == [] ->
-        {:blocked, "blocked"}
-
-      completed_slots >= total_slots(snapshot, participants, phases) ->
-        {:blocked, "publication_ready"}
-
-      true ->
-        participant_count = length(participants)
-        phase = Enum.at(phases, div(completed_slots, participant_count)) || List.last(phases)
-        start_index = rem(completed_slots, participant_count)
-        ordered = rotate(participants, start_index)
-
-        case Enum.find(ordered, &(Map.get(&1, :target_id) in available_target_ids)) do
-          nil -> {:blocked, "blocked"}
-          participant -> {:ok, build_assignment(snapshot, participant, phase, completed_slots)}
-        end
-    end
+  def handle_event(_event, %RoomSnapshot{} = snapshot, policy_state, _context)
+      when is_map(policy_state) do
+    _ = snapshot
+    {:ok, policy_state, %{}}
   end
 
   @impl true
-  def next_action(snapshot, available_target_ids) do
-    cond do
-      current_assignment?(snapshot) ->
-        {:blocked, "running"}
+  def select(%RoomSnapshot{} = snapshot, %{availability: availability, policy_state: policy_state}) do
+    phase_cycle = phase_cycle_from_state(policy_state)
+    completed_count = completed_assignment_count(snapshot)
+    limit = assignment_limit_from_state(snapshot, policy_state)
 
-      completed_slots(snapshot) >=
-          total_slots(snapshot, runtime_participants(snapshot), phases(snapshot)) ->
-        {:complete, "publication_ready"}
+    cond do
+      snapshot.room.status in ["closed", "failed"] ->
+        {:close, String.to_atom(snapshot.room.status), policy_state, %{}}
+
+      snapshot.room.status == "completed" ->
+        {:complete, %{reason: :already_completed}, policy_state, %{}}
+
+      completed_count >= limit ->
+        {:complete, %{reason: :assignment_limit_reached}, policy_state, %{status: "completed"}}
+
+      active_assignment?(snapshot) ->
+        {:wait, :assignment_in_progress, policy_state, %{status: "active"}}
 
       true ->
-        next_assignment(snapshot, available_target_ids)
+        select_next_participant(
+          snapshot,
+          availability,
+          policy_state,
+          phase_cycle,
+          completed_count
+        )
     end
   end
 
-  @impl true
-  def status(snapshot) do
-    cond do
-      failed_assignment?(snapshot) ->
-        "failed"
+  defp select_next_participant(snapshot, availability, policy_state, phase_cycle, completed_count) do
+    participants = agent_participants(snapshot)
 
-      current_assignment?(snapshot) ->
-        "running"
+    case available_rotation(participants, availability, Map.get(policy_state, :cursor, 0)) do
+      [] ->
+        {:wait, :no_available_participants, policy_state, %{status: "waiting"}}
 
-      completed_slots(snapshot) >=
-        total_slots(snapshot, runtime_participants(snapshot), phases(snapshot)) and
-          total_slots(snapshot, runtime_participants(snapshot), phases(snapshot)) > 0 ->
-        "publication_ready"
+      [%Participant{id: participant_id} | _rest] ->
+        next_cursor = next_cursor(participants, participant_id)
+        next_policy_state = Map.put(policy_state, :cursor, next_cursor)
 
-      completed_slots(snapshot) > 0 ->
-        "running"
+        patch =
+          %{status: "active"} |> Map.merge(phase_patch(snapshot, phase_cycle, completed_count))
 
-      true ->
-        snapshot.status || "idle"
+        {:dispatch, [participant_id], next_policy_state, patch}
     end
   end
 
-  defp build_assignment(snapshot, participant, phase, slot_index) do
-    task_context = assignment_task_context(snapshot, phase)
-
-    %{
-      participant_id: Map.get(participant, :participant_id),
-      participant_role: Map.get(participant, :participant_role),
-      target_id: Map.get(participant, :target_id),
-      capability_id: Map.get(participant, :capability_id),
-      phase: phase["phase"],
-      objective: phase["objective"] || snapshot.brief,
-      contribution_contract: %{
-        allowed_contribution_types: phase["allowed_contribution_types"] || ["reasoning"],
-        allowed_object_types: phase["allowed_object_types"] || ["belief", "note"],
-        allowed_relation_types: phase["allowed_relation_types"] || ["derives_from", "references"],
-        authority_mode: phase["authority_mode"] || "advisory_only",
-        format: "json_object"
-      },
-      task_context: task_context,
-      context_view: JidoHiveContextGraph.build_context_view(snapshot, participant, task_context),
-      plan_slot_index: slot_index
-    }
-  end
-
-  defp assignment_task_context(snapshot, phase) do
-    %{
-      mode: :assignment,
-      anchor_context_id: latest_context_id(snapshot),
-      objective: phase["objective"] || snapshot.brief
-    }
-  end
-
-  defp phases(snapshot) do
-    snapshot
-    |> raw_phases()
-    |> DispatchPhaseConfig.normalize(@default_phases)
-  end
-
-  defp raw_phases(snapshot) do
-    snapshot
-    |> Map.get(:dispatch_state, %{})
-    |> Map.get(:phases) ||
-      snapshot
-      |> Map.get(:dispatch_policy_config, %{})
-      |> then(&(Map.get(&1, "phases") || Map.get(&1, :phases)))
-  end
-
-  defp runtime_participants(snapshot) do
-    snapshot
-    |> Map.get(:participants, [])
-    |> Enum.filter(fn participant ->
-      Map.get(participant, :participant_kind) == "runtime" and
-        is_binary(Map.get(participant, :target_id))
-    end)
-  end
-
-  defp completed_slots(snapshot) do
-    snapshot
-    |> Map.get(:dispatch_state, %{})
-    |> Map.get(:completed_slots, 0)
-  end
-
-  defp total_slots(snapshot, participants, phases) do
-    snapshot
-    |> Map.get(:dispatch_state, %{})
-    |> Map.get(:total_slots, length(participants) * length(phases))
-  end
-
-  defp current_assignment?(snapshot), do: Map.get(snapshot, :current_assignment, %{}) != %{}
-
-  defp failed_assignment?(snapshot) do
-    Enum.any?(Map.get(snapshot, :assignments, []), &(&1.status == "failed"))
-  end
-
-  defp latest_context_id(snapshot) do
-    snapshot
-    |> Map.get(:context_objects, [])
-    |> Enum.max_by(&{Map.get(&1, :inserted_at), Map.get(&1, :context_id)}, fn -> nil end)
-    |> case do
-      nil -> nil
-      context_object -> Map.get(context_object, :context_id)
+  defp phase_patch(snapshot, phase_cycle, completed_count) do
+    case current_phase(phase_cycle, completed_count) do
+      nil -> %{}
+      phase when snapshot.room.phase == phase -> %{}
+      phase -> %{phase: phase}
     end
   end
 
-  defp rotate(list, 0), do: list
-  defp rotate([], _index), do: []
-  defp rotate(list, index), do: Enum.drop(list, index) ++ Enum.take(list, index)
+  defp phase_cycle(%RoomSnapshot{} = snapshot) do
+    case get_in(snapshot.room.config, ["phase_cycle"]) do
+      phases when is_list(phases) and phases != [] -> Enum.filter(phases, &is_binary/1)
+      _other -> @default_phase_cycle
+    end
+  end
+
+  defp phase_cycle_from_state(policy_state) do
+    case Map.get(policy_state, :phase_cycle) || Map.get(policy_state, "phase_cycle") do
+      phases when is_list(phases) and phases != [] -> Enum.filter(phases, &is_binary/1)
+      _other -> @default_phase_cycle
+    end
+  end
+
+  defp assignment_limit(%RoomSnapshot{} = snapshot) do
+    case get_in(snapshot.room.config, ["assignment_limit"]) do
+      value when is_integer(value) and value > 0 ->
+        value
+
+      _other ->
+        snapshot
+        |> agent_participants()
+        |> length()
+        |> max(1)
+        |> Kernel.*(3)
+    end
+  end
+
+  defp assignment_limit_from_state(snapshot, policy_state) do
+    case Map.get(policy_state, :assignment_limit) || Map.get(policy_state, "assignment_limit") do
+      value when is_integer(value) and value > 0 -> value
+      _other -> assignment_limit(snapshot)
+    end
+  end
+
+  defp agent_participants(%RoomSnapshot{} = snapshot) do
+    Enum.filter(snapshot.participants, &(&1.kind == "agent"))
+  end
+
+  defp available_rotation(participants, availability, cursor) do
+    participants
+    |> rotate(cursor)
+    |> Enum.filter(&Map.has_key?(availability, &1.id))
+  end
+
+  defp rotate([], _cursor), do: []
+
+  defp rotate(list, cursor) when is_integer(cursor) and cursor > 0 do
+    offset = rem(cursor, length(list))
+    Enum.drop(list, offset) ++ Enum.take(list, offset)
+  end
+
+  defp rotate(list, _cursor), do: list
+
+  defp next_cursor([], _participant_id), do: 0
+
+  defp next_cursor(participants, participant_id) do
+    case Enum.find_index(participants, &(&1.id == participant_id)) do
+      nil -> 0
+      index -> index + 1
+    end
+  end
+
+  defp active_assignment?(%RoomSnapshot{} = snapshot) do
+    Enum.any?(snapshot.assignments, &(&1.status in ["pending", "active"]))
+  end
+
+  defp completed_assignment_count(%RoomSnapshot{} = snapshot) do
+    Enum.count(snapshot.assignments, &(&1.status == "completed"))
+  end
+
+  defp current_phase([], _completed_count), do: nil
+
+  defp current_phase(phases, completed_count) do
+    Enum.at(phases, rem(completed_count, length(phases)))
+  end
 end

@@ -108,58 +108,115 @@ defmodule JidoHiveClient.OperatorTest do
   test "fetch_room_timeline returns entries and next cursor" do
     {:ok, server} =
       TestHTTPServer.start_link(fn request ->
-        assert request.path == "/rooms/room-1/timeline?after=evt-1"
+        assert request.path == "/rooms/room-1/events?after=1"
 
         {200, %{},
          Jason.encode!(%{
-           "data" => [%{"event_id" => "evt-2", "body" => "next"}],
-           "next_cursor" => "evt-2"
+           "data" => [
+             %{
+               "id" => "evt-2",
+               "room_id" => "room-1",
+               "sequence" => 2,
+               "type" => "room_status_changed",
+               "data" => %{"status" => "running"},
+               "inserted_at" => "2026-04-11T00:02:00Z"
+             }
+           ],
+           "meta" => %{"next_after_sequence" => 2, "has_more" => false}
          })}
       end)
 
     on_exit(fn -> TestHTTPServer.stop(server) end)
 
-    assert {:ok, %{entries: [%{"event_id" => "evt-2"}], next_cursor: "evt-2"}} =
-             Operator.fetch_room_timeline(TestHTTPServer.base_url(server), "room-1",
-               after: "evt-1"
-             )
+    assert {:ok,
+            %{
+              entries: [
+                %{
+                  "event_id" => "evt-2",
+                  "cursor" => "2",
+                  "kind" => "room.status_changed",
+                  "body" => "running"
+                }
+              ],
+              next_cursor: "2"
+            }} =
+             Operator.fetch_room_timeline(TestHTTPServer.base_url(server), "room-1", after: 1)
   end
 
   test "fetch_room returns the decoded room snapshot" do
     {:ok, server} =
       TestHTTPServer.start_link(fn request ->
-        assert request.path == "/rooms/room-1"
-        {200, %{}, Jason.encode!(%{"data" => %{"room_id" => "room-1", "status" => "running"}})}
+        case request.path do
+          "/rooms/room-1" ->
+            {200, %{}, Jason.encode!(%{"data" => canonical_room_resource()})}
+
+          "/rooms/room-1/assignments" ->
+            {200, %{}, Jason.encode!(%{"data" => canonical_assignments()})}
+
+          "/rooms/room-1/contributions?limit=200&after_sequence=0" ->
+            {200, %{},
+             Jason.encode!(%{
+               "data" => canonical_contribution_entries(),
+               "meta" => %{"next_after_sequence" => 3, "has_more" => false}
+             })}
+        end
       end)
 
     on_exit(fn -> TestHTTPServer.stop(server) end)
 
-    assert {:ok, %{"room_id" => "room-1", "status" => "running"}} =
+    assert {:ok,
+            %{
+              "room_id" => "room-1",
+              "status" => "running",
+              "brief" => "Discuss architecture",
+              "assignments" => [%{"assignment_id" => "asg-1", "objective" => "Draft plan"}],
+              "contributions" => [%{"contribution_id" => "ctr-1", "summary" => "Draft plan"}],
+              "context_objects" => [%{"context_id" => "ctx-1", "object_type" => "note"}]
+            }} =
              Operator.fetch_room(TestHTTPServer.base_url(server), "room-1")
   end
 
   test "fetch_room_sync returns the consolidated room sync payload" do
     {:ok, server} =
       TestHTTPServer.start_link(fn request ->
-        assert request.path == "/rooms/room-1/sync?after=evt-2"
+        case request.path do
+          "/rooms/room-1" ->
+            {200, %{}, Jason.encode!(%{"data" => canonical_room_resource()})}
 
-        {200, %{},
-         Jason.encode!(%{
-           "data" => %{
-             "room" => %{
-               "room_id" => "room-1",
-               "status" => "running",
-               "workflow_summary" => %{
-                 "objective" => "Stabilize the Redis auth path",
-                 "stage" => "Resolve contradictions"
-               }
-             },
-             "timeline" => [%{"event_id" => "evt-3", "body" => "third"}],
-             "next_cursor" => "evt-3",
-             "context_objects" => [%{"context_id" => "ctx-1"}],
-             "operations" => [%{"operation_id" => "room_run-1", "status" => "running"}]
-           }
-         })}
+          "/rooms/room-1/assignments" ->
+            {200, %{}, Jason.encode!(%{"data" => canonical_assignments()})}
+
+          "/rooms/room-1/contributions?limit=200&after_sequence=0" ->
+            {200, %{},
+             Jason.encode!(%{
+               "data" => canonical_contribution_entries(),
+               "meta" => %{"next_after_sequence" => 3, "has_more" => false}
+             })}
+
+          "/rooms/room-1/events?after=2" ->
+            {200, %{},
+             Jason.encode!(%{
+               "data" => [
+                 %{
+                   "id" => "evt-3",
+                   "room_id" => "room-1",
+                   "sequence" => 3,
+                   "type" => "contribution_submitted",
+                   "data" => %{
+                     "contribution" => %{
+                       "id" => "ctr-1",
+                       "assignment_id" => "asg-1",
+                       "participant_id" => "worker-1",
+                       "kind" => "reasoning",
+                       "payload" => %{"summary" => "Draft plan"}
+                     }
+                   },
+                   "inserted_at" => "2026-04-11T00:03:00Z"
+                 }
+               ],
+               "meta" => %{"next_after_sequence" => 3, "has_more" => false}
+             })}
+        end
       end)
 
     on_exit(fn -> TestHTTPServer.stop(server) end)
@@ -170,16 +227,21 @@ defmodule JidoHiveClient.OperatorTest do
                 "room_id" => "room-1",
                 "status" => "running",
                 "workflow_summary" => %{
-                  "objective" => "Stabilize the Redis auth path",
-                  "stage" => "Resolve contradictions"
+                  "objective" => "Discuss architecture"
                 }
               },
-              entries: [%{"event_id" => "evt-3", "body" => "third"}],
-              next_cursor: "evt-3",
+              entries: [
+                %{
+                  "event_id" => "evt-3",
+                  "kind" => "contribution.recorded",
+                  "body" => "Draft plan"
+                }
+              ],
+              next_cursor: "3",
               context_objects: [%{"context_id" => "ctx-1"}],
-              operations: [%{"operation_id" => "room_run-1", "status" => "running"}]
+              operations: []
             }} =
-             Operator.fetch_room_sync(TestHTTPServer.base_url(server), "room-1", after: "evt-2")
+             Operator.fetch_room_sync(TestHTTPServer.base_url(server), "room-1", after: 2)
   end
 
   test "fetch_publication_plan and publish_room go through the shared operator API" do
@@ -225,24 +287,67 @@ defmodule JidoHiveClient.OperatorTest do
         case {request.method, request.path} do
           {"POST", "/rooms"} ->
             send(parent, {:create_room_request, Jason.decode!(request.body)})
-            {201, %{}, Jason.encode!(%{"data" => %{"room_id" => "room-1", "status" => "idle"}})}
 
-          {"POST", "/rooms/room-1/run_operations"} ->
+            {201, %{},
+             Jason.encode!(%{
+               "data" => %{
+                 "room" => %{
+                   "id" => "room-1",
+                   "name" => "Discuss architecture",
+                   "status" => "idle",
+                   "phase" => "draft",
+                   "config" => %{}
+                 },
+                 "participants" => [],
+                 "assignment_counts" => %{
+                   "pending" => 0,
+                   "active" => 0,
+                   "completed" => 0,
+                   "expired" => 0
+                 },
+                 "contribution_count" => 0
+               }
+             })}
+
+          {"POST", "/rooms/room-1/runs"} ->
             send(parent, {:run_room_request, Jason.decode!(request.body)})
 
             {202, %{},
              Jason.encode!(%{
                "data" => %{
-                 "operation_id" => "room_run-op-1",
-                 "client_operation_id" => "room_run-client-op",
-                 "status" => "accepted"
+                 "run" => %{
+                   "run_id" => "room_run-op-1",
+                   "room_id" => "room-1",
+                   "status" => "queued",
+                   "max_assignments" => 1,
+                   "assignments_started" => 0,
+                   "assignments_completed" => 0,
+                   "assignment_timeout_ms" => 45_000,
+                   "until" => %{"kind" => "policy_complete"},
+                   "inserted_at" => "2026-04-11T00:05:00Z",
+                   "updated_at" => "2026-04-11T00:05:00Z"
+                 }
                }
              })}
 
-          {"GET", "/rooms/room-1/run_operations/room_run-op-1"} ->
+          {"GET", "/rooms/room-1/runs/room_run-op-1"} ->
             {200, %{},
              Jason.encode!(%{
-               "data" => %{"operation_id" => "room_run-op-1", "status" => "completed"}
+               "data" => %{
+                 "run" => %{
+                   "run_id" => "room_run-op-1",
+                   "room_id" => "room-1",
+                   "status" => "completed",
+                   "max_assignments" => 1,
+                   "assignments_started" => 1,
+                   "assignments_completed" => 1,
+                   "assignment_timeout_ms" => 45_000,
+                   "until" => %{"kind" => "policy_complete"},
+                   "result" => %{"reason" => "policy_complete"},
+                   "inserted_at" => "2026-04-11T00:05:00Z",
+                   "updated_at" => "2026-04-11T00:05:05Z"
+                 }
+               }
              })}
 
           {"GET", "/targets"} ->
@@ -257,16 +362,29 @@ defmodule JidoHiveClient.OperatorTest do
 
     room_payload = %{"room_id" => "room-1", "brief" => "Discuss architecture"}
 
-    assert {:ok, %{"room_id" => "room-1", "status" => "idle"}} =
+    assert {:ok,
+            %{
+              "room_id" => "room-1",
+              "status" => "idle",
+              "brief" => "Discuss architecture"
+            }} =
              Operator.create_room(TestHTTPServer.base_url(server), room_payload)
 
-    assert_receive {:create_room_request, ^room_payload}
+    assert_receive {:create_room_request,
+                    %{
+                      "data" => %{
+                        "id" => "room-1",
+                        "name" => "Discuss architecture",
+                        "config" => %{},
+                        "participants" => []
+                      }
+                    }}
 
     assert {:ok,
             %{
               "operation_id" => "room_run-op-1",
               "client_operation_id" => "room_run-client-op",
-              "status" => "accepted"
+              "status" => "queued"
             }} =
              Operator.start_room_run_operation(TestHTTPServer.base_url(server), "room-1",
                max_assignments: 1,
@@ -278,12 +396,20 @@ defmodule JidoHiveClient.OperatorTest do
 
     assert_receive {:run_room_request,
                     %{
-                      "max_assignments" => 1,
-                      "assignment_timeout_ms" => 45_000,
-                      "client_operation_id" => "room_run-client-op"
+                      "data" => %{
+                        "max_assignments" => 1,
+                        "assignment_timeout_ms" => 45_000,
+                        "client_operation_id" => "room_run-client-op",
+                        "until" => %{"kind" => "policy_complete"}
+                      }
                     }}
 
-    assert {:ok, %{"operation_id" => "room_run-op-1", "status" => "completed"}} =
+    assert {:ok,
+            %{
+              "operation_id" => "room_run-op-1",
+              "status" => "completed",
+              "result" => %{"reason" => "policy_complete"}
+            }} =
              Operator.fetch_room_run_operation(
                TestHTTPServer.base_url(server),
                "room-1",
@@ -300,9 +426,9 @@ defmodule JidoHiveClient.OperatorTest do
   test "start_room_run_operation returns structured timeout metadata when the request times out" do
     {:ok, server} =
       TestHTTPServer.start_link(fn request ->
-        assert request.path == "/rooms/room-timeout/run_operations"
+        assert request.path == "/rooms/room-timeout/runs"
         Process.sleep(75)
-        {202, %{}, Jason.encode!(%{"data" => %{"operation_id" => "room_run-op-timeout"}})}
+        {202, %{}, Jason.encode!(%{"data" => %{"run" => %{"run_id" => "room_run-op-timeout"}}})}
       end)
 
     on_exit(fn -> TestHTTPServer.stop(server) end)
@@ -311,7 +437,7 @@ defmodule JidoHiveClient.OperatorTest do
             {:timeout,
              %{
                method: "POST",
-               path: "/rooms/room-timeout/run_operations",
+               path: "/rooms/room-timeout/runs",
                request_timeout_ms: 10,
                operation_id: "room_run-test"
              } = metadata}} =
@@ -362,5 +488,99 @@ defmodule JidoHiveClient.OperatorTest do
 
     assert_receive {:complete_install_request,
                     %{"subject" => "alice", "access_token" => "token-123"}}
+  end
+
+  defp canonical_room_resource do
+    %{
+      "room" => %{
+        "id" => "room-1",
+        "name" => "Discuss architecture",
+        "status" => "running",
+        "phase" => "analysis",
+        "config" => %{"dispatch_policy" => "round_robin/v2"},
+        "inserted_at" => "2026-04-11T00:00:00Z",
+        "updated_at" => "2026-04-11T00:01:00Z"
+      },
+      "participants" => [
+        %{
+          "id" => "operator-1",
+          "room_id" => "room-1",
+          "kind" => "human",
+          "handle" => "operator",
+          "meta" => %{
+            "role" => "facilitator",
+            "authority_level" => "binding"
+          },
+          "joined_at" => "2026-04-11T00:00:01Z"
+        }
+      ],
+      "assignment_counts" => %{
+        "pending" => 0,
+        "active" => 1,
+        "completed" => 1,
+        "expired" => 0
+      },
+      "contribution_count" => 1
+    }
+  end
+
+  defp canonical_assignments do
+    [
+      %{
+        "id" => "asg-1",
+        "room_id" => "room-1",
+        "participant_id" => "worker-1",
+        "status" => "active",
+        "deadline" => "2026-04-11T00:10:00Z",
+        "payload" => %{
+          "objective" => "Draft plan",
+          "phase" => "analysis",
+          "context" => %{"brief" => "Discuss architecture", "context_objects" => []},
+          "output_contract" => %{"type" => "markdown"},
+          "executor" => %{"target_id" => "worker-1"}
+        },
+        "meta" => %{
+          "participant_meta" => %{
+            "role" => "analyst",
+            "target_id" => "worker-1"
+          }
+        },
+        "inserted_at" => "2026-04-11T00:01:30Z"
+      }
+    ]
+  end
+
+  defp canonical_contribution_entries do
+    [
+      %{
+        "event_sequence" => 3,
+        "contribution" => %{
+          "id" => "ctr-1",
+          "room_id" => "room-1",
+          "assignment_id" => "asg-1",
+          "participant_id" => "worker-1",
+          "kind" => "reasoning",
+          "payload" => %{
+            "summary" => "Draft plan",
+            "context_objects" => [
+              %{
+                "context_id" => "ctx-1",
+                "object_type" => "note",
+                "title" => "Plan",
+                "body" => "Draft the rollout."
+              }
+            ]
+          },
+          "meta" => %{
+            "participant_role" => "analyst",
+            "participant_kind" => "runtime",
+            "target_id" => "worker-1",
+            "authority_level" => "advisory",
+            "status" => "completed"
+          },
+          "inserted_at" => "2026-04-11T00:02:00Z"
+        }
+      }
+    ]
   end
 end

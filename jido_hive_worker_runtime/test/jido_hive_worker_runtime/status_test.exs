@@ -14,14 +14,12 @@ defmodule JidoHiveWorkerRuntime.StatusTest do
           participant_role: "analyst",
           target_id: "target-analyst",
           executor: {JidoHiveWorkerRuntime.Executor.Session, [provider: :codex]},
-          relay_topic: "relay:workspace-prod",
           workspace_id: "workspace-prod",
           url: "wss://jido-hive-server-test.app.nsai.online/socket/websocket"
         )
       end)
 
     assert output =~ "participant=analyst"
-    assert output =~ "relay=relay:workspace-prod"
     assert output =~ "workspace=workspace-prod"
     assert output =~ "url=wss://jido-hive-server-test.app.nsai.online/socket/websocket"
     assert output =~ ~r/^\d{2}:\d{2}:\d{2}\.\d{3} \[jido_hive worker\]/
@@ -35,16 +33,16 @@ defmodule JidoHiveWorkerRuntime.StatusTest do
           participant_role: "analyst",
           target_id: "target-analyst",
           capability_id: "workspace.exec.session",
-          relay_topic: "relay:workspace-prod",
           workspace_id: "workspace-prod",
           socket_url: "wss://jido-hive-server-test.app.nsai.online/socket/websocket",
-          executor: {JidoHiveWorkerRuntime.Executor.Session, [provider: :codex]}
+          executor: {JidoHiveWorkerRuntime.Executor.Session, [provider: :codex]},
+          room_channels: %{"room-1" => %{caught_up: true}}
         })
       end)
 
     assert output =~ "ready participant=analyst"
-    assert output =~ "relay=relay:workspace-prod"
-    assert output =~ "waiting_for=assignment.start"
+    assert output =~ "rooms=room-1"
+    assert output =~ "waiting_for=assignment.offer"
     assert output =~ "url=wss://jido-hive-server-test.app.nsai.online/socket/websocket"
   end
 
@@ -69,7 +67,6 @@ defmodule JidoHiveWorkerRuntime.StatusTest do
             model: "gpt-5.4",
             reasoning_effort: :low,
             executor: {JidoHiveWorkerRuntime.Executor.Session, [provider: :codex]},
-            relay_topic: "relay:workspace-prod",
             workspace_id: "workspace-prod",
             url: "wss://jido-hive-server-test.app.nsai.online/socket/websocket",
             target_id: "target-analyst",

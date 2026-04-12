@@ -133,10 +133,10 @@ Mounted under `/api`.
 High-value routes include:
 
 - `GET /rooms/:id`
-- `GET /rooms/:id/timeline`
+- `GET /rooms/:id/events`
 - `POST /rooms`
-- `POST /rooms/:id/run_operations`
-- `GET /rooms/:id/run_operations/:operation_id`
+- `POST /rooms/:id/runs`
+- `GET /rooms/:id/runs/:run_id`
 - `POST /rooms/:id/contributions`
 - `GET /rooms/:id/publication_plan`
 - `POST /rooms/:id/publications`
@@ -146,10 +146,11 @@ High-value routes include:
 - `POST /connectors/installs/:install_id/complete`
 - `GET /connectors/:connector_id/connections`
 
-### Websocket relay
+### Websocket room channels
 
-`jido_hive_worker_runtime` connects through Phoenix Channels to receive
-assignments and submit structured work.
+`jido_hive_worker_runtime` connects through Phoenix Channels on
+`room:<room_id>` topics to receive `assignment.offer`, catch up on room events,
+and submit structured work.
 
 ## Connector install and publication flow
 

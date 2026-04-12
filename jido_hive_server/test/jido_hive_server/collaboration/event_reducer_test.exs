@@ -2,204 +2,152 @@ defmodule JidoHiveServer.Collaboration.EventReducerTest do
   use ExUnit.Case, async: true
 
   alias JidoHiveServer.Collaboration.EventReducer
-  alias JidoHiveServer.Collaboration.Schema.RoomEvent
+  alias JidoHiveServer.Collaboration.Schema.{Room, RoomEvent, RoomSnapshot}
 
-  test "assignment_opened updates current_assignment and assignments" do
+  test "assignment_created tracks the assignment and active dispatch ids" do
+    snapshot = snapshot()
+
     {:ok, event} =
       RoomEvent.new(%{
-        event_id: "evt-open-1",
+        id: "evt-1",
         room_id: "room-1",
-        type: :assignment_opened,
-        payload: %{
-          assignment: %{
-            assignment_id: "asn-1",
-            room_id: "room-1",
-            participant_id: "worker-01",
-            participant_role: "analyst",
-            target_id: "target-worker-01",
-            capability_id: "workspace.exec.session",
-            phase: "analysis",
-            objective: "Analyze the brief.",
-            contribution_contract: %{"allowed_contribution_types" => ["reasoning"]},
-            context_view: %{"brief" => "Design a substrate.", "context_objects" => []},
-            status: "running",
-            opened_at: DateTime.utc_now()
+        sequence: 1,
+        type: :assignment_created,
+        data: %{
+          "assignment" => %{
+            "id" => "asg-1",
+            "room_id" => "room-1",
+            "participant_id" => "participant-1",
+            "payload" => %{"objective" => "Analyze"},
+            "status" => "pending",
+            "meta" => %{}
           }
-        },
-        recorded_at: DateTime.utc_now()
+        }
       })
 
-    updated = EventReducer.apply_event(snapshot(), event)
+    updated = EventReducer.apply_event(snapshot, event)
 
-    assert updated.current_assignment.assignment_id == "asn-1"
-    assert List.last(updated.assignments).assignment_id == "asn-1"
-    assert updated.status == "running"
-    assert updated.dispatch_state.completed_slots == 0
+    assert [assignment] = updated.assignments
+    assert assignment.id == "asg-1"
+    assert updated.dispatch.active_assignment_ids == ["asg-1"]
+    assert updated.dispatch.completed_assignment_ids == []
+    assert updated.clocks.next_assignment_seq == 2
+    assert updated.clocks.next_event_sequence == 2
   end
 
-  test "contribution_recorded appends contributions and context objects" do
-    opened_at = DateTime.utc_now()
+  test "contribution_submitted appends contributions without deriving graph state" do
+    snapshot = snapshot()
 
     {:ok, event} =
       RoomEvent.new(%{
-        event_id: "evt-contrib-1",
+        id: "evt-2",
         room_id: "room-1",
-        type: :contribution_recorded,
-        payload: %{
-          contribution: %{
-            contribution_id: "contrib-1",
-            room_id: "room-1",
-            assignment_id: "asn-1",
-            participant_id: "worker-01",
-            participant_role: "analyst",
-            target_id: "target-worker-01",
-            capability_id: "workspace.exec.session",
-            contribution_type: "reasoning",
-            authority_level: "advisory",
-            summary: "Added a substrate belief.",
-            consumed_context_ids: [],
-            context_objects: [
-              %{
-                object_type: "belief",
-                title: "Shared state",
-                body: "The server should own room state.",
-                data: %{},
-                scope: %{"read" => ["room"], "write" => ["author"]},
-                uncertainty: %{"status" => "provisional", "confidence" => 0.8},
-                relations: [%{relation: "derives_from", target_id: "ctx-existing"}]
-              }
-            ],
-            artifacts: [],
-            events: [],
-            tool_events: [],
-            approvals: [],
-            execution: %{"status" => "completed"},
-            status: "completed",
-            schema_version: "jido_hive/contribution.submit.v1"
+        sequence: 2,
+        type: :contribution_submitted,
+        data: %{
+          "contribution" => %{
+            "id" => "ctrb-1",
+            "room_id" => "room-1",
+            "participant_id" => "participant-1",
+            "assignment_id" => "asg-1",
+            "kind" => "reasoning",
+            "payload" => %{"summary" => "Shared an analysis"},
+            "meta" => %{"trace" => %{"provider" => "codex"}}
           }
-        },
-        recorded_at: DateTime.utc_now()
+        }
       })
 
-    updated =
+    updated = EventReducer.apply_event(snapshot, event)
+
+    assert [contribution] = updated.contributions
+    assert contribution.id == "ctrb-1"
+    assert contribution.payload["summary"] == "Shared an analysis"
+    assert updated.clocks.next_contribution_seq == 2
+    assert updated.clocks.next_event_sequence == 3
+  end
+
+  test "assignment_completed moves the assignment into the completed set" do
+    snapshot =
       snapshot(%{
-        status: "running",
-        current_assignment: %{
-          assignment_id: "asn-1",
-          room_id: "room-1",
-          participant_id: "worker-01",
-          participant_role: "analyst",
-          target_id: "target-worker-01",
-          capability_id: "workspace.exec.session",
-          phase: "analysis",
-          objective: "Analyze the brief.",
-          contribution_contract: %{"allowed_contribution_types" => ["reasoning"]},
-          context_view: %{"brief" => "Design a substrate.", "context_objects" => []},
-          status: "running",
-          opened_at: opened_at
-        },
         assignments: [
           %{
-            assignment_id: "asn-1",
+            id: "asg-1",
             room_id: "room-1",
-            participant_id: "worker-01",
-            participant_role: "analyst",
-            target_id: "target-worker-01",
-            capability_id: "workspace.exec.session",
-            phase: "analysis",
-            objective: "Analyze the brief.",
-            contribution_contract: %{"allowed_contribution_types" => ["reasoning"]},
-            context_view: %{"brief" => "Design a substrate.", "context_objects" => []},
-            status: "running",
-            opened_at: opened_at
+            participant_id: "participant-1",
+            payload: %{},
+            status: "active",
+            deadline: nil,
+            inserted_at: DateTime.utc_now(),
+            meta: %{}
           }
         ],
-        context_objects: [
-          %{
-            context_id: "ctx-existing",
-            object_type: "fact",
-            title: "Seed fact",
-            body: "Earlier fact.",
-            data: %{},
-            authored_by: %{participant_id: "worker-00"},
-            provenance: %{},
-            scope: %{read: ["room"], write: ["author"]},
-            uncertainty: %{status: "accepted", confidence: 1.0, rationale: nil},
-            relations: [],
-            inserted_at: opened_at
-          }
-        ],
-        dispatch_state: %{applied_event_ids: [], completed_slots: 0, total_slots: 1}
+        dispatch: %{
+          policy_id: "round_robin",
+          policy_state: %{},
+          active_assignment_ids: ["asg-1"],
+          completed_assignment_ids: []
+        }
       })
-      |> EventReducer.apply_event(event)
 
-    assert updated.current_assignment == %{}
-    assert updated.dispatch_state.completed_slots == 1
-    assert updated.status == "publication_ready"
-    assert [%{contribution_id: "contrib-1"}] = updated.contributions
-
-    assert [
-             %{context_id: "ctx-existing", object_type: "fact"},
-             %{context_id: "ctx-1", object_type: "belief"}
-           ] = updated.context_objects
-
-    assert [%{assignment_id: "asn-1", status: "completed"}] = updated.assignments
-
-    assert updated.context_graph.outgoing["ctx-1"] |> Enum.map(&{&1.type, &1.to_id}) == [
-             {:derives_from, "ctx-existing"}
-           ]
-  end
-
-  test "assignment_abandoned marks the assignment as abandoned and advances dispatch state" do
     {:ok, event} =
       RoomEvent.new(%{
-        event_id: "evt-abandon-1",
+        id: "evt-3",
         room_id: "room-1",
-        type: :assignment_abandoned,
-        payload: %{
-          assignment_id: "asn-1",
-          reason: "assignment timed out"
-        },
-        recorded_at: DateTime.utc_now()
+        sequence: 3,
+        type: :assignment_completed,
+        data: %{"assignment_id" => "asg-1"}
+      })
+
+    updated = EventReducer.apply_event(snapshot, event)
+
+    assert [assignment] = updated.assignments
+    assert assignment.status == "completed"
+    assert updated.dispatch.active_assignment_ids == []
+    assert updated.dispatch.completed_assignment_ids == ["asg-1"]
+    assert updated.clocks.next_event_sequence == 4
+  end
+
+  test "room phase and status changes are explicit" do
+    snapshot = snapshot()
+
+    {:ok, status_event} =
+      RoomEvent.new(%{
+        id: "evt-4",
+        room_id: "room-1",
+        sequence: 4,
+        type: :room_status_changed,
+        data: %{"status" => "active", "inserted_at" => DateTime.utc_now()}
+      })
+
+    {:ok, phase_event} =
+      RoomEvent.new(%{
+        id: "evt-5",
+        room_id: "room-1",
+        sequence: 5,
+        type: :room_phase_changed,
+        data: %{"phase" => "analysis", "inserted_at" => DateTime.utc_now()}
       })
 
     updated =
-      snapshot(%{
-        status: "running",
-        current_assignment: %{assignment_id: "asn-1", participant_id: "worker-01"},
-        assignments: [%{assignment_id: "asn-1", participant_id: "worker-01", status: "running"}],
-        dispatch_state: %{applied_event_ids: [], completed_slots: 0, total_slots: 2}
-      })
-      |> EventReducer.apply_event(event)
+      snapshot
+      |> EventReducer.apply_event(status_event)
+      |> EventReducer.apply_event(phase_event)
 
-    assert updated.current_assignment == %{}
-    assert updated.dispatch_state.completed_slots == 1
-    assert [%{assignment_id: "asn-1", status: "abandoned"}] = updated.assignments
+    assert updated.room.status == "active"
+    assert updated.room.phase == "analysis"
+    assert updated.clocks.next_event_sequence == 6
   end
 
   defp snapshot(overrides \\ %{}) do
-    Map.merge(
-      %{
-        room_id: "room-1",
-        session_id: "session-1",
-        brief: "Design a participation substrate.",
-        rules: [],
-        status: "idle",
-        participants: [],
-        current_assignment: %{},
-        assignments: [],
-        context_objects: [],
-        contributions: [],
-        context_graph: %{outgoing: %{}, incoming: %{}},
-        context_annotations: %{},
-        dispatch_policy_id: "round_robin/v2",
-        dispatch_policy_config: %{},
-        dispatch_state: %{applied_event_ids: [], completed_slots: 0, total_slots: 1},
-        next_context_seq: 1,
-        next_assignment_seq: 1,
-        next_contribution_seq: 1
-      },
-      overrides
-    )
+    {:ok, room} =
+      Room.new(%{
+        id: "room-1",
+        name: "Canonical room",
+        status: "waiting",
+        config: %{}
+      })
+
+    RoomSnapshot.initial(room, "round_robin", %{})
+    |> Map.merge(overrides)
   end
 end

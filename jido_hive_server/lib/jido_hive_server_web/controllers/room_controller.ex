@@ -2,184 +2,121 @@ defmodule JidoHiveServerWeb.RoomController do
   use JidoHiveServerWeb, :controller
 
   alias JidoHiveServer.Collaboration
-  alias JidoHiveServer.RunOperations
+  alias JidoHiveServer.RoomRuns
+  alias JidoHiveServerWeb.API
 
-  def create(conn, params) do
-    case Collaboration.create_room(params) do
+  def index(conn, params) do
+    opts =
+      []
+      |> maybe_put(:participant_id, params["participant_id"])
+      |> maybe_put(:status, params["status"])
+      |> maybe_put_integer(:limit, params["limit"])
+
+    case Collaboration.list_rooms(opts) do
+      {:ok, snapshots} ->
+        json(conn, API.data(Enum.map(snapshots, &room_resource/1)))
+
+      {:error, reason} ->
+        render_error(conn, :unprocessable_entity, "invalid_room_query", inspect(reason))
+    end
+  end
+
+  def create(conn, %{"data" => attrs}) do
+    case Collaboration.create_room(attrs) do
       {:ok, snapshot} ->
         conn
         |> put_status(:created)
-        |> json(%{data: normalize(snapshot)})
+        |> json(API.data(room_resource(snapshot)))
 
       {:error, reason} ->
-        render_error(conn, :unprocessable_entity, reason)
+        render_error(conn, :unprocessable_entity, "invalid_room", inspect(reason))
     end
+  end
+
+  def create(conn, _params) do
+    render_error(conn, :unprocessable_entity, "invalid_room", "expected data payload")
   end
 
   def show(conn, %{"id" => room_id}) do
-    case Collaboration.fetch_room(room_id) do
+    case Collaboration.fetch_room_snapshot(room_id) do
       {:ok, snapshot} ->
-        json(conn, %{data: normalize(snapshot)})
+        json(conn, API.data(room_resource(snapshot)))
 
       {:error, :room_not_found} ->
-        render_error(conn, :not_found, :room_not_found)
+        render_error(conn, :not_found, "room_not_found", "Room not found")
 
       {:error, reason} ->
-        render_error(conn, :unprocessable_entity, reason)
+        render_error(conn, :unprocessable_entity, "invalid_room", inspect(reason))
     end
   end
 
-  def sync(conn, %{"id" => room_id} = params) do
-    with {:ok, sync_result} <- Collaboration.room_sync(room_id, after: params["after"]),
-         {:ok, operations} <- RunOperations.list(room_id) do
-      json(conn, %{data: normalize(Map.put(sync_result, :operations, operations))})
-    else
-      {:error, :room_not_found} ->
-        render_error(conn, :not_found, :room_not_found)
-
-      {:error, reason} ->
-        render_error(conn, :unprocessable_entity, reason)
-    end
-  end
-
-  def run_first_slice(conn, %{"id" => room_id}) do
-    case Collaboration.run_first_slice(room_id) do
+  def patch(conn, %{"id" => room_id, "data" => attrs}) do
+    case Collaboration.patch_room(room_id, attrs) do
       {:ok, snapshot} ->
-        json(conn, %{data: normalize(snapshot)})
+        json(conn, API.data(room_resource(snapshot)))
 
       {:error, :room_not_found} ->
-        render_error(conn, :not_found, :room_not_found)
+        render_error(conn, :not_found, "room_not_found", "Room not found")
 
       {:error, reason} ->
-        render_error(conn, :unprocessable_entity, reason)
+        render_error(conn, :unprocessable_entity, "invalid_room_patch", inspect(reason))
     end
   end
 
-  def start_run_operation(conn, %{"id" => room_id} = params) do
-    max_assignments = parse_optional_integer(Map.get(params, "max_assignments"))
-    client_operation_id = parse_optional_string(Map.get(params, "client_operation_id"))
+  def patch(conn, _params) do
+    render_error(conn, :unprocessable_entity, "invalid_room_patch", "expected data payload")
+  end
 
-    assignment_timeout_ms =
-      parse_integer(Map.get(params, "assignment_timeout_ms", 180_000), 180_000)
-
-    run_opts =
-      [assignment_timeout_ms: assignment_timeout_ms]
-      |> maybe_put_client_operation_id(client_operation_id)
-      |> maybe_put_max_assignments(max_assignments)
-
-    case RunOperations.start_run(room_id, run_opts) do
-      {:ok, operation} ->
-        conn
-        |> put_status(:accepted)
-        |> json(%{data: normalize(operation)})
+  def delete(conn, %{"id" => room_id}) do
+    case Collaboration.close_room(room_id) do
+      {:ok, snapshot} ->
+        :ok = RoomRuns.cancel_active_for_room(room_id)
+        json(conn, API.data(room_resource(snapshot)))
 
       {:error, :room_not_found} ->
-        render_error(conn, :not_found, :room_not_found)
+        render_error(conn, :not_found, "room_not_found", "Room not found")
 
       {:error, reason} ->
-        render_error(conn, :unprocessable_entity, reason)
+        render_error(conn, :unprocessable_entity, "invalid_room_patch", inspect(reason))
     end
   end
 
-  def show_run_operation(conn, %{"id" => room_id, "operation_id" => operation_id}) do
-    case RunOperations.fetch(room_id, operation_id) do
-      {:ok, operation} ->
-        json(conn, %{data: normalize(operation)})
-
-      {:error, :operation_not_found} ->
-        render_error(conn, :not_found, :operation_not_found)
-
-      {:error, reason} ->
-        render_error(conn, :unprocessable_entity, reason)
-    end
+  defp room_resource(snapshot) do
+    %{
+      room: snapshot.room,
+      participants: snapshot.participants,
+      assignment_counts: assignment_counts(snapshot),
+      contribution_count: contribution_count(snapshot)
+    }
   end
 
-  def publication_plan(conn, %{"id" => room_id}) do
-    case Collaboration.publication_plan(room_id) do
-      {:ok, plan} ->
-        json(conn, %{data: plan})
-
-      {:error, :room_not_found} ->
-        render_error(conn, :not_found, :room_not_found)
-
-      {:error, reason} ->
-        render_error(conn, :unprocessable_entity, reason)
-    end
+  defp assignment_counts(snapshot) do
+    Enum.reduce(
+      snapshot.assignments,
+      %{"pending" => 0, "active" => 0, "completed" => 0, "expired" => 0},
+      fn assignment, acc ->
+        Map.update(acc, assignment.status, 1, &(&1 + 1))
+      end
+    )
   end
 
-  def publication_runs(conn, %{"id" => room_id}) do
-    case Collaboration.publication_runs(room_id) do
-      {:ok, runs} ->
-        json(conn, %{data: runs})
+  defp contribution_count(snapshot), do: length(snapshot.contributions)
 
-      {:error, :room_not_found} ->
-        render_error(conn, :not_found, :room_not_found)
-
-      {:error, reason} ->
-        render_error(conn, :unprocessable_entity, reason)
-    end
-  end
-
-  def execute_publications(conn, %{"id" => room_id} = params) do
-    case Collaboration.execute_publications(room_id, Map.delete(params, "id")) do
-      {:ok, result} ->
-        json(conn, %{data: result})
-
-      {:error, :room_not_found} ->
-        render_error(conn, :not_found, :room_not_found)
-
-      {:error, reason} ->
-        render_error(conn, :unprocessable_entity, reason)
-    end
-  end
-
-  defp render_error(conn, status, reason) when is_atom(reason) do
+  defp render_error(conn, status, code, message) do
     conn
     |> put_status(status)
-    |> json(%{error: Atom.to_string(reason)})
+    |> json(API.error(code, message))
   end
 
-  defp render_error(conn, status, reason) do
-    conn
-    |> put_status(status)
-    |> json(%{error: inspect(reason)})
-  end
+  defp maybe_put(opts, _key, nil), do: opts
+  defp maybe_put(opts, key, value), do: Keyword.put(opts, key, value)
 
-  defp parse_integer(value, _default) when is_integer(value), do: value
+  defp maybe_put_integer(opts, _key, nil), do: opts
 
-  defp parse_integer(value, default) when is_binary(value) do
+  defp maybe_put_integer(opts, key, value) when is_binary(value) do
     case Integer.parse(value) do
-      {parsed, ""} -> parsed
-      _other -> default
+      {integer, ""} when integer > 0 -> Keyword.put(opts, key, integer)
+      _other -> opts
     end
   end
-
-  defp parse_integer(_value, default), do: default
-
-  defp parse_optional_integer(nil), do: nil
-  defp parse_optional_integer(value) when is_integer(value), do: value
-  defp parse_optional_integer(value) when is_binary(value), do: parse_integer(value, nil)
-  defp parse_optional_integer(_value), do: nil
-
-  defp parse_optional_string(value) when is_binary(value) and value != "", do: value
-  defp parse_optional_string(_value), do: nil
-
-  defp maybe_put_max_assignments(opts, nil), do: opts
-
-  defp maybe_put_max_assignments(opts, max_assignments),
-    do: Keyword.put(opts, :max_assignments, max_assignments)
-
-  defp maybe_put_client_operation_id(opts, nil), do: opts
-
-  defp maybe_put_client_operation_id(opts, client_operation_id),
-    do: Keyword.put(opts, :client_operation_id, client_operation_id)
-
-  defp normalize(%DateTime{} = value), do: DateTime.to_iso8601(value)
-  defp normalize(%_{} = value), do: value |> Map.from_struct() |> normalize()
-
-  defp normalize(map) when is_map(map),
-    do: Map.new(map, fn {key, value} -> {to_string(key), normalize(value)} end)
-
-  defp normalize(list) when is_list(list), do: Enum.map(list, &normalize/1)
-  defp normalize(value), do: value
 end

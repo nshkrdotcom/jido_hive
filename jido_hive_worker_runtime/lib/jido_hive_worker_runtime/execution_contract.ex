@@ -24,7 +24,7 @@ defmodule JidoHiveWorkerRuntime.ExecutionContract do
   def workspace_root(job, opts \\ []) when is_map(job) and is_list(opts) do
     Keyword.get(opts, :cwd) ||
       execution_environment_workspace_root(execution_environment(job)) ||
-      session_value(job, "workspace_root") ||
+      executor_value(job, "workspace_root") ||
       Map.get(job, "workspace_root") ||
       File.cwd!()
   end
@@ -73,17 +73,17 @@ defmodule JidoHiveWorkerRuntime.ExecutionContract do
 
   @spec execution_surface(map()) :: map() | nil
   def execution_surface(job) when is_map(job) do
-    session_value(job, "execution_surface")
+    executor_value(job, "execution_surface")
   end
 
   @spec execution_environment(map()) :: map() | nil
   def execution_environment(job) when is_map(job) do
-    case session_value(job, "execution_environment") do
+    case executor_value(job, "execution_environment") do
       %{} = environment ->
         environment
 
       _other ->
-        case session_value(job, "workspace_root") || Map.get(job, "workspace_root") do
+        case executor_value(job, "workspace_root") || Map.get(job, "workspace_root") do
           root when is_binary(root) and root != "" -> %{"workspace_root" => root}
           _ -> nil
         end
@@ -94,12 +94,12 @@ defmodule JidoHiveWorkerRuntime.ExecutionContract do
   def provider_option(job, key)
       when is_map(job) and is_atom(key) and key in @provider_option_keys do
     job
-    |> session_value("provider_options")
+    |> executor_value("provider_options")
     |> value_from_map(key)
   end
 
   defp provider_from_job(job) when is_map(job) do
-    case session_value(job, "provider") || payload_field(job, "provider") ||
+    case executor_value(job, "provider") || payload_field(job, "provider") ||
            Map.get(job, "provider") do
       value when is_binary(value) and value != "" -> String.to_atom(value)
       value when is_atom(value) -> value
@@ -191,9 +191,9 @@ defmodule JidoHiveWorkerRuntime.ExecutionContract do
   defp payload_value(:reasoning_effort, value) when is_atom(value), do: Atom.to_string(value)
   defp payload_value(_key, value), do: value
 
-  defp session_value(job, key) when is_map(job) do
-    case Map.get(job, "session") || Map.get(job, :session) || payload_field(job, "session") do
-      %{} = session -> value_from_map(session, key)
+  defp executor_value(job, key) when is_map(job) do
+    case Map.get(job, "executor") || Map.get(job, :executor) || payload_field(job, "executor") do
+      %{} = executor -> value_from_map(executor, key)
       _other -> nil
     end
   end

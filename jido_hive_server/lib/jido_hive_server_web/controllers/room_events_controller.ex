@@ -1,44 +1,63 @@
 defmodule JidoHiveServerWeb.RoomEventsController do
   use JidoHiveServerWeb, :controller
 
-  alias JidoHiveServer.{Collaboration, Persistence}
+  alias JidoHiveServer.Collaboration
+  alias JidoHiveServerWeb.API
 
-  def index(conn, %{"id" => room_id}) do
-    case Collaboration.fetch_room(room_id) do
-      {:ok, _snapshot} ->
-        events =
-          room_id
-          |> Persistence.list_room_events()
-          |> Enum.map(&normalize_event/1)
+  def index(conn, %{"id" => room_id} = params) do
+    limit = parse_limit(params["limit"], 100)
+    after_sequence = parse_non_neg_integer(params["after"], 0)
 
-        json(conn, %{data: events})
+    case Collaboration.list_events(room_id, after_sequence: after_sequence, limit: limit + 1) do
+      {:ok, events} ->
+        {page, has_more} = split_page(events, limit)
+        next_after_sequence = page |> List.last() |> then(&if(&1, do: &1.sequence, else: nil))
+
+        json(
+          conn,
+          API.data(page, %{
+            next_after_sequence: next_after_sequence,
+            has_more: has_more
+          })
+        )
 
       {:error, :room_not_found} ->
-        conn
-        |> put_status(:not_found)
-        |> json(%{error: "room_not_found"})
+        render_error(conn, :not_found, "room_not_found", "Room not found")
+
+      {:error, reason} ->
+        render_error(conn, :unprocessable_entity, "invalid_event_query", inspect(reason))
     end
   end
 
-  defp normalize_event(event) do
-    %{
-      "event_id" => event.event_id,
-      "room_id" => event.room_id,
-      "type" => Atom.to_string(event.type),
-      "payload" => normalize(event.payload),
-      "causation_id" => event.causation_id,
-      "correlation_id" => event.correlation_id,
-      "recorded_at" => DateTime.to_iso8601(event.recorded_at)
-    }
+  defp split_page(list, limit) do
+    if length(list) > limit do
+      {Enum.take(list, limit), true}
+    else
+      {list, false}
+    end
   end
 
-  defp normalize(%DateTime{} = value), do: DateTime.to_iso8601(value)
-  defp normalize(%_{} = value), do: value |> Map.from_struct() |> normalize()
+  defp parse_limit(nil, default), do: default
 
-  defp normalize(map) when is_map(map) do
-    Map.new(map, fn {key, value} -> {to_string(key), normalize(value)} end)
+  defp parse_limit(value, default) when is_binary(value) do
+    case Integer.parse(value) do
+      {integer, ""} when integer > 0 -> integer
+      _other -> default
+    end
   end
 
-  defp normalize(list) when is_list(list), do: Enum.map(list, &normalize/1)
-  defp normalize(value), do: value
+  defp parse_non_neg_integer(nil, default), do: default
+
+  defp parse_non_neg_integer(value, default) when is_binary(value) do
+    case Integer.parse(value) do
+      {integer, ""} when integer >= 0 -> integer
+      _other -> default
+    end
+  end
+
+  defp render_error(conn, status, code, message) do
+    conn
+    |> put_status(status)
+    |> json(API.error(code, message))
+  end
 end

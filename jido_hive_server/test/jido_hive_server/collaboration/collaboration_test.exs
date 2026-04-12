@@ -3,69 +3,99 @@ defmodule JidoHiveServer.CollaborationTest do
   use JidoHiveServer.PersistenceCase
 
   alias JidoHiveServer.Collaboration
+  alias JidoHiveServer.Collaboration.ParticipantSessionRegistry
   alias JidoHiveServer.Collaboration.RoomServer
 
-  test "create_room replaces any live room state for the same room id" do
-    assert {:ok, room} =
+  test "create_room replaces persisted room state for the same id" do
+    assert {:ok, _snapshot} =
              Collaboration.create_room(%{
-               room_id: "room-reuse-1",
-               brief: "Original brief",
-               rules: ["rule-one"],
-               dispatch_policy_id: "round_robin/v2",
+               id: "room-reuse-1",
+               name: "Original room",
+               config: %{},
+               participants: [
+                 %{id: "agent-1", kind: "agent", handle: "agent-1", meta: %{}}
+               ]
+             })
+
+    assert {:ok, _snapshot} =
+             Collaboration.submit_contribution("room-reuse-1", %{
+               id: "ctrb-1",
+               participant_id: "agent-1",
+               kind: "note",
+               payload: %{"text" => "Original contribution"}
+             })
+
+    assert {:ok, replaced} =
+             Collaboration.create_room(%{
+               id: "room-reuse-1",
+               name: "Replacement room",
+               config: %{},
+               participants: [
+                 %{id: "agent-1", kind: "agent", handle: "agent-1", meta: %{}}
+               ]
+             })
+
+    assert replaced.room.name == "Replacement room"
+    assert replaced.assignments == []
+    assert replaced.contributions == []
+
+    assert {:ok, events} = Collaboration.list_events("room-reuse-1")
+
+    assert Enum.map(events, & &1.type) == [
+             :room_created,
+             :participant_joined,
+             :room_phase_changed
+           ]
+  end
+
+  test "dispatch_once creates assignments for available participants and contribution submission completes them" do
+    assert {:ok, _snapshot} =
+             Collaboration.create_room(%{
+               id: "room-dispatch-1",
+               name: "Dispatch room",
+               config: %{"assignment_limit" => 1},
                participants: [
                  %{
-                   participant_id: "worker-01",
-                   participant_role: "analyst",
-                   participant_kind: "runtime",
-                   target_id: "target-worker-01",
-                   capability_id: "workspace.exec.session"
+                   id: "agent-1",
+                   kind: "agent",
+                   handle: "agent-1",
+                   meta: %{"target_id" => "target-1"}
                  }
                ]
              })
 
-    assert room.status == "idle"
-    assert room.dispatch_state.total_slots == 3
-
-    assert {:ok, _updated} =
-             RoomServer.open_assignment(RoomServer.via("room-reuse-1"), %{
-               "assignment" => %{
-                 "assignment_id" => "asn-reuse-1",
-                 "room_id" => "room-reuse-1",
-                 "participant_id" => "worker-01",
-                 "participant_role" => "analyst",
-                 "target_id" => "target-worker-01",
-                 "capability_id" => "workspace.exec.session",
-                 "phase" => "analysis",
-                 "objective" => "Analyze the first draft.",
-                 "contribution_contract" => %{"allowed_contribution_types" => ["reasoning"]},
-                 "context_view" => %{"brief" => "Original brief", "context_objects" => []},
-                 "status" => "running",
-                 "opened_at" => DateTime.utc_now()
-               }
+    assert :ok =
+             ParticipantSessionRegistry.register_session(%{
+               room_id: "room-dispatch-1",
+               session_id: "session-agent-1",
+               pid: self(),
+               mode: "participant",
+               participant_id: "agent-1",
+               participant_meta: %{"target_id" => "target-1"},
+               caught_up: true
              })
 
-    assert {:ok, reused} =
-             Collaboration.create_room(%{
-               room_id: "room-reuse-1",
-               brief: "Replacement brief",
-               rules: ["rule-two"],
-               dispatch_policy_id: "round_robin/v2",
-               participants: [
-                 %{
-                   participant_id: "worker-01",
-                   participant_role: "analyst",
-                   participant_kind: "runtime",
-                   target_id: "target-worker-01",
-                   capability_id: "workspace.exec.session"
-                 }
-               ]
+    on_exit(fn ->
+      ParticipantSessionRegistry.unregister_session("room-dispatch-1", "session-agent-1")
+    end)
+
+    assert {:ok, {:dispatch, ["asg-1"]}, dispatched_snapshot} =
+             RoomServer.dispatch_once(RoomServer.via("room-dispatch-1"))
+
+    assert [%{id: "asg-1", status: "pending"}] = dispatched_snapshot.assignments
+
+    assert_receive {:assignment_offer, %{id: "asg-1", participant_id: "agent-1"}}, 200
+
+    assert {:ok, completed_snapshot} =
+             Collaboration.submit_contribution("room-dispatch-1", %{
+               id: "ctrb-1",
+               participant_id: "agent-1",
+               assignment_id: "asg-1",
+               kind: "reasoning",
+               payload: %{"summary" => "Done"}
              })
 
-    assert reused.brief == "Replacement brief"
-    assert reused.rules == ["rule-two"]
-    assert reused.status == "idle"
-    assert reused.assignments == []
-    assert reused.context_objects == []
-    assert reused.current_assignment == %{}
+    assert [%{id: "asg-1", status: "completed"}] = completed_snapshot.assignments
+    assert [%{id: "ctrb-1", assignment_id: "asg-1"}] = completed_snapshot.contributions
   end
 end

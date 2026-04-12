@@ -25,12 +25,11 @@ defmodule JidoHiveWorkerRuntime.Executor.Scripted do
 
   defp analyst_contribution(assignment) do
     %{
-      "assignment_id" => assignment["assignment_id"],
+      "assignment_id" => assignment["id"],
       "participant_id" => assignment["participant_id"],
       "participant_role" => assignment["participant_role"] || "analyst",
       "summary" => "analysis pass added substrate beliefs and notes",
-      "contribution_type" => "reasoning",
-      "authority_level" => "advisory",
+      "kind" => "reasoning",
       "context_objects" => [
         %{
           "object_type" => "belief",
@@ -51,7 +50,7 @@ defmodule JidoHiveWorkerRuntime.Executor.Scripted do
           "tool_name" => "context.read",
           "status" => "ok",
           "input" => %{"scope" => "room"},
-          "output" => %{"brief" => get_in(assignment, ["context_view", "brief"])}
+          "output" => %{"brief" => get_in(assignment, ["context", "brief"])}
         }
       ]
     }
@@ -59,12 +58,11 @@ defmodule JidoHiveWorkerRuntime.Executor.Scripted do
 
   defp skeptic_contribution(assignment) do
     %{
-      "assignment_id" => assignment["assignment_id"],
+      "assignment_id" => assignment["id"],
       "participant_id" => assignment["participant_id"],
       "participant_role" => assignment["participant_role"] || "skeptic",
       "summary" => "critique pass added one open question",
-      "contribution_type" => "reasoning",
-      "authority_level" => "advisory",
+      "kind" => "reasoning",
       "context_objects" => [
         %{
           "object_type" => "question",

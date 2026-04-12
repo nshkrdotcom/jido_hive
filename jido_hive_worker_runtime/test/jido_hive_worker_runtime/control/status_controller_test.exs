@@ -25,7 +25,7 @@ defmodule JidoHiveWorkerRuntime.Control.StatusControllerTest do
   end
 
   test "GET /api/runtime returns the canonical runtime snapshot", %{runtime: runtime} do
-    :ok = Runtime.update_connection(runtime, :ready, %{"relay_topic" => "relay:workspace-1"})
+    :ok = Runtime.update_connection(runtime, :ready, %{"room_ids" => ["room-1"]})
 
     conn = call_router(conn(:get, "/api/runtime"), runtime)
     body = Jason.decode!(conn.resp_body)
@@ -41,15 +41,23 @@ defmodule JidoHiveWorkerRuntime.Control.StatusControllerTest do
   test "GET /api/runtime/assignments returns recent assignments", %{runtime: runtime} do
     request = %{
       "assignment" => %{
-        "assignment_id" => "asn-1",
+        "id" => "asn-1",
         "room_id" => "room-1",
         "participant_id" => "participant-1",
-        "participant_role" => "analyst",
-        "target_id" => "target-1",
-        "capability_id" => "capability-1",
-        "session" => %{"provider" => "codex"},
-        "contribution_contract" => %{"allowed_contribution_types" => ["reasoning"]},
-        "context_view" => %{"brief" => "Design a substrate.", "context_objects" => []}
+        "payload" => %{
+          "objective" => "Design a substrate.",
+          "phase" => "analysis",
+          "context" => %{"brief" => "Design a substrate.", "context_objects" => []},
+          "output_contract" => %{"allowed_contribution_types" => ["reasoning"]},
+          "executor" => %{"provider" => "codex", "workspace_root" => "/workspace"}
+        },
+        "meta" => %{
+          "participant_meta" => %{
+            "role" => "analyst",
+            "target_id" => "target-1",
+            "capability_id" => "capability-1"
+          }
+        }
       }
     }
 
@@ -71,15 +79,23 @@ defmodule JidoHiveWorkerRuntime.Control.StatusControllerTest do
        %{runtime: runtime} do
     request = %{
       "assignment" => %{
-        "assignment_id" => "asn-1",
+        "id" => "asn-1",
         "room_id" => "room-1",
         "participant_id" => "participant-1",
-        "participant_role" => "analyst",
-        "target_id" => "target-1",
-        "capability_id" => "capability-1",
-        "session" => %{"provider" => "codex"},
-        "contribution_contract" => %{"allowed_contribution_types" => ["reasoning"]},
-        "context_view" => %{"brief" => "Design a substrate.", "context_objects" => []}
+        "payload" => %{
+          "objective" => "Design a substrate.",
+          "phase" => "analysis",
+          "context" => %{"brief" => "Design a substrate.", "context_objects" => []},
+          "output_contract" => %{"allowed_contribution_types" => ["reasoning"]},
+          "executor" => %{"provider" => "codex", "workspace_root" => "/workspace"}
+        },
+        "meta" => %{
+          "participant_meta" => %{
+            "role" => "analyst",
+            "target_id" => "target-1",
+            "capability_id" => "capability-1"
+          }
+        }
       }
     }
 
@@ -93,7 +109,8 @@ defmodule JidoHiveWorkerRuntime.Control.StatusControllerTest do
 
     assert conn.status == 200
     assert body["assignment_id"] == "asn-1"
-    assert body["status"] == "completed"
+    assert body["kind"] == "reasoning"
+    assert get_in(body, ["meta", "status"]) == "completed"
     assert snapshot.metrics.assignments_completed == 1
     assert [%{assignment_id: "asn-1"}] = snapshot.recent_assignments
   end

@@ -27,7 +27,7 @@ bin/client-worker --worker-index 1
 bin/client-worker --worker-index 2
 ```
 
-Those scripts launch this package with the right relay defaults.
+Those scripts launch this package with the right websocket and API defaults.
 
 ### Build and run the worker escript directly
 
@@ -38,7 +38,8 @@ mix escript.build
 
 ./jido_hive_worker \
   --url ws://127.0.0.1:4000/socket/websocket \
-  --relay-topic relay:workspace-local \
+  --api-base-url http://127.0.0.1:4000/api \
+  --room-id room-local \
   --workspace-id workspace-local \
   --participant-id worker-01 \
   --participant-role worker \
@@ -86,7 +87,7 @@ flowchart LR
 
 ### Boundary rules
 
-- the relay worker owns websocket relay participation
+- the relay worker owns websocket room-channel participation
 - the worker runtime state store owns local assignment and event state
 - `JidoHiveWorkerRuntime.Executor.*` owns prompt shaping, model/session
   execution, repair, and result normalization
@@ -109,9 +110,9 @@ Responsibilities:
 
 The long-lived websocket client that:
 
-- joins the relay
+- joins one or more room channels
 - registers the worker target
-- receives `assignment.start`
+- receives `assignment.offer`
 - invokes the local runtime
 - publishes normalized contributions back to the server
 

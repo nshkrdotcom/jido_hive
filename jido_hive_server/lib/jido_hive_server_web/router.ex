@@ -18,22 +18,31 @@ defmodule JidoHiveServerWeb.Router do
     get "/connectors/installs/:install_id", ConnectorController, :show_install
     post "/connectors/installs/:install_id/complete", ConnectorController, :complete_install
     get "/targets", TargetController, :index
+    post "/targets", TargetController, :create
+    delete "/targets/:target_id", TargetController, :delete
     get "/policies", PoliciesController, :index
     get "/policies/*id", PoliciesController, :show
+    get "/rooms", RoomController, :index
     post "/rooms", RoomController, :create
     get "/rooms/:id", RoomController, :show
-    get "/rooms/:id/sync", RoomController, :sync
+    patch "/rooms/:id", RoomController, :patch
+    delete "/rooms/:id", RoomController, :delete
+
+    post "/rooms/:id/participants", RoomParticipantsController, :create
+    get "/rooms/:id/participants", RoomParticipantsController, :index
+    delete "/rooms/:id/participants/:participant_id", RoomParticipantsController, :delete
+
+    post "/rooms/:id/contributions", RoomContributionsController, :create
+    get "/rooms/:id/contributions", RoomContributionsController, :index
+
+    get "/rooms/:id/assignments", RoomAssignmentsController, :index
+    patch "/rooms/:id/assignments/:assignment_id", RoomAssignmentsController, :update
+
     get "/rooms/:id/events", RoomEventsController, :index
-    get "/rooms/:id/timeline", RoomTimelineController, :index
-    get "/rooms/:id/context_objects", RoomContextController, :index
-    get "/rooms/:id/context_objects/:context_id", RoomContextController, :show
-    post "/rooms/:id/contributions", RoomContributionController, :create
-    post "/rooms/:id/run_operations", RoomController, :start_run_operation
-    get "/rooms/:id/run_operations/:operation_id", RoomController, :show_run_operation
-    get "/rooms/:id/publication_plan", RoomController, :publication_plan
-    get "/rooms/:id/publications", RoomController, :publication_runs
-    post "/rooms/:id/publications", RoomController, :execute_publications
-    post "/rooms/:id/first_slice", RoomController, :run_first_slice
+
+    post "/rooms/:id/runs", RoomRunsController, :create
+    get "/rooms/:id/runs/:run_id", RoomRunsController, :show
+    delete "/rooms/:id/runs/:run_id", RoomRunsController, :delete
   end
 
   scope "/", JidoHiveServerWeb do

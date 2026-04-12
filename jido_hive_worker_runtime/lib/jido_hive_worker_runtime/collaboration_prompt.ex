@@ -25,7 +25,7 @@ defmodule JidoHiveWorkerRuntime.CollaborationPrompt do
       metadata: %{
         "schema_version" => @schema_version,
         "room_id" => Map.get(assignment, "room_id"),
-        "assignment_id" => Map.get(assignment, "assignment_id"),
+        "assignment_id" => Map.get(assignment, "id"),
         "participant_id" => Map.get(assignment, "participant_id"),
         "participant_role" => Map.get(assignment, "participant_role")
       }
@@ -54,7 +54,7 @@ defmodule JidoHiveWorkerRuntime.CollaborationPrompt do
       metadata: %{
         "schema_version" => @schema_version,
         "room_id" => Map.get(assignment, "room_id"),
-        "assignment_id" => Map.get(assignment, "assignment_id"),
+        "assignment_id" => Map.get(assignment, "id"),
         "participant_id" => Map.get(assignment, "participant_id"),
         "participant_role" => Map.get(assignment, "participant_role"),
         "repair" => true
@@ -109,7 +109,7 @@ defmodule JidoHiveWorkerRuntime.CollaborationPrompt do
     Convert this assistant response into the required JSON contract:
     - Return exactly one JSON object.
     - Do not use markdown fences.
-    - Do not return wrapper keys like schema_version, room_id, participant_id, participant_role, target_id, capability_id, assignment_id, phase, objective, status, execution, tool_events, or events.
+    - Do not return wrapper keys like schema_version, room_id, participant_id, participant_role, target_id, capability_id, id, phase, objective, status, execution, tool_events, or events.
 
     #{text}
     """
@@ -158,7 +158,7 @@ defmodule JidoHiveWorkerRuntime.CollaborationPrompt do
     #{output_schema}
 
     Use [] for empty context_objects or artifacts.
-    Do not return wrapper keys like schema_version, room_id, participant_id, participant_role, target_id, capability_id, assignment_id, phase, objective, status, execution, tool_events, or events.
+    Do not return wrapper keys like schema_version, room_id, participant_id, participant_role, target_id, capability_id, id, phase, objective, status, execution, tool_events, or events.
     """
     |> String.trim()
   end
@@ -167,20 +167,22 @@ defmodule JidoHiveWorkerRuntime.CollaborationPrompt do
     packet =
       if map_size(payload) > 0 do
         payload
-        |> Map.put_new("assignment_id", Map.get(assignment, "assignment_id"))
+        |> Map.put_new("id", Map.get(assignment, "id"))
         |> Map.put_new("room_id", Map.get(assignment, "room_id"))
         |> Map.put_new("participant_id", Map.get(assignment, "participant_id"))
         |> Map.put_new("participant_role", Map.get(assignment, "participant_role"))
       else
         %{
-          "assignment_id" => Map.get(assignment, "assignment_id"),
+          "id" => Map.get(assignment, "id"),
           "room_id" => Map.get(assignment, "room_id"),
           "participant_id" => Map.get(assignment, "participant_id"),
           "participant_role" => Map.get(assignment, "participant_role"),
           "phase" => Map.get(assignment, "phase"),
           "objective" => Map.get(assignment, "objective"),
-          "contribution_contract" => Map.get(assignment, "contribution_contract", %{}),
-          "context_view" => Map.get(assignment, "context_view", %{})
+          "output_contract" => Map.get(assignment, "output_contract", %{}),
+          "context" => Map.get(assignment, "context", %{}),
+          "executor" => Map.get(assignment, "executor", %{}),
+          "extension" => Map.get(assignment, "extension", %{})
         }
       end
 
@@ -223,14 +225,14 @@ defmodule JidoHiveWorkerRuntime.CollaborationPrompt do
     #{output_schema}
 
     Preserve meaning. Return JSON only.
-    Do not return wrapper keys like schema_version, room_id, participant_id, participant_role, target_id, capability_id, assignment_id, phase, objective, status, execution, tool_events, or events.
+    Do not return wrapper keys like schema_version, room_id, participant_id, participant_role, target_id, capability_id, id, phase, objective, status, execution, tool_events, or events.
     """
     |> String.trim()
   end
 
   defp contract_types(assignment, key, default) do
-    case get_in(assignment_payload(assignment), ["contribution_contract", key]) ||
-           get_in(assignment, ["contribution_contract", key]) do
+    case get_in(assignment_payload(assignment), ["output_contract", key]) ||
+           get_in(assignment, ["output_contract", key]) do
       values when is_list(values) and values != [] -> values
       _other -> default
     end
@@ -238,7 +240,7 @@ defmodule JidoHiveWorkerRuntime.CollaborationPrompt do
 
   defp available_relation_target_ids(assignment) do
     assignment
-    |> context_view()
+    |> context_objects()
     |> case do
       objects when is_list(objects) ->
         objects
@@ -251,9 +253,9 @@ defmodule JidoHiveWorkerRuntime.CollaborationPrompt do
     end
   end
 
-  defp context_view(assignment) do
-    get_in(assignment_payload(assignment), ["context_view", "context_objects"]) ||
-      get_in(assignment, ["context_view", "context_objects"]) ||
+  defp context_objects(assignment) do
+    get_in(assignment_payload(assignment), ["context", "context_objects"]) ||
+      get_in(assignment, ["context", "context_objects"]) ||
       []
   end
 
@@ -313,8 +315,7 @@ defmodule JidoHiveWorkerRuntime.CollaborationPrompt do
         """
         {
           "summary": "string",
-          "contribution_type": "#{Enum.join(allowed_contribution_types, "|")}",
-          "authority_level": "advisory|binding",
+          "kind": "#{Enum.join(allowed_contribution_types, "|")}",
           "context_objects": [
             {
               "object_type": "#{Enum.join(allowed_object_types, "|")}",

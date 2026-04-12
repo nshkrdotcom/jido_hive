@@ -5,6 +5,8 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 LOCAL_URL="ws://127.0.0.1:4000/socket/websocket"
 PROD_URL="wss://jido-hive-server-test.app.nsai.online/socket/websocket"
+LOCAL_API_BASE="http://127.0.0.1:4000/api"
+PROD_API_BASE="https://jido-hive-server-test.app.nsai.online/api"
 
 usage() {
   cat <<'EOF'
@@ -53,9 +55,14 @@ case "$mode" in
   prod) default_url="$PROD_URL" ;;
 esac
 
+case "$mode" in
+  local) default_api_base="$LOCAL_API_BASE" ;;
+  prod) default_api_base="$PROD_API_BASE" ;;
+esac
+
 URL="${JIDO_HIVE_URL:-$default_url}"
+API_BASE_URL="${JIDO_HIVE_API_BASE:-$default_api_base}"
 WORKSPACE_ID="${JIDO_HIVE_WORKSPACE_ID:-workspace-local}"
-RELAY_TOPIC="${JIDO_HIVE_RELAY_TOPIC:-relay:$WORKSPACE_ID}"
 WORKSPACE_ROOT="${JIDO_HIVE_WORKSPACE_ROOT:-$ROOT}"
 PARTICIPANT_ROLE="${PARTICIPANT_ROLE:-worker}"
 PARTICIPANT_ID="${PARTICIPANT_ID:-worker-local}"
@@ -72,7 +79,7 @@ cd "$ROOT/jido_hive_worker_runtime"
 
 exec mix run --no-halt -e 'JidoHiveWorkerRuntime.CLI.main(System.argv())' -- \
   --url "$URL" \
-  --relay-topic "$RELAY_TOPIC" \
+  --api-base-url "$API_BASE_URL" \
   --workspace-id "$WORKSPACE_ID" \
   --user-id "$USER_ID" \
   --participant-id "$PARTICIPANT_ID" \
@@ -83,6 +90,7 @@ exec mix run --no-halt -e 'JidoHiveWorkerRuntime.CLI.main(System.argv())' -- \
   --provider "$JIDO_HIVE_PROVIDER" \
   --model "$JIDO_HIVE_MODEL" \
   --reasoning-effort "$JIDO_HIVE_REASONING_EFFORT" \
+  ${JIDO_HIVE_ROOM_ID:+--room-id "$JIDO_HIVE_ROOM_ID"} \
   ${JIDO_HIVE_TIMEOUT_MS:+--timeout-ms "$JIDO_HIVE_TIMEOUT_MS"} \
   ${JIDO_HIVE_CLI_PATH:+--cli-path "$JIDO_HIVE_CLI_PATH"} \
   "$@"

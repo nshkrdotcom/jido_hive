@@ -6,6 +6,7 @@ defmodule JidoHiveServer.PersistenceCase do
   alias JidoHiveServer.Persistence.{
     PublicationRunRecord,
     RoomEventRecord,
+    RoomRunRecord,
     RoomSnapshotRecord,
     TargetRecord
   }
@@ -24,6 +25,7 @@ defmodule JidoHiveServer.PersistenceCase do
   def reset_repo! do
     Repo.delete_all(PublicationRunRecord)
     Repo.delete_all(RoomEventRecord)
+    Repo.delete_all(RoomRunRecord)
     Repo.delete_all(RoomSnapshotRecord)
     Repo.delete_all(TargetRecord)
     :ok

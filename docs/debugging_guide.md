@@ -16,7 +16,7 @@ The governing rule is:
 1. server truth first
 2. headless operator client second
 3. shared operator surface third
-4. worker runtime fourth if the bug involves relay targets or assignment execution
+4. worker runtime fourth if the bug involves targets, room channels, or assignment execution
 5. TUI or web UI last
 
 If a behavior reproduces from the headless client or shared surface, it is not a
@@ -27,7 +27,7 @@ UI-only bug.
 Today the system uses two transport styles:
 
 - operator surfaces use the HTTP API
-- workers use the websocket relay
+- workers use websocket room channels
 
 That means:
 
@@ -38,13 +38,13 @@ That means:
 - the Switchyard-backed console is HTTP-backed for room inspection and human
   actions
 - `jido_hive_web` is HTTP-backed for room inspection and human actions
-- `bin/client` and `bin/client-worker` launch websocket relay workers through
+- `bin/client` and `bin/client-worker` launch websocket room workers through
   `jido_hive_worker_runtime`
 
 ## What each layer owns
 
 - `jido_hive_server`
-  authoritative room truth, timeline truth, reduction, publications, connector
+  authoritative room truth, room-event truth, reduction, publications, connector
   state
 - `jido_hive_client`
   reusable operator workflows, room-scoped local session behavior, headless CLI
@@ -67,7 +67,7 @@ Start here before touching the client or TUI.
 ```bash
 setup/hive server-info
 curl -sS http://127.0.0.1:4000/api/rooms/<room-id> | jq
-curl -sS http://127.0.0.1:4000/api/rooms/<room-id>/timeline | jq
+curl -sS http://127.0.0.1:4000/api/rooms/<room-id>/events | jq
 ```
 
 Questions this answers:
@@ -75,7 +75,7 @@ Questions this answers:
 - does the server think the room is `idle`, `running`, `blocked`, or
   `publication_ready`?
 - does the room already contain the contribution or context object you expect?
-- is the timeline moving even if the console looks stale?
+- is the room event feed moving even if the console looks stale?
 
 If server truth is wrong, stop blaming the client, surface, or UI.
 
@@ -146,7 +146,7 @@ Rules:
 This is the right layer for:
 
 - target never appears in `/api/targets`
-- worker never joins the relay
+- worker never joins the room channel
 - assignments never arrive
 - provider execution fails before the contribution is published
 

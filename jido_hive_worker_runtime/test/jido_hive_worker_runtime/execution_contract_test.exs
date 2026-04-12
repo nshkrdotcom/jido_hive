@@ -44,7 +44,7 @@ defmodule JidoHiveWorkerRuntime.ExecutionContractTest do
       "job_id" => "job-1",
       "room_id" => "room-1",
       "participant_id" => "architect",
-      "session" => %{
+      "executor" => %{
         "provider" => "codex",
         "execution_surface" => %{
           "surface_kind" => "ssh_exec",

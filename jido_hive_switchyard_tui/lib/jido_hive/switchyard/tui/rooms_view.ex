@@ -1,8 +1,8 @@
 defmodule JidoHive.Switchyard.TUI.RoomsView do
   @moduledoc false
 
-  alias JidoHive.Switchyard.TUI.State
   alias ExRatatui.Style
+  alias JidoHive.Switchyard.TUI.State
   alias Workbench.Node
   alias Workbench.Widgets.{Detail, Help, LogStream, Modal, Pane, StatusBar}
 

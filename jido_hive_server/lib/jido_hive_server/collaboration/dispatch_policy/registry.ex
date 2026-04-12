@@ -7,20 +7,19 @@ defmodule JidoHiveServer.Collaboration.DispatchPolicy.Registry do
     %{
       policy_id: RoundRobin.id(),
       display_name: "Round Robin",
-      description: "Fixed ordered phases across the configured runtime participants.",
+      description: "Cycles available agent participants against canonical assignments.",
       module: RoundRobin
     },
     %{
       policy_id: ResourcePool.id(),
       display_name: "Resource Pool",
-      description: "Uses the least-used available runtime participant for each assignment.",
+      description: "Prefers the least-used available agent participant.",
       module: ResourcePool
     },
     %{
       policy_id: HumanGate.id(),
       display_name: "Human Gate",
-      description:
-        "Runs automatic assignments, then blocks until a binding human contribution is recorded.",
+      description: "Runs agent assignments, then waits for a linked human contribution.",
       module: HumanGate
     }
   ]
@@ -32,7 +31,7 @@ defmodule JidoHiveServer.Collaboration.DispatchPolicy.Registry do
         policy_id: definition.policy_id,
         display_name: definition.display_name,
         description: definition.description,
-        config: definition.module.definition().config
+        config: Map.get(definition.module.definition(), :config, %{})
       }
     end)
   end
@@ -46,7 +45,7 @@ defmodule JidoHiveServer.Collaboration.DispatchPolicy.Registry do
            policy_id: definition.policy_id,
            display_name: definition.display_name,
            description: definition.description,
-           config: definition.module.definition().config
+           config: Map.get(definition.module.definition(), :config, %{})
          }}
       end
     end)

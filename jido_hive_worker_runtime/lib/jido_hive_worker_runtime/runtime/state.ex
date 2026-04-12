@@ -116,7 +116,7 @@ defmodule JidoHiveWorkerRuntime.Runtime.State do
 
   defp current_assignment(assignment, status) do
     %{
-      assignment_id: Map.get(assignment, "assignment_id"),
+      assignment_id: Map.get(assignment, "id"),
       room_id: Map.get(assignment, "room_id"),
       participant_id: Map.get(assignment, "participant_id"),
       participant_role: Map.get(assignment, "participant_role"),
@@ -127,21 +127,21 @@ defmodule JidoHiveWorkerRuntime.Runtime.State do
 
   defp recent_assignment(assignment, contribution) do
     %{
-      assignment_id: Map.get(assignment, "assignment_id"),
+      assignment_id: Map.get(assignment, "id"),
       room_id: Map.get(assignment, "room_id"),
       participant_id: Map.get(assignment, "participant_id"),
       participant_role: Map.get(assignment, "participant_role"),
       phase: Map.get(assignment, "phase"),
       status: Map.get(contribution, "status", "completed"),
-      summary: Map.get(contribution, "summary"),
-      contribution_type: Map.get(contribution, "contribution_type"),
+      summary: get_in(contribution, ["payload", "summary"]) || Map.get(contribution, "summary"),
+      contribution_type: Map.get(contribution, "kind"),
       completed_at: DateTime.utc_now()
     }
   end
 
   defp last_error(assignment, reason) do
     %{
-      assignment_id: Map.get(assignment, "assignment_id"),
+      assignment_id: Map.get(assignment, "id"),
       room_id: Map.get(assignment, "room_id"),
       reason: inspect(reason),
       occurred_at: DateTime.utc_now()

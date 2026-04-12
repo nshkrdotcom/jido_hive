@@ -55,7 +55,8 @@ defmodule JidoHiveWorkerRuntime.CLI do
 
     Important options:
       --url URL
-      --relay-topic TOPIC
+      --api-base-url URL
+      --room-id ID
       --workspace-id ID
       --participant-id ID
       --participant-role ROLE
@@ -79,7 +80,8 @@ defmodule JidoHiveWorkerRuntime.CLI do
       OptionParser.parse(args,
         strict: [
           url: :string,
-          relay_topic: :string,
+          api_base_url: :string,
+          room_id: :keep,
           workspace_id: :string,
           user_id: :string,
           participant_id: :string,
@@ -124,7 +126,8 @@ defmodule JidoHiveWorkerRuntime.CLI do
 
     [
       url: Keyword.get(opts, :url, "ws://127.0.0.1:4000/socket/websocket"),
-      relay_topic: Keyword.get(opts, :relay_topic, "relay:#{workspace_id}"),
+      api_base_url: Keyword.get(opts, :api_base_url),
+      room_ids: Keyword.get_values(opts, :room_id),
       workspace_id: workspace_id,
       user_id: Keyword.get(opts, :user_id, "user-local"),
       participant_id: Keyword.get(opts, :participant_id, "participant-local"),

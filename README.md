@@ -24,7 +24,7 @@ seam is still wrong.
 This repo currently contains:
 
 - `jido_hive_server`
-  authoritative room engine, REST API, websocket relay, context graph,
+  authoritative room engine, REST API, websocket room transport, context graph,
   publications, connector state
 - `jido_hive_client`
   headless operator API, JSON CLI, and room-scoped local session boundary
@@ -256,7 +256,7 @@ Representative first checks:
 ```bash
 setup/hive server-info
 curl -sS http://127.0.0.1:4000/api/rooms/<room-id> | jq
-curl -sS http://127.0.0.1:4000/api/rooms/<room-id>/timeline | jq
+curl -sS http://127.0.0.1:4000/api/rooms/<room-id>/events | jq
 ```
 
 Then reproduce headlessly:

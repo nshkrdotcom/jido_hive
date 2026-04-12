@@ -13,7 +13,7 @@ defmodule JidoHiveWorkerRuntime.Executor.RepairPolicyTest do
   end
 
   test "builds repair request opts with workspace root and clamped timeout" do
-    job = %{"session" => %{"workspace_root" => "/workspace"}}
+    job = %{"executor" => %{"workspace_root" => "/workspace"}}
     opts = RepairPolicy.request_opts(job, model: "gpt-5.4", timeout_ms: 120_000)
 
     assert opts[:cwd] == "/workspace"
