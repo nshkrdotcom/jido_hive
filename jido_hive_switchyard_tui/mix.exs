@@ -43,6 +43,8 @@ defmodule JidoHive.Switchyard.TUI.MixProject do
       {:jido_hive_publications, path: "../jido_hive_publications"},
       {:jido_hive_surface, path: "../jido_hive_surface"},
       {:jido_hive_switchyard_site, path: "../jido_hive_switchyard_site"},
+      DependencyResolver.jido_signal(override: true),
+      DependencyResolver.jido_integration_contracts(override: true),
       DependencyResolver.switchyard_tui(),
       DependencyResolver.switchyard_tui_framework(),
       DependencyResolver.switchyard_widgets(),

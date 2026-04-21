@@ -3,7 +3,7 @@ defmodule JidoHiveWorkerRuntime.StatusTest do
 
   import ExUnit.CaptureIO
 
-  alias Jido.Harness.RunRequest
+  alias Jido.RuntimeControl.RunRequest
   alias JidoHiveWorkerRuntime.Status
 
   test "client_start prints the selected websocket endpoint" do

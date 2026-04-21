@@ -1,3 +1,7 @@
+unless Code.ensure_loaded?(JidoHive.Build.DependencyResolver) do
+  Code.require_file("../../build_support/dependency_resolver.exs", __DIR__)
+end
+
 unless Code.ensure_loaded?(JidoHive.Build.PackageDocs) do
   Code.require_file("../../build_support/package_docs.exs", __DIR__)
 end
@@ -5,7 +9,7 @@ end
 defmodule JidoHiveConsole.MixProject do
   use Mix.Project
 
-  alias JidoHive.Build.PackageDocs
+  alias JidoHive.Build.{DependencyResolver, PackageDocs}
 
   def project do
     [
@@ -47,6 +51,8 @@ defmodule JidoHiveConsole.MixProject do
       {:jason, "~> 1.4"},
       {:jido_hive_client, path: "../../jido_hive_client"},
       {:jido_hive_switchyard_tui, path: "../../jido_hive_switchyard_tui"},
+      DependencyResolver.jido_signal(override: true),
+      DependencyResolver.jido_integration_contracts(override: true),
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
       {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false},
       {:ex_doc, "~> 0.40", only: [:dev, :test], runtime: false}

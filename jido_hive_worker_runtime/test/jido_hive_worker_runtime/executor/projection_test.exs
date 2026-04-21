@@ -1,7 +1,7 @@
 defmodule JidoHiveWorkerRuntime.Executor.ProjectionTest do
   use ExUnit.Case, async: true
 
-  alias Jido.Harness.ExecutionEvent
+  alias Jido.RuntimeControl.ExecutionEvent
   alias JidoHiveWorkerRuntime.Executor.Projection
 
   test "projects execution events into normalized execution text, cost, and tool lineage" do

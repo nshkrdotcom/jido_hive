@@ -3,8 +3,8 @@ defmodule JidoHiveWorkerRuntime.Executor.Session do
 
   @behaviour JidoHiveWorkerRuntime.Executor
 
-  alias Jido.Harness
-  alias Jido.Harness.ExecutionEvent
+  alias Jido.RuntimeControl
+  alias Jido.RuntimeControl.ExecutionEvent
 
   alias JidoHiveWorkerRuntime.{
     Boundary.ProtocolCodec,
@@ -44,9 +44,9 @@ defmodule JidoHiveWorkerRuntime.Executor.Session do
       request
     )
 
-    with {:ok, session} <- Harness.start_session(@runtime_id, start_opts),
+    with {:ok, session} <- RuntimeControl.start_session(@runtime_id, start_opts),
          {:ok, run, stream} <-
-           Harness.stream_run(session, request,
+           RuntimeControl.stream_run(session, request,
              run_id: run_id,
              driver: Keyword.get(opts, :driver),
              driver_opts:
@@ -58,7 +58,7 @@ defmodule JidoHiveWorkerRuntime.Executor.Session do
         |> build_response(assignment, session, run, opts)
 
       Status.execution_finished(assignment, contribution)
-      :ok = Harness.stop_session(session)
+      :ok = RuntimeControl.stop_session(session)
       {:ok, contribution}
     else
       {:error, _} = error ->
@@ -250,7 +250,7 @@ defmodule JidoHiveWorkerRuntime.Executor.Session do
   end
 
   defp run_repair(session, request, run, assignment, opts) do
-    case Harness.stream_run(session, request,
+    case RuntimeControl.stream_run(session, request,
            run_id: "#{run.run_id}-repair",
            driver: Keyword.get(opts, :driver),
            driver_opts: driver_opts(assignment, opts)

@@ -21,7 +21,7 @@ defmodule JidoHiveWorkerRuntime.Status do
         "target=#{state.target_id} capability=#{state.capability_id} " <>
         "workspace=#{state.workspace_id} url=#{state.socket_url} " <>
         "rooms=#{Enum.join(room_ids, ",")} waiting_for=assignment.offer " <>
-        "services=phoenix-room+jido-harness+asm+#{provider_label(state.executor)}"
+        "services=phoenix-room+jido-runtime-control+asm+#{provider_label(state.executor)}"
     )
   end
 
@@ -71,7 +71,7 @@ defmodule JidoHiveWorkerRuntime.Status do
     emit(
       "executing room=#{assignment["room_id"]} phase=#{phase(assignment)} provider=#{provider_label(opts[:provider])} " <>
         "assigned_role=#{assigned_role} model=#{opts[:model] || "default"} " <>
-        "reasoning=#{opts[:reasoning_effort] || "default"} runtime=asm path=jido.harness->asm"
+        "reasoning=#{opts[:reasoning_effort] || "default"} runtime=asm path=jido.runtime_control->asm"
     )
 
     emit_preview(

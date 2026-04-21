@@ -6,12 +6,12 @@ defmodule JidoHiveWorkerRuntime.Application do
   @impl true
   def start(_type, _args) do
     Application.put_env(
-      :jido_harness,
+      :jido_runtime_control,
       :runtime_drivers,
       Map.put(
-        Application.get_env(:jido_harness, :runtime_drivers, %{}),
+        Application.get_env(:jido_runtime_control, :runtime_drivers, %{}),
         :asm,
-        Jido.Integration.V2.RuntimeAsmBridge.HarnessDriver
+        Jido.Integration.V2.AsmRuntimeBridge.RuntimeControlDriver
       )
     )
 

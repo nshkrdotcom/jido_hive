@@ -1,3 +1,7 @@
+unless Code.ensure_loaded?(JidoHive.Build.DependencyResolver) do
+  Code.require_file("../build_support/dependency_resolver.exs", __DIR__)
+end
+
 unless Code.ensure_loaded?(JidoHive.Build.PackageDocs) do
   Code.require_file("../build_support/package_docs.exs", __DIR__)
 end
@@ -5,7 +9,7 @@ end
 defmodule JidoHiveWeb.MixProject do
   use Mix.Project
 
-  alias JidoHive.Build.PackageDocs
+  alias JidoHive.Build.{DependencyResolver, PackageDocs}
 
   def project do
     [
@@ -59,6 +63,8 @@ defmodule JidoHiveWeb.MixProject do
       {:jido_hive_client, path: "../jido_hive_client"},
       {:jido_hive_publications, path: "../jido_hive_publications"},
       {:jido_hive_surface, path: "../jido_hive_surface"},
+      DependencyResolver.jido_signal(override: true),
+      DependencyResolver.jido_integration_contracts(override: true),
       {:phoenix, "~> 1.8.1"},
       {:phoenix_html, "~> 4.1"},
       {:phoenix_live_reload, "~> 1.2", only: :dev},

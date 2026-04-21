@@ -14,7 +14,10 @@ defmodule JidoHiveSurface.AppKitSurface do
       when is_binary(api_base_url) and is_binary(room_id) and is_binary(actor_id) do
     ScopeObjects.host_scope(%{
       scope_id: "room/#{room_id}",
+      session_id: "room/#{room_id}/session",
+      tenant_id: "jido-hive",
       actor_id: actor_id,
+      environment: "default",
       metadata: %{api_base_url: api_base_url, room_id: room_id}
     })
   end
@@ -66,10 +69,29 @@ defmodule JidoHiveSurface.AppKitSurface do
 
     with {:ok, scope} <- room_scope(api_base_url, room_id, actor_id),
          {:ok, chat_result} <-
-           ChatSurface.submit_turn(scope, text, config: Keyword.get(opts, :config)),
+           ChatSurface.submit_turn(scope, text, chat_surface_opts(opts)),
          {:ok, steering} <- Rooms.submit_steering(api_base_url, room_id, identity, text, opts) do
       {:ok, %{scope: scope, chat_result: chat_result, steering: steering}}
     end
+  end
+
+  defp chat_surface_opts(opts) do
+    opts
+    |> Keyword.take([
+      :client_trace_id,
+      :config,
+      :domain_module,
+      :external_integration,
+      :idempotency_key,
+      :kernel_runtime,
+      :route,
+      :route_sources,
+      :semantic_runtime,
+      :trace_id,
+      :workspace_id,
+      :workspace_root
+    ])
+    |> Keyword.put_new(:config, Keyword.get(opts, :config))
   end
 
   defp route_state(operation) do

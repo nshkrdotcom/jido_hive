@@ -70,7 +70,7 @@ flowchart LR
 
     subgraph External[External systems]
       Phoenix[Phoenix relay]
-      Harness[Jido.Harness]
+      RuntimeControl[Jido.RuntimeControl]
       ASM[ASM runtime bridge]
       Provider[provider runtime]
     end
@@ -79,8 +79,8 @@ flowchart LR
     Relay --> Runtime
     Relay --> Phoenix
     Runtime --> Executor
-    Executor --> Harness
-    Harness --> ASM
+    Executor --> RuntimeControl
+    RuntimeControl --> ASM
     ASM --> Provider
     Control --> Runtime
 ```

@@ -1,7 +1,22 @@
 defmodule JidoHiveSurface.AppKitSurfaceTest do
   use ExUnit.Case, async: true
 
+  alias Citadel.DomainSurface.Adapters.CitadelAdapter.Accepted
   alias JidoHiveSurface.AppKitSurface
+
+  defmodule FakeKernelRuntime do
+    def dispatch_command(command, _opts) do
+      {:ok,
+       Accepted.new!(%{
+         request_id: command.idempotency_key,
+         session_id: command.context[:session_id],
+         trace_id: command.trace_id,
+         ingress_path: :direct_intent_envelope,
+         lifecycle_event: :live_owner,
+         continuity_revision: 1
+       })}
+    end
+  end
 
   defmodule OperatorStub do
     def fetch_room(_api_base_url, room_id) do
@@ -67,13 +82,25 @@ defmodule JidoHiveSurface.AppKitSurfaceTest do
                  participant_role: "coordinator"
                },
                "Need a binding decision",
-               room_session_module: RoomSessionStub
+               room_session_module: RoomSessionStub,
+               idempotency_key: "jido-hive-steering-1",
+               domain_module: Citadel.DomainSurface.Examples.ProvingGround,
+               route_sources: [
+                 Citadel.DomainSurface.Examples.ProvingGround.Routes.CompileWorkspace
+               ],
+               kernel_runtime: {FakeKernelRuntime, []}
              )
 
     assert result.scope.scope_id == "room/room-1"
+    assert result.scope.session_id == "room/room-1/session"
+    assert result.scope.tenant_id == "jido-hive"
     assert result.chat_result.surface == :conversation
     assert result.chat_result.state == :accepted
-    assert result.chat_result.payload.turn.actor_id == "alice"
+    assert result.chat_result.payload.accepted.request_id == "jido-hive-steering-1"
+
+    assert result.chat_result.payload.action_request.args["objective"] ==
+             "Need a binding decision"
+
     assert result.steering.text == "Need a binding decision"
   end
 end

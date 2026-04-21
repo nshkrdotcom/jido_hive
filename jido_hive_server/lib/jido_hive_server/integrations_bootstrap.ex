@@ -4,9 +4,9 @@ defmodule JidoHiveServer.IntegrationsBootstrap do
   use GenServer
 
   alias Jido.Integration.V2
+  alias Jido.Integration.V2.AsmRuntimeBridge.RuntimeControlDriver
   alias Jido.Integration.V2.Connectors.{GitHub, Notion}
   alias Jido.Integration.V2.ControlPlane.Stores
-  alias Jido.Integration.V2.RuntimeAsmBridge.HarnessDriver
   alias Jido.Integration.V2.TargetDescriptor
   alias JidoHiveServer.Connectors.WorkspaceSession
 
@@ -24,9 +24,13 @@ defmodule JidoHiveServer.IntegrationsBootstrap do
 
   def bootstrap! do
     Application.put_env(
-      :jido_harness,
+      :jido_runtime_control,
       :runtime_drivers,
-      Map.put(Application.get_env(:jido_harness, :runtime_drivers, %{}), :asm, HarnessDriver)
+      Map.put(
+        Application.get_env(:jido_runtime_control, :runtime_drivers, %{}),
+        :asm,
+        RuntimeControlDriver
+      )
     )
 
     Enum.each(@connectors, fn connector ->

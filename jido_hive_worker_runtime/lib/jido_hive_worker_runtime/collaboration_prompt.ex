@@ -3,7 +3,7 @@ defmodule JidoHiveWorkerRuntime.CollaborationPrompt do
 
   @behaviour JidoHiveWorkerRuntime.AssignmentBuilder
 
-  alias Jido.Harness.RunRequest
+  alias Jido.RuntimeControl.RunRequest
   alias JidoHiveWorkerRuntime.ExecutionContract
 
   @schema_version "jido_hive/assignment_prompt.v1"

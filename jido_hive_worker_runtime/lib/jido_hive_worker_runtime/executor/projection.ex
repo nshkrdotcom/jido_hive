@@ -1,7 +1,7 @@
 defmodule JidoHiveWorkerRuntime.Executor.Projection do
   @moduledoc false
 
-  alias Jido.Harness.ExecutionEvent
+  alias Jido.RuntimeControl.ExecutionEvent
 
   @spec build([ExecutionEvent.t()], map(), map()) :: map()
   def build(events, run, session) when is_list(events) and is_map(run) and is_map(session) do

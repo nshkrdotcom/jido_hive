@@ -23,13 +23,13 @@ COPY jido_hive_server/config config
 RUN mix deps.get
 RUN MIX_ENV=dev mix deps.get \
   && MIX_ENV=dev mix deps.compile agent_session_manager --include-children \
-  && MIX_ENV=dev mix deps.compile jido_integration_v2_runtime_asm_bridge --include-children
+  && MIX_ENV=dev mix deps.compile jido_integration_v2_asm_runtime_bridge --include-children
 RUN mix deps.compile
 RUN mix deps.compile jido jido_action jido_signal jido_shell --include-children
 RUN mix deps.compile \
   jido_harness \
   jido_integration_v2 \
-  jido_integration_v2_runtime_asm_bridge \
+  jido_integration_v2_asm_runtime_bridge \
   jido_integration_v2_github \
   jido_integration_v2_notion \
   --include-children

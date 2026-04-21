@@ -88,14 +88,27 @@ defmodule JidoHive.Build.DependencyResolver do
     )
   end
 
-  def jido_integration_runtime_asm_bridge(opts \\ []) do
+  def jido_integration_contracts(opts \\ []) do
     resolve(
-      :jido_integration_v2_runtime_asm_bridge,
-      ["../jido_integration/core/runtime_asm_bridge"],
+      :jido_integration_contracts,
+      ["../jido_integration/core/contracts"],
       [
         git: @jido_integration_repo,
         branch: "main",
-        subdir: "core/runtime_asm_bridge"
+        subdir: "core/contracts"
+      ],
+      opts
+    )
+  end
+
+  def jido_integration_asm_runtime_bridge(opts \\ []) do
+    resolve(
+      :jido_integration_v2_asm_runtime_bridge,
+      ["../jido_integration/core/asm_runtime_bridge"],
+      [
+        git: @jido_integration_repo,
+        branch: "main",
+        subdir: "core/asm_runtime_bridge"
       ],
       opts
     )

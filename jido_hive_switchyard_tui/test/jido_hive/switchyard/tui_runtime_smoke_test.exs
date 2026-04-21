@@ -4,6 +4,7 @@ defmodule JidoHive.Switchyard.TUIRuntimeSmokeTest do
   alias ExRatatui.Runtime
   alias JidoHive.Switchyard.Site
   alias JidoHive.Switchyard.TUI.RoomsComponent
+  alias JidoHive.Switchyard.TUI.State, as: RoomsState
   alias Switchyard.Site.Local
   alias Switchyard.TUI.App
 
@@ -329,16 +330,28 @@ defmodule JidoHive.Switchyard.TUIRuntimeSmokeTest do
 
   defp root_state(pid) do
     pid
-    |> :sys.get_state()
-    |> Map.fetch!(:user_state)
+    |> runtime_state()
     |> Map.fetch!(:root_state)
   end
 
   defp component_state(pid) do
     pid
-    |> root_state()
-    |> Map.fetch!(:app_component_states)
-    |> Map.fetch!(RoomsComponent.app_id())
+    |> runtime_state()
+    |> Map.fetch!(:component_registry)
+    |> Enum.find_value(fn
+      {_path, %{module: RoomsComponent, state: state}} -> state
+      _other -> nil
+    end)
+    |> case do
+      nil -> RoomsState.new()
+      state -> state
+    end
+  end
+
+  defp runtime_state(pid) do
+    pid
+    |> :sys.get_state()
+    |> Map.fetch!(:user_state)
   end
 
   defp wait_until(fun, timeout_ms \\ 1_000)
