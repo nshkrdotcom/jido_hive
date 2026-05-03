@@ -5,7 +5,12 @@ defmodule JidoHiveServer.Collaboration.RoomServer do
 
   alias JidoHiveServer.Collaboration.AssignmentBuilders.Basic
   alias JidoHiveServer.Collaboration.DispatchPolicy.Registry, as: PolicyRegistry
-  alias JidoHiveServer.Collaboration.{EventReducer, ParticipantSessionRegistry}
+
+  alias JidoHiveServer.Collaboration.{
+    ContributionValidator,
+    EventReducer,
+    ParticipantSessionRegistry
+  }
 
   alias JidoHiveServer.Collaboration.Schema.{
     Assignment,
@@ -533,34 +538,45 @@ defmodule JidoHiveServer.Collaboration.RoomServer do
 
   defp validate_contribution(snapshot, %Contribution{} = contribution) do
     case contribution_validator(snapshot) do
-      nil -> :ok
-      validator -> validator.validate(contribution, snapshot.room)
+      ContributionValidator ->
+        ContributionValidator.validate(contribution, snapshot.room)
+
+      _other ->
+        :ok
     end
   end
 
   defp contribution_validator(snapshot) do
-    resolve_module(get_in(snapshot.room.config, ["contribution_validator"]))
+    snapshot.room.config
+    |> get_in(["contribution_validator"])
+    |> contribution_validator_module()
   end
 
   defp assignment_builder(snapshot) do
     snapshot.room.config
     |> get_in(["assignment_builder"])
-    |> resolve_module()
-    |> case do
-      nil -> Basic
-      module -> module
-    end
+    |> assignment_builder_module()
   end
 
-  defp resolve_module(module) when is_atom(module), do: module
+  defp contribution_validator_module(ContributionValidator), do: ContributionValidator
 
-  defp resolve_module(module) when is_binary(module) do
-    String.to_existing_atom(module)
-  rescue
-    ArgumentError -> nil
-  end
+  defp contribution_validator_module("Elixir.JidoHiveServer.Collaboration.ContributionValidator"),
+    do: ContributionValidator
 
-  defp resolve_module(_module), do: nil
+  defp contribution_validator_module("JidoHiveServer.Collaboration.ContributionValidator"),
+    do: ContributionValidator
+
+  defp contribution_validator_module(_module), do: nil
+
+  defp assignment_builder_module(Basic), do: Basic
+
+  defp assignment_builder_module("Elixir.JidoHiveServer.Collaboration.AssignmentBuilders.Basic"),
+    do: Basic
+
+  defp assignment_builder_module("JidoHiveServer.Collaboration.AssignmentBuilders.Basic"),
+    do: Basic
+
+  defp assignment_builder_module(_module), do: Basic
 
   defp dispatch_context(snapshot) do
     %{
@@ -614,7 +630,7 @@ defmodule JidoHiveServer.Collaboration.RoomServer do
   end
 
   defp broadcast_room_event(room_id, %RoomEvent{} = event) do
-    JidoHiveServerWeb.Endpoint.broadcast("room:#{room_id}", "room.event", %{
+    JidoHiveServerWeb.Endpoint.broadcast("room:" <> room_id, "room.event", %{
       "data" => room_event_payload(event)
     })
   end

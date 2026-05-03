@@ -158,13 +158,14 @@ defmodule JidoHiveWorkerRuntime.ResultDecoder do
   defp valid_text?(_value), do: false
 
   defp value(map, key) when is_map(map) and is_binary(key) do
-    Map.get(map, key) || Map.get(map, existing_atom_key(key))
+    Map.get(map, key) || Map.get(map, atom_key_for(map, key))
   end
 
-  defp existing_atom_key(key) when is_binary(key) do
-    String.to_existing_atom(key)
-  rescue
-    ArgumentError -> nil
+  defp atom_key_for(map, key) when is_map(map) and is_binary(key) do
+    Enum.find(Map.keys(map), fn
+      atom_key when is_atom(atom_key) -> Atom.to_string(atom_key) == key
+      _other -> false
+    end)
   end
 
   defp extract_json(text) when is_binary(text) do
@@ -189,13 +190,22 @@ defmodule JidoHiveWorkerRuntime.ResultDecoder do
   end
 
   defp fenced_json(text) do
-    case Regex.run(~r/```json\s*(\{.*\})\s*```/s, text, capture: :all_but_first) do
-      [json] when is_binary(json) ->
-        if valid_json?(json), do: json
-
-      _ ->
-        nil
+    case String.split(text, "```json", parts: 2) do
+      [_before, after_marker] -> fenced_candidate(after_marker)
+      _other -> nil
     end
+  end
+
+  defp fenced_candidate(after_marker) do
+    case String.split(after_marker, "```", parts: 2) do
+      [candidate, _after_fence] -> valid_json_candidate(candidate)
+      _other -> nil
+    end
+  end
+
+  defp valid_json_candidate(candidate) do
+    json = String.trim(candidate)
+    if valid_json?(json), do: json
   end
 
   defp first_object_json(text) do

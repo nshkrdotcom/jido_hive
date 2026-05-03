@@ -337,10 +337,12 @@ defmodule JidoHiveClient.Operator do
   defp expired?(_credential), do: false
 
   defp random_code do
-    4
-    |> :crypto.strong_rand_bytes()
-    |> Base.encode16(case: :upper)
-    |> String.replace(~r/(....)(....)/, "\\1-\\2")
+    code =
+      4
+      |> :crypto.strong_rand_bytes()
+      |> Base.encode16(case: :upper)
+
+    String.slice(code, 0, 4) <> "-" <> String.slice(code, 4, 4)
   end
 
   defp unwrap_data({:ok, %{"data" => data}}) when is_map(data), do: {:ok, data}

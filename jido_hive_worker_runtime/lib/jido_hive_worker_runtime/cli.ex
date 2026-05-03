@@ -215,7 +215,18 @@ defmodule JidoHiveWorkerRuntime.CLI do
 
   defp apply_structured_module_levels(_level), do: :ok
 
-  defp parse_provider(provider) when is_binary(provider), do: String.to_atom(provider)
+  defp parse_provider(provider) when is_binary(provider) do
+    case String.downcase(String.trim(provider)) do
+      "amp" -> :amp
+      "claude" -> :claude
+      "codex" -> :codex
+      "gemini" -> :gemini
+      "mock" -> :mock
+      "scripted" -> :scripted
+      _other -> :codex
+    end
+  end
+
   defp parse_provider(provider) when is_atom(provider), do: provider
 
   defp parse_reasoning_effort(nil), do: nil
@@ -227,7 +238,11 @@ defmodule JidoHiveWorkerRuntime.CLI do
     |> String.downcase()
     |> case do
       "" -> nil
-      effort -> String.to_atom(effort)
+      "low" -> :low
+      "medium" -> :medium
+      "high" -> :high
+      "xhigh" -> :xhigh
+      _other -> nil
     end
   end
 

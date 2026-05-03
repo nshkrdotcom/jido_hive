@@ -20,7 +20,7 @@ defmodule JidoHiveClient.TestHTTPServer do
     {:ok, %__MODULE__{listen_socket: listen_socket, port: port, acceptor: acceptor}}
   end
 
-  def base_url(%__MODULE__{port: port}), do: "http://127.0.0.1:#{port}"
+  def base_url(%__MODULE__{port: port}), do: "http://127.0.0.1:" <> Integer.to_string(port)
 
   def stop(%__MODULE__{acceptor: acceptor, listen_socket: listen_socket}) do
     Process.exit(acceptor, :shutdown)

@@ -218,15 +218,12 @@ defmodule JidoHiveSurface.Rooms do
       value when is_binary(value) ->
         case Integer.parse(String.trim(value)) do
           {parsed, ""} when parsed > 0 -> {:ok, parsed}
-          _other -> {:error, %{String.to_existing_atom(key) => "must be a positive integer"}}
+          _other -> {:error, %{field_atom(key) => "must be a positive integer"}}
         end
 
       _other ->
-        {:error, %{String.to_existing_atom(key) => "must be a positive integer"}}
+        {:error, %{field_atom(key) => "must be a positive integer"}}
     end
-  rescue
-    ArgumentError ->
-      {:error, %{invalid: "unexpected field"}}
   end
 
   defp generated_room_id do
@@ -234,10 +231,21 @@ defmodule JidoHiveSurface.Rooms do
   end
 
   defp value(map, key) when is_map(map) do
-    Map.get(map, key) || Map.get(map, String.to_existing_atom(key))
-  rescue
-    ArgumentError -> Map.get(map, key)
+    Map.get(map, key) || Map.get(map, atom_key_for(map, key))
   end
+
+  defp atom_key_for(map, key) when is_map(map) and is_binary(key) do
+    Enum.find(Map.keys(map), fn
+      atom_key when is_atom(atom_key) -> Atom.to_string(atom_key) == key
+      _other -> false
+    end)
+  end
+
+  defp atom_key_for(_map, _key), do: nil
+
+  defp field_atom("max_assignments"), do: :max_assignments
+  defp field_atom("assignment_timeout_ms"), do: :assignment_timeout_ms
+  defp field_atom(_key), do: :invalid
 
   defp maybe_put_option(opts, _key, nil), do: opts
   defp maybe_put_option(opts, key, value), do: Keyword.put(opts, key, value)

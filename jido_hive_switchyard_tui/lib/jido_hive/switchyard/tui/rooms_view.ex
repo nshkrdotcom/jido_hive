@@ -288,7 +288,10 @@ defmodule JidoHive.Switchyard.TUI.RoomsView do
     |> maybe_add_flag(flags.binding, " [BINDING]")
     |> maybe_add_flag(flags.conflict, " [CONFLICT]")
     |> maybe_add_flag(flags.stale, " [STALE]")
-    |> maybe_add_flag(flags.duplicate_count > 0, " [DUP:#{flags.duplicate_count}]")
+    |> maybe_add_flag(
+      flags.duplicate_count > 0,
+      " [DUP:" <> to_string(flags.duplicate_count) <> "]"
+    )
     |> Enum.join()
   end
 
@@ -309,7 +312,10 @@ defmodule JidoHive.Switchyard.TUI.RoomsView do
   end
 
   defp graph_item_line(item) do
-    graph_suffix = " [in:#{item.graph.incoming} out:#{item.graph.outgoing}]"
+    graph_suffix =
+      " [in:" <>
+        to_string(item.graph.incoming) <> " out:" <> to_string(item.graph.outgoing) <> "]"
+
     selected = if item.selected?, do: "> ", else: "  "
     flags = item_flags(item.flags)
     "#{selected}#{item.title}#{graph_suffix}#{flags}"

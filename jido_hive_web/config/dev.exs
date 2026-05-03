@@ -46,10 +46,7 @@ config :jido_hive_web, JidoHiveWebWeb.Endpoint,
 config :jido_hive_web, JidoHiveWebWeb.Endpoint,
   live_reload: [
     web_console_logger: true,
-    patterns: [
-      ~r"priv/static/(?!uploads/).*(js|css|png|jpeg|jpg|gif|svg)$",
-      ~r"lib/jido_hive_web_web/(?:controllers|live|components|router)/?.*\.(ex|heex)$"
-    ]
+    patterns: []
   ]
 
 # Enable dev routes for dashboard and mailbox

@@ -149,14 +149,15 @@ defmodule JidoHiveContextGraph.ContributionValidator do
     do: Map.get(relation, :target_id) || Map.get(relation, "target_id")
 
   defp value(map, key) when is_map(map) and is_binary(key) do
-    Map.get(map, key) || Map.get(map, existing_atom_key(key))
+    Map.get(map, key) || Map.get(map, atom_key_for(map, key))
   end
 
   defp value(_map, _key), do: nil
 
-  defp existing_atom_key(key) when is_binary(key) do
-    String.to_existing_atom(key)
-  rescue
-    ArgumentError -> nil
+  defp atom_key_for(map, key) when is_map(map) and is_binary(key) do
+    Enum.find(Map.keys(map), fn
+      atom_key when is_atom(atom_key) -> Atom.to_string(atom_key) == key
+      _other -> false
+    end)
   end
 end

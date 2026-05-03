@@ -100,6 +100,11 @@ defmodule JidoHivePublications.Infrastructure do
     :jido_hive_publications
     |> Application.get_env(:server_env, System.get_env("MIX_ENV", "dev"))
     |> to_string()
-    |> String.to_atom()
+    |> normalize_env()
   end
+
+  defp normalize_env("dev"), do: :dev
+  defp normalize_env("test"), do: :test
+  defp normalize_env("prod"), do: :prod
+  defp normalize_env(_other), do: :dev
 end

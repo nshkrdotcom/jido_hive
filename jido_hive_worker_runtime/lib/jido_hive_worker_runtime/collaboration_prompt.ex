@@ -292,7 +292,7 @@ defmodule JidoHiveWorkerRuntime.CollaborationPrompt do
   end
 
   defp prompt_config_value(config, key) when is_map(config) do
-    Map.get(config, key) || Map.get(config, existing_atom_key(key))
+    Map.get(config, key) || Map.get(config, atom_key_for(config, key))
   end
 
   defp prompt_config_types(config, key) when is_map(config) do
@@ -351,9 +351,10 @@ defmodule JidoHiveWorkerRuntime.CollaborationPrompt do
     end
   end
 
-  defp existing_atom_key(key) when is_binary(key) do
-    String.to_existing_atom(key)
-  rescue
-    ArgumentError -> nil
+  defp atom_key_for(map, key) when is_map(map) and is_binary(key) do
+    Enum.find(Map.keys(map), fn
+      atom_key when is_atom(atom_key) -> Atom.to_string(atom_key) == key
+      _other -> false
+    end)
   end
 end

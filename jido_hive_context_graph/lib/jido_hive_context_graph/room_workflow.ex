@@ -158,14 +158,14 @@ defmodule JidoHiveContextGraph.RoomWorkflow do
   defp normalize_key(key) when is_atom(key), do: key
 
   defp normalize_key(key) when is_binary(key) do
-    case existing_atom_key(key) do
+    case canonical_key(key) do
       nil -> key
       atom_key -> atom_key
     end
   end
 
   defp value(map, key) when is_map(map) and is_binary(key) do
-    Map.get(map, key) || Map.get(map, existing_atom_key(key))
+    Map.get(map, key) || Map.get(map, atom_key_for(map, key))
   end
 
   defp humanize_status(status) when is_binary(status) do
@@ -175,9 +175,37 @@ defmodule JidoHiveContextGraph.RoomWorkflow do
     |> Enum.map_join(" ", &String.capitalize/1)
   end
 
-  defp existing_atom_key(key) when is_binary(key) do
-    String.to_existing_atom(key)
-  rescue
-    ArgumentError -> nil
+  defp canonical_key("assignments"), do: :assignments
+  defp canonical_key("blockers"), do: :blockers
+  defp canonical_key("contradictions"), do: :contradictions
+  defp canonical_key("contributions"), do: :contributions
+  defp canonical_key("context_id"), do: :context_id
+  defp canonical_key("count"), do: :count
+  defp canonical_key("decisions"), do: :decisions
+  defp canonical_key("duplicate_groups"), do: :duplicate_groups
+  defp canonical_key("duplicate_count"), do: :duplicate_count
+  defp canonical_key("duplicates"), do: :duplicates
+  defp canonical_key("events"), do: :events
+  defp canonical_key("focus_candidates"), do: :focus_candidates
+  defp canonical_key("graph_counts"), do: :graph_counts
+  defp canonical_key("kind"), do: :kind
+  defp canonical_key("next_action"), do: :next_action
+  defp canonical_key("objective"), do: :objective
+  defp canonical_key("participants"), do: :participants
+  defp canonical_key("publish_blockers"), do: :publish_blockers
+  defp canonical_key("publish_ready"), do: :publish_ready
+  defp canonical_key("questions"), do: :questions
+  defp canonical_key("room"), do: :room
+  defp canonical_key("runs"), do: :runs
+  defp canonical_key("stage"), do: :stage
+  defp canonical_key("stale"), do: :stale
+  defp canonical_key("total"), do: :total
+  defp canonical_key(_key), do: nil
+
+  defp atom_key_for(map, key) when is_map(map) and is_binary(key) do
+    Enum.find(Map.keys(map), fn
+      atom_key when is_atom(atom_key) -> Atom.to_string(atom_key) == key
+      _other -> false
+    end)
   end
 end

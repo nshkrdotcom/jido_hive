@@ -81,6 +81,18 @@ defmodule Mix.Tasks.JidoHive.Cutover.ExportLegacyRoomState do
   defp sanitize(value) do
     value
     |> String.replace(":", "-")
-    |> String.replace(~r/[^A-Za-z0-9._-]/u, "_")
+    |> String.graphemes()
+    |> Enum.map_join(&safe_filename_grapheme/1)
+  end
+
+  defp safe_filename_grapheme(grapheme) do
+    if String.contains?(
+         "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._-",
+         grapheme
+       ) do
+      grapheme
+    else
+      "_"
+    end
   end
 end

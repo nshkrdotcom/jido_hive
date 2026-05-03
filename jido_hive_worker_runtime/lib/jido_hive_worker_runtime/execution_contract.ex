@@ -101,7 +101,7 @@ defmodule JidoHiveWorkerRuntime.ExecutionContract do
   defp provider_from_job(job) when is_map(job) do
     case executor_value(job, "provider") || payload_field(job, "provider") ||
            Map.get(job, "provider") do
-      value when is_binary(value) and value != "" -> String.to_atom(value)
+      value when is_binary(value) -> provider_atom(value)
       value when is_atom(value) -> value
       _other -> :codex
     end
@@ -132,7 +132,7 @@ defmodule JidoHiveWorkerRuntime.ExecutionContract do
   defp normalize_reasoning_effort(value) when is_binary(value) do
     case String.trim(value) do
       "" -> nil
-      normalized -> String.to_atom(String.downcase(normalized))
+      normalized -> reasoning_effort_atom(normalized)
     end
   end
 
@@ -212,7 +212,36 @@ defmodule JidoHiveWorkerRuntime.ExecutionContract do
   end
 
   defp value_from_map(map, key) when is_map(map) and is_binary(key) do
-    Map.get(map, key) || Map.get(map, String.to_atom(key))
+    Map.get(map, key) || Map.get(map, atom_key_for(map, key))
+  end
+
+  defp provider_atom(value) when is_binary(value) do
+    case String.downcase(String.trim(value)) do
+      "amp" -> :amp
+      "claude" -> :claude
+      "codex" -> :codex
+      "gemini" -> :gemini
+      "mock" -> :mock
+      "scripted" -> :scripted
+      _other -> :codex
+    end
+  end
+
+  defp reasoning_effort_atom(value) when is_binary(value) do
+    case String.downcase(String.trim(value)) do
+      "low" -> :low
+      "medium" -> :medium
+      "high" -> :high
+      "xhigh" -> :xhigh
+      _other -> nil
+    end
+  end
+
+  defp atom_key_for(map, key) when is_map(map) and is_binary(key) do
+    Enum.find(Map.keys(map), fn
+      atom_key when is_atom(atom_key) -> Atom.to_string(atom_key) == key
+      _other -> false
+    end)
   end
 
   defp put_new_opt(opts, _key, nil), do: opts

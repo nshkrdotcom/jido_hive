@@ -42,6 +42,50 @@ defmodule JidoHiveServerWeb.ConnectorController do
   ]
   @datetime_value_keys [:now, :expires_at, :refresh_token_expires_at, :callback_received_at]
 
+  @atom_values %{
+    auth_type: %{
+      "api_key" => :api_key,
+      "none" => :none,
+      "oauth" => :oauth,
+      "oauth2" => :oauth2,
+      "token" => :token
+    },
+    environment: %{
+      "dev" => :dev,
+      "local" => :local,
+      "prod" => :prod,
+      "production" => :prod,
+      "test" => :test
+    },
+    flow_kind: %{
+      "browser" => :browser,
+      "device" => :device,
+      "manual" => :manual,
+      "oauth" => :oauth,
+      "oauth2" => :oauth2
+    },
+    management_mode: %{
+      "external" => :external,
+      "managed" => :managed,
+      "manual" => :manual,
+      "operator" => :operator
+    },
+    secret_source: %{
+      "external" => :external,
+      "inline" => :inline,
+      "manual" => :manual,
+      "operator" => :operator,
+      "operator_input" => :operator_input
+    },
+    source: %{
+      "callback" => :callback,
+      "manual" => :manual,
+      "operator" => :operator,
+      "operator_input" => :operator_input,
+      "server" => :server
+    }
+  }
+
   def connections(conn, %{"connector_id" => connector_id} = params) do
     filters =
       %{}
@@ -105,7 +149,9 @@ defmodule JidoHiveServerWeb.ConnectorController do
   defp normalize_install_value(key, value)
 
   defp normalize_install_value(key, value) when key in @atom_value_keys and is_binary(value) do
-    String.to_atom(value)
+    @atom_values
+    |> Map.fetch!(key)
+    |> Map.get(value, value)
   end
 
   defp normalize_install_value(key, value)

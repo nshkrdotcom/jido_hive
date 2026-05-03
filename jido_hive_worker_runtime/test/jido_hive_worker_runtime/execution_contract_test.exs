@@ -85,4 +85,18 @@ defmodule JidoHiveWorkerRuntime.ExecutionContractTest do
     assert start_opts[:execution_environment]["workspace_root"] == "/workspace"
     assert start_opts[:execution_environment]["allowed_tools"] == ["git.status"]
   end
+
+  test "apply_session_defaults/2 bounds provider and reasoning values from jobs" do
+    job = %{
+      "executor" => %{
+        "provider" => "future-provider",
+        "provider_options" => %{"reasoning_effort" => "invented"}
+      }
+    }
+
+    defaults = ExecutionContract.apply_session_defaults(job, [])
+
+    assert defaults[:provider] == :codex
+    refute Keyword.has_key?(defaults, :reasoning_effort)
+  end
 end

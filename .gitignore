@@ -11,3 +11,4 @@ cli_subprocess_core/
 repomix*.xml
 /jido_hive_client/jido_hive_client
 /examples/jido_hive_console/hive
+**/doc/

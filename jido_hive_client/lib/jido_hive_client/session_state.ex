@@ -18,7 +18,7 @@ defmodule JidoHiveClient.SessionState do
   def new(opts \\ []) do
     identity = identity_from_opts(opts)
     room_id = Keyword.fetch!(opts, :room_id)
-    session_id = "#{identity.workspace_id}:#{room_id}:#{identity.participant_id}"
+    session_id = Enum.join([identity.workspace_id, room_id, identity.participant_id], ":")
 
     %__MODULE__{
       session_id: session_id,

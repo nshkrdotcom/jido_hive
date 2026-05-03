@@ -393,16 +393,10 @@ defmodule JidoHiveContextGraph.RoomInsight do
   defp normalize_key(key) when is_atom(key), do: key
 
   defp normalize_key(key) when is_binary(key) do
-    case existing_atom_key(key) do
+    case canonical_key(key) do
       nil -> key
       atom_key -> atom_key
     end
-  end
-
-  defp existing_atom_key(key) when is_binary(key) do
-    String.to_existing_atom(key)
-  rescue
-    ArgumentError -> nil
   end
 
   defp humanize_kind(kind, count) do
@@ -416,4 +410,26 @@ defmodule JidoHiveContextGraph.RoomInsight do
 
   defp pluralize(singular, _plural, 1), do: singular
   defp pluralize(_singular, plural, _count), do: plural
+
+  defp canonical_key("accepted"), do: :accepted
+  defp canonical_key("active"), do: :active
+  defp canonical_key("body"), do: :body
+  defp canonical_key("candidate"), do: :candidate
+  defp canonical_key("confidence"), do: :confidence
+  defp canonical_key("context_id"), do: :context_id
+  defp canonical_key("contradictions"), do: :contradictions
+  defp canonical_key("duplicate_groups"), do: :duplicate_groups
+  defp canonical_key("duplicates"), do: :duplicates
+  defp canonical_key("focus_candidates"), do: :focus_candidates
+  defp canonical_key("object_type"), do: :object_type
+  defp canonical_key("provisional"), do: :provisional
+  defp canonical_key("questions"), do: :questions
+  defp canonical_key("resolved"), do: :resolved
+  defp canonical_key("stale"), do: :stale
+  defp canonical_key("status"), do: :status
+  defp canonical_key("summary"), do: :summary
+  defp canonical_key("title"), do: :title
+  defp canonical_key("total"), do: :total
+  defp canonical_key("type"), do: :type
+  defp canonical_key(_key), do: nil
 end

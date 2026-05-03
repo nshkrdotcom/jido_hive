@@ -166,7 +166,7 @@ defmodule JidoHiveWorkerRuntime.Boundary.ProtocolCodec do
   end
 
   defp port_suffix(nil), do: ""
-  defp port_suffix(port) when is_integer(port), do: ":#{port}"
+  defp port_suffix(port) when is_integer(port), do: ":" <> Integer.to_string(port)
 
   defp unwrap_assignment(payload) when is_map(payload) do
     payload = normalize_value(payload)
@@ -333,16 +333,13 @@ defmodule JidoHiveWorkerRuntime.Boundary.ProtocolCodec do
   end
 
   defp value(map, key) when is_map(map) and is_binary(key) do
-    Map.get(map, key) ||
-      case existing_atom_key(key) do
-        nil -> nil
-        atom_key -> Map.get(map, atom_key)
-      end
+    Map.get(map, key) || Map.get(map, atom_key_for(map, key))
   end
 
-  defp existing_atom_key(key) when is_binary(key) do
-    String.to_existing_atom(key)
-  rescue
-    ArgumentError -> nil
+  defp atom_key_for(map, key) when is_map(map) and is_binary(key) do
+    Enum.find(Map.keys(map), fn
+      atom_key when is_atom(atom_key) -> Atom.to_string(atom_key) == key
+      _other -> false
+    end)
   end
 end

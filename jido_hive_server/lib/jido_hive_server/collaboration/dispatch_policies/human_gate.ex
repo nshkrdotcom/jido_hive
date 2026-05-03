@@ -75,7 +75,7 @@ defmodule JidoHiveServer.Collaboration.DispatchPolicies.HumanGate do
   def select(%RoomSnapshot{} = snapshot, %{availability: availability, policy_state: policy_state}) do
     cond do
       snapshot.room.status in ["closed", "failed"] ->
-        {:close, String.to_atom(snapshot.room.status), policy_state, %{}}
+        {:close, close_reason(snapshot.room.status), policy_state, %{}}
 
       snapshot.room.status == "completed" ->
         {:complete, %{reason: :already_completed}, policy_state, %{}}
@@ -96,6 +96,9 @@ defmodule JidoHiveServer.Collaboration.DispatchPolicies.HumanGate do
         {:wait, :awaiting_human, policy_state, %{status: "waiting", phase: "review"}}
     end
   end
+
+  defp close_reason("closed"), do: :closed
+  defp close_reason("failed"), do: :failed
 
   defp select_agent_assignment(snapshot, availability, policy_state) do
     participants = agent_participants(snapshot)

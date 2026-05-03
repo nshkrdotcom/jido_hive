@@ -679,8 +679,8 @@ defmodule JidoHiveContextGraph.ContextManager do
 
   defp visible_token?(token, _context_object, participant) when is_binary(token) do
     token in [
-      "participant:#{participant_id(participant)}",
-      "role:#{participant_role(participant)}"
+      "participant:" <> participant_id(participant),
+      "role:" <> participant_role(participant)
     ]
   end
 

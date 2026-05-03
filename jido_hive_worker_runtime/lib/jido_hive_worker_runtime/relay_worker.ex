@@ -459,7 +459,7 @@ defmodule JidoHiveWorkerRuntime.RelayWorker do
     end
   end
 
-  defp room_topic(room_id), do: "room:#{room_id}"
+  defp room_topic(room_id), do: "room:" <> room_id
 
   defp normalize_executor({module, opts}) when is_atom(module) and is_list(opts),
     do: {module, opts}

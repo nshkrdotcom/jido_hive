@@ -104,7 +104,7 @@ defmodule JidoHiveClient.AgentBackends.Mock do
   end
 
   defp hypothesis_object(text) do
-    if Regex.match?(~r/\b(i think|maybe|likely)\b/i, text) do
+    if contains_any_marker?(text, ["i think", "maybe", "likely"]) do
       %{
         "object_type" => "hypothesis",
         "title" => title_from(text, "Hypothesis"),
@@ -115,7 +115,7 @@ defmodule JidoHiveClient.AgentBackends.Mock do
   end
 
   defp evidence_object(text) do
-    if Regex.match?(~r/\bbecause\b/i, text) do
+    if contains_any_marker?(text, ["because"]) do
       %{
         "object_type" => "evidence",
         "title" => "Supporting evidence",
@@ -125,7 +125,7 @@ defmodule JidoHiveClient.AgentBackends.Mock do
   end
 
   defp contradiction_object(text) do
-    if Regex.match?(~r/\b(no|actually|broken)\b/i, text) do
+    if contains_any_marker?(text, ["no", "actually", "broken"]) do
       %{
         "object_type" => "contradiction",
         "title" => "Contradiction detected",
@@ -135,7 +135,7 @@ defmodule JidoHiveClient.AgentBackends.Mock do
   end
 
   defp decision_candidate_object(text) do
-    if Regex.match?(~r/\b(we should|let's)\b/i, text) do
+    if contains_any_marker?(text, ["we should", "let's"]) do
       %{
         "object_type" => "decision_candidate",
         "title" => "Candidate decision",
@@ -207,11 +207,49 @@ defmodule JidoHiveClient.AgentBackends.Mock do
 
   defp title_from(text, fallback) do
     text
-    |> String.replace(~r/\s+/, " ")
-    |> String.trim()
+    |> collapse_spaces()
     |> case do
       "" -> fallback
       normalized -> String.slice(normalized, 0, 72)
+    end
+  end
+
+  defp contains_any_marker?(text, markers) do
+    normalized = normalized_text(text)
+    words = String.split(normalized)
+
+    Enum.any?(markers, fn marker ->
+      if String.contains?(marker, " ") do
+        String.contains?(" " <> normalized <> " ", " " <> marker <> " ")
+      else
+        marker in words
+      end
+    end)
+  end
+
+  defp collapse_spaces(text) when is_binary(text) do
+    text
+    |> String.trim()
+    |> String.split()
+    |> Enum.join(" ")
+  end
+
+  defp normalized_text(text) when is_binary(text) do
+    text
+    |> String.downcase()
+    |> String.graphemes()
+    |> Enum.map_join(&word_or_space/1)
+    |> String.split()
+    |> Enum.join(" ")
+  end
+
+  defp word_or_space("'"), do: "'"
+
+  defp word_or_space(grapheme) do
+    if String.contains?("abcdefghijklmnopqrstuvwxyz0123456789", grapheme) do
+      grapheme
+    else
+      " "
     end
   end
 end

@@ -285,8 +285,8 @@ defmodule JidoHiveWorkerRuntime.TestSupport.ScriptedRunModule do
   end
 
   defp decode_packet(prompt) when is_binary(prompt) do
-    case Regex.run(~r/Assignment packet JSON:\s*(\{.*\})\s*\z/s, prompt, capture: :all_but_first) do
-      [json] -> Jason.decode(json)
+    case String.split(prompt, "Assignment packet JSON:", parts: 2) do
+      [_before, json] -> json |> String.trim() |> Jason.decode()
       _other -> {:error, :packet_not_found}
     end
   end

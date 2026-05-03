@@ -137,7 +137,8 @@ defmodule JidoHiveContextGraph.ContextDeduper do
   defp normalize_text(text) when is_binary(text) do
     text
     |> String.trim()
-    |> String.replace(~r/\s+/, " ")
+    |> String.split()
+    |> Enum.join(" ")
     |> String.downcase()
   end
 

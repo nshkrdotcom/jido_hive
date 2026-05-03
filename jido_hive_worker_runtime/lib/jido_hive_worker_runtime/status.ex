@@ -179,7 +179,8 @@ defmodule JidoHiveWorkerRuntime.Status do
     trimmed =
       text
       |> String.trim()
-      |> String.replace(~r/\s+/, " ")
+      |> String.split()
+      |> Enum.join(" ")
 
     cond do
       trimmed == "" ->

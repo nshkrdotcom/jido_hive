@@ -51,10 +51,6 @@ defmodule JidoHiveWorkspace.MixProject do
       "monorepo.docs": ["blitz.workspace docs"]
     ]
 
-    mr_aliases =
-      ~w[deps.get format compile test credo dialyzer docs]
-      |> Enum.map(fn task -> {:"mr.#{task}", ["monorepo.#{task}"]} end)
-
     [
       ci: [
         "monorepo.deps.get",
@@ -66,8 +62,15 @@ defmodule JidoHiveWorkspace.MixProject do
         "monorepo.docs"
       ],
       quality: ["monorepo.credo --strict", "monorepo.dialyzer"],
-      "docs.all": ["monorepo.docs"]
-    ] ++ monorepo_aliases ++ mr_aliases
+      "docs.all": ["monorepo.docs"],
+      "mr.deps.get": ["monorepo.deps.get"],
+      "mr.format": ["monorepo.format"],
+      "mr.compile": ["monorepo.compile"],
+      "mr.test": ["monorepo.test"],
+      "mr.credo": ["monorepo.credo"],
+      "mr.dialyzer": ["monorepo.dialyzer"],
+      "mr.docs": ["monorepo.docs"]
+    ] ++ monorepo_aliases
   end
 
   defp blitz_workspace do

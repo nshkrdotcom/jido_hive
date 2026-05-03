@@ -21,7 +21,18 @@ defmodule JidoHiveWorkerRuntime.Executor.Scripted do
 
   defp normalize_role(nil, fallback), do: normalize_role(fallback, fallback)
   defp normalize_role(role, _fallback) when is_atom(role), do: role
-  defp normalize_role(role, _fallback) when is_binary(role), do: String.to_atom(role)
+
+  defp normalize_role(role, fallback) when is_binary(role) do
+    case String.downcase(String.trim(role)) do
+      "analyst" -> :analyst
+      "architect" -> :architect
+      "coordinator" -> :coordinator
+      "resolver" -> :resolver
+      "skeptic" -> :skeptic
+      "worker" -> :worker
+      _other -> normalize_role(fallback, :analyst)
+    end
+  end
 
   defp analyst_contribution(assignment) do
     %{

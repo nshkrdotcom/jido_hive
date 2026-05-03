@@ -243,6 +243,30 @@ defmodule JidoHiveWorkerRuntime.EscriptBootstrap do
   end
 
   defp release_ets_filename?(filename) do
-    String.match?(filename, ~r/^2\d{3}[a-z]\.v\d+\.ets$/)
+    with true <- String.ends_with?(filename, ".ets"),
+         stem <- String.trim_trailing(filename, ".ets"),
+         [year_suffix, version] <- String.split(stem, ".v", parts: 2),
+         true <- valid_year_suffix?(year_suffix),
+         true <- digits?(version) do
+      true
+    else
+      _other -> false
+    end
   end
+
+  defp valid_year_suffix?(<<?2, d1, d2, d3, letter>>) do
+    digit?(d1) and digit?(d2) and digit?(d3) and letter in ?a..?z
+  end
+
+  defp valid_year_suffix?(_other), do: false
+
+  defp digits?(value) when is_binary(value) and byte_size(value) > 0 do
+    value
+    |> String.to_charlist()
+    |> Enum.all?(&digit?/1)
+  end
+
+  defp digits?(_other), do: false
+
+  defp digit?(char), do: char in ?0..?9
 end

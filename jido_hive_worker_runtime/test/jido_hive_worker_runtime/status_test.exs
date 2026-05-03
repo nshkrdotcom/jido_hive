@@ -22,7 +22,11 @@ defmodule JidoHiveWorkerRuntime.StatusTest do
     assert output =~ "participant=analyst"
     assert output =~ "workspace=workspace-prod"
     assert output =~ "url=wss://jido-hive-server-test.app.nsai.online/socket/websocket"
-    assert output =~ ~r/^\d{2}:\d{2}:\d{2}\.\d{3} \[jido_hive worker\]/
+
+    [line | _rest] = String.split(output, "\n")
+    [timestamp, message] = String.split(line, " ", parts: 2)
+    assert valid_log_timestamp?(timestamp)
+    assert String.starts_with?(message, "[jido_hive worker]")
   end
 
   test "relay_ready says the client is waiting for assignment relay work" do
@@ -115,4 +119,12 @@ defmodule JidoHiveWorkerRuntime.StatusTest do
     assert output =~ ~s(preview="{\\\"summary\\\":\\\"bad json path\\\")
     assert output =~ "completed room=room-1 phase=analysis status=failed contribution=reasoning"
   end
+
+  defp valid_log_timestamp?(<<h1, h2, ?:, m1, m2, ?:, s1, s2, ?., ms1, ms2, ms3>>) do
+    Enum.all?([h1, h2, m1, m2, s1, s2, ms1, ms2, ms3], &digit?/1)
+  end
+
+  defp valid_log_timestamp?(_other), do: false
+
+  defp digit?(char), do: char in ?0..?9
 end

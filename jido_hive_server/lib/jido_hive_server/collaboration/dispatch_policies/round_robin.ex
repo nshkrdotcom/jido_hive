@@ -49,7 +49,7 @@ defmodule JidoHiveServer.Collaboration.DispatchPolicies.RoundRobin do
 
     cond do
       snapshot.room.status in ["closed", "failed"] ->
-        {:close, String.to_atom(snapshot.room.status), policy_state, %{}}
+        {:close, close_reason(snapshot.room.status), policy_state, %{}}
 
       snapshot.room.status == "completed" ->
         {:complete, %{reason: :already_completed}, policy_state, %{}}
@@ -70,6 +70,9 @@ defmodule JidoHiveServer.Collaboration.DispatchPolicies.RoundRobin do
         )
     end
   end
+
+  defp close_reason("closed"), do: :closed
+  defp close_reason("failed"), do: :failed
 
   defp select_next_participant(snapshot, availability, policy_state, phase_cycle, completed_count) do
     participants = agent_participants(snapshot)

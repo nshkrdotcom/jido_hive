@@ -91,14 +91,10 @@ defmodule JidoHiveServer.Collaboration.Schema.RoomEvent do
   defp atom_value(value) when is_atom(value) and value in @canonical_types, do: {:ok, value}
 
   defp atom_value(value) when is_binary(value) do
-    atom =
-      try do
-        String.to_existing_atom(value)
-      rescue
-        ArgumentError -> nil
-      end
-
-    if atom in @canonical_types, do: {:ok, atom}, else: {:error, {:invalid_field, "type"}}
+    case event_type_atom(value) do
+      nil -> {:error, {:invalid_field, "type"}}
+      atom -> {:ok, atom}
+    end
   end
 
   defp atom_value(_value), do: {:error, {:invalid_field, "type"}}
@@ -143,12 +139,24 @@ defmodule JidoHiveServer.Collaboration.Schema.RoomEvent do
   end
 
   defp value(map, key) when is_map(map) do
-    Map.get(map, key) || Map.get(map, existing_atom_key(key))
+    Map.get(map, key) || Map.get(map, atom_key_for(map, key))
   end
 
-  defp existing_atom_key(key) do
-    String.to_existing_atom(key)
-  rescue
-    ArgumentError -> nil
+  defp atom_key_for(map, key) when is_map(map) and is_binary(key) do
+    Enum.find(Map.keys(map), fn
+      atom_key when is_atom(atom_key) -> Atom.to_string(atom_key) == key
+      _other -> false
+    end)
   end
+
+  defp event_type_atom("room_created"), do: :room_created
+  defp event_type_atom("room_status_changed"), do: :room_status_changed
+  defp event_type_atom("room_phase_changed"), do: :room_phase_changed
+  defp event_type_atom("participant_joined"), do: :participant_joined
+  defp event_type_atom("participant_left"), do: :participant_left
+  defp event_type_atom("assignment_created"), do: :assignment_created
+  defp event_type_atom("assignment_completed"), do: :assignment_completed
+  defp event_type_atom("assignment_expired"), do: :assignment_expired
+  defp event_type_atom("contribution_submitted"), do: :contribution_submitted
+  defp event_type_atom(_value), do: nil
 end

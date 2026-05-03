@@ -34,7 +34,7 @@ defmodule JidoHiveServer.Collaboration.DispatchPolicies.ResourcePool do
 
     cond do
       snapshot.room.status in ["closed", "failed"] ->
-        {:close, String.to_atom(snapshot.room.status), policy_state, %{}}
+        {:close, close_reason(snapshot.room.status), policy_state, %{}}
 
       snapshot.room.status == "completed" ->
         {:complete, %{reason: :already_completed}, policy_state, %{}}
@@ -55,6 +55,9 @@ defmodule JidoHiveServer.Collaboration.DispatchPolicies.ResourcePool do
         end
     end
   end
+
+  defp close_reason("closed"), do: :closed
+  defp close_reason("failed"), do: :failed
 
   defp assignment_limit(%RoomSnapshot{} = snapshot) do
     case get_in(snapshot.room.config, ["assignment_limit"]) do

@@ -23,7 +23,7 @@ defmodule JidoHiveWorkerRuntime.Runtime.State do
   @spec new(keyword()) :: t()
   def new(opts \\ []) do
     identity = identity_from_opts(opts)
-    client_id = "#{identity.workspace_id}:#{identity.target_id}"
+    client_id = Enum.join([identity.workspace_id, identity.target_id], ":")
 
     %__MODULE__{
       client_id: client_id,
