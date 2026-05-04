@@ -3,7 +3,7 @@ defmodule JidoHiveWorkerRuntime.CLI do
 
   require Logger
 
-  alias JidoHiveWorkerRuntime.{EscriptBootstrap, RelayWorker, Status}
+  alias JidoHiveWorkerRuntime.{EscriptBootstrap, GovernedAuthority, RelayWorker, Status}
 
   @structured_log_modules [
     __MODULE__,
@@ -41,8 +41,9 @@ defmodule JidoHiveWorkerRuntime.CLI do
   def run(["--help"]), do: {:help, help_text()}
 
   def run(args) when is_list(args) do
-    with {:ok, parsed} <- parse_args(args) do
-      {:ok, normalize_cli_opts(parsed)}
+    case parse_args(args) do
+      {:ok, parsed} -> normalize_cli_opts(parsed)
+      {:error, reason} -> {:error, reason}
     end
   end
 
@@ -95,7 +96,25 @@ defmodule JidoHiveWorkerRuntime.CLI do
           timeout_ms: :integer,
           cli_path: :string,
           control_port: :integer,
-          control_host: :string
+          control_host: :string,
+          governed_authority_ref: :string,
+          governed_worker_ref: :string,
+          governed_credential_ref: :string,
+          governed_provider: :string,
+          governed_model: :string,
+          governed_reasoning_effort: :string,
+          governed_runtime_id: :string,
+          governed_workspace_id: :string,
+          governed_user_id: :string,
+          governed_participant_id: :string,
+          governed_participant_role: :string,
+          governed_target_id: :string,
+          governed_capability_id: :string,
+          governed_workspace_root: :string,
+          governed_url: :string,
+          governed_api_base_url: :string,
+          governed_control_port: :integer,
+          governed_control_host: :string
         ]
       )
 
@@ -112,6 +131,13 @@ defmodule JidoHiveWorkerRuntime.CLI do
   end
 
   defp normalize_cli_opts(opts) do
+    case Keyword.get(opts, :governed_authority_ref) do
+      nil -> {:ok, standalone_cli_opts(opts)}
+      _authority_ref -> governed_cli_opts(opts)
+    end
+  end
+
+  defp standalone_cli_opts(opts) do
     workspace_id = Keyword.get(opts, :workspace_id, "workspace-local")
 
     control_port =
@@ -151,6 +177,62 @@ defmodule JidoHiveWorkerRuntime.CLI do
     ]
   end
 
+  @governed_direct_fields [
+    :url,
+    :api_base_url,
+    :workspace_id,
+    :user_id,
+    :participant_id,
+    :participant_role,
+    :target_id,
+    :capability_id,
+    :workspace_root,
+    :provider,
+    :model,
+    :reasoning_effort,
+    :timeout_ms,
+    :cli_path,
+    :control_port,
+    :control_host
+  ]
+
+  defp governed_cli_opts(opts) do
+    with :ok <- reject_governed_direct_fields(opts),
+         {:ok, authority} <- GovernedAuthority.new(governed_authority_attrs(opts)) do
+      {:ok, GovernedAuthority.worker_opts(authority)}
+    end
+  end
+
+  defp reject_governed_direct_fields(opts) do
+    case Enum.find(@governed_direct_fields, &Keyword.has_key?(opts, &1)) do
+      nil -> :ok
+      field -> {:error, {:governed_direct_worker_field, field}}
+    end
+  end
+
+  defp governed_authority_attrs(opts) do
+    %{
+      authority_ref: Keyword.get(opts, :governed_authority_ref),
+      worker_ref: Keyword.get(opts, :governed_worker_ref),
+      credential_ref: Keyword.get(opts, :governed_credential_ref),
+      provider: Keyword.get(opts, :governed_provider),
+      model: Keyword.get(opts, :governed_model),
+      reasoning_effort: Keyword.get(opts, :governed_reasoning_effort),
+      runtime_id: Keyword.get(opts, :governed_runtime_id),
+      workspace_id: Keyword.get(opts, :governed_workspace_id),
+      user_id: Keyword.get(opts, :governed_user_id),
+      participant_id: Keyword.get(opts, :governed_participant_id),
+      participant_role: Keyword.get(opts, :governed_participant_role),
+      target_id: Keyword.get(opts, :governed_target_id),
+      capability_id: Keyword.get(opts, :governed_capability_id),
+      workspace_root: Keyword.get(opts, :governed_workspace_root),
+      url: Keyword.get(opts, :governed_url),
+      api_base_url: Keyword.get(opts, :governed_api_base_url),
+      control_port: Keyword.get(opts, :governed_control_port),
+      control_host: Keyword.get(opts, :governed_control_host)
+    }
+  end
+
   defp configure_application(opts) when is_list(opts) do
     Application.put_env(:jido_hive_worker_runtime, :runtime, runtime_opts(opts))
     Application.put_env(:jido_hive_worker_runtime, :control_api, control_opts(opts))
@@ -167,7 +249,10 @@ defmodule JidoHiveWorkerRuntime.CLI do
       :capability_id,
       :workspace_root,
       :executor,
-      :runtime_id
+      :runtime_id,
+      :governed_authority_ref,
+      :credential_ref,
+      :redaction_values
     ])
     |> Keyword.put(:name, JidoHiveWorkerRuntime.Runtime)
   end

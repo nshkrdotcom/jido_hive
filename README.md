@@ -197,6 +197,22 @@ flowchart LR
   interactively
 - the example console is only a runnable composition layer
 
+### Governed authority boundary
+
+Standalone helpers and local demos can keep using explicit CLI flags, local
+config, and documented operator tokens at boot boundaries. Governed worker and
+connector paths do not use those inputs as authority. A governed worker launch
+must provide a governed authority ref, worker ref, and credential ref; provider
+selection, model selection, control endpoint settings, and credential refs are
+materialized from that packet and direct singleton/default fields are rejected.
+
+Server connector endpoints accept a governed connector authority packet for
+install and completion flows. In governed mode raw secrets, direct secret
+sources, manual token fields, OAuth state fields, and direct identity overrides
+are rejected at the HTTP boundary. Connector completion stores external secret
+refs and opaque credential refs only; raw materialized values are not projected
+into responses, logs, snapshots, or docs.
+
 ### Product model
 
 What is unique here is not the transcript or the websocket transport. It is the

@@ -2,6 +2,7 @@ defmodule JidoHiveServerWeb.ConnectorController do
   use JidoHiveServerWeb, :controller
 
   alias Jido.Integration.V2
+  alias JidoHiveServer.GovernedConnectorAuthority
 
   @install_attr_keys %{
     "actor_id" => :actor_id,
@@ -41,6 +42,54 @@ defmodule JidoHiveServerWeb.ConnectorController do
     :source
   ]
   @datetime_value_keys [:now, :expires_at, :refresh_token_expires_at, :callback_received_at]
+  @governed_start_direct_fields [
+    "actor_id",
+    "auth_type",
+    "profile_id",
+    "flow_kind",
+    "subject",
+    "requested_scopes",
+    "metadata",
+    "callback_uri",
+    "state_token",
+    "pkce_verifier_digest",
+    "connection_id",
+    "management_mode",
+    "secret_source",
+    "external_secret_ref",
+    "environment",
+    "granted_scopes",
+    "secret",
+    "lease_fields",
+    "source",
+    "source_ref"
+  ]
+  @governed_complete_direct_fields [
+    "actor_id",
+    "auth_type",
+    "profile_id",
+    "flow_kind",
+    "subject",
+    "requested_scopes",
+    "metadata",
+    "callback_uri",
+    "state_token",
+    "pkce_verifier_digest",
+    "connection_id",
+    "management_mode",
+    "secret_source",
+    "external_secret_ref",
+    "environment",
+    "granted_scopes",
+    "secret",
+    "lease_fields",
+    "expires_at",
+    "refresh_token_expires_at",
+    "callback_received_at",
+    "source",
+    "source_ref",
+    "reason"
+  ]
 
   @atom_values %{
     auth_type: %{
@@ -104,12 +153,11 @@ defmodule JidoHiveServerWeb.ConnectorController do
       |> normalize_install_attrs()
       |> maybe_infer_requested_scopes(connector_id)
 
-    case V2.start_install(connector_id, tenant_id, attrs) do
-      {:ok, result} ->
-        json(conn, %{data: normalize(result)})
-
-      {:error, reason} ->
-        render_error(conn, :unprocessable_entity, reason)
+    with {:ok, attrs} <- apply_governed_start(connector_id, tenant_id, params, attrs),
+         {:ok, result} <- V2.start_install(connector_id, tenant_id, attrs) do
+      json(conn, %{data: normalize(result)})
+    else
+      {:error, reason} -> render_error(conn, :unprocessable_entity, reason)
     end
   end
 
@@ -120,12 +168,11 @@ defmodule JidoHiveServerWeb.ConnectorController do
       |> normalize_install_attrs()
       |> maybe_infer_granted_scopes(install_id)
 
-    case V2.complete_install(install_id, attrs) do
-      {:ok, result} ->
-        json(conn, %{data: normalize(result)})
-
-      {:error, reason} ->
-        render_error(conn, :unprocessable_entity, reason)
+    with {:ok, attrs} <- apply_governed_complete(install_id, params, attrs),
+         {:ok, result} <- V2.complete_install(install_id, attrs) do
+      json(conn, %{data: normalize(result)})
+    else
+      {:error, reason} -> render_error(conn, :unprocessable_entity, reason)
     end
   end
 
@@ -216,6 +263,71 @@ defmodule JidoHiveServerWeb.ConnectorController do
 
   defp put_scopes_if_present(attrs, _key, []), do: attrs
   defp put_scopes_if_present(attrs, key, scopes), do: Map.put(attrs, key, scopes)
+
+  defp apply_governed_start(connector_id, tenant_id, params, attrs) do
+    case Map.get(params, "governed_authority") do
+      nil ->
+        {:ok, attrs}
+
+      authority_attrs when is_map(authority_attrs) ->
+        with :ok <- reject_governed_direct_fields(params, @governed_start_direct_fields),
+             authority_attrs <-
+               authority_attrs
+               |> Map.put_new("connector_id", connector_id)
+               |> Map.put_new("tenant_id", tenant_id),
+             {:ok, authority} <- GovernedConnectorAuthority.new(authority_attrs),
+             :ok <-
+               ensure_governed_route_match(authority.connector_id, connector_id, :connector_id),
+             :ok <- ensure_governed_route_match(authority.tenant_id, tenant_id, :tenant_id) do
+          {:ok, GovernedConnectorAuthority.start_attrs(authority)}
+        end
+
+      _other ->
+        {:error, :invalid_governed_connector_authority}
+    end
+  end
+
+  defp apply_governed_complete(install_id, params, attrs) do
+    case Map.get(params, "governed_authority") do
+      nil ->
+        {:ok, attrs}
+
+      authority_attrs when is_map(authority_attrs) ->
+        with :ok <- reject_governed_direct_fields(params, @governed_complete_direct_fields),
+             {:ok, install} <- V2.fetch_install(install_id),
+             authority_attrs <-
+               authority_attrs
+               |> Map.put_new("connector_id", install.connector_id)
+               |> Map.put_new("tenant_id", install.tenant_id),
+             {:ok, authority} <- GovernedConnectorAuthority.new(authority_attrs),
+             :ok <-
+               ensure_governed_route_match(
+                 authority.connector_id,
+                 install.connector_id,
+                 :connector_id
+               ),
+             :ok <-
+               ensure_governed_route_match(authority.tenant_id, install.tenant_id, :tenant_id) do
+          {:ok, GovernedConnectorAuthority.complete_attrs(authority)}
+        end
+
+      _other ->
+        {:error, :invalid_governed_connector_authority}
+    end
+  end
+
+  defp reject_governed_direct_fields(params, fields) do
+    case Enum.find(fields, &Map.has_key?(params, &1)) do
+      nil -> :ok
+      field -> {:error, {:governed_direct_connector_field, field}}
+    end
+  end
+
+  defp ensure_governed_route_match(value, value, _field), do: :ok
+
+  defp ensure_governed_route_match(_authority_value, _route_value, field) do
+    {:error, {:governed_connector_route_mismatch, field}}
+  end
 
   defp maybe_put(map, _key, nil), do: map
   defp maybe_put(map, key, value), do: Map.put(map, key, value)

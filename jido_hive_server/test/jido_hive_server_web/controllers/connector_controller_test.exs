@@ -153,4 +153,72 @@ defmodule JidoHiveServerWeb.ConnectorControllerTest do
     assert granted_scopes == requested_scopes
     assert "notion.content.insert" in granted_scopes
   end
+
+  test "governed connector install rejects direct secret fields", %{conn: conn} do
+    response =
+      conn
+      |> post(~p"/api/connectors/github/installs", %{
+        "tenant_id" => "workspace-local",
+        "governed_authority" => %{
+          "authority_ref" => "auth-connector-1",
+          "tenant_id" => "workspace-local",
+          "actor_id" => "operator-1",
+          "subject" => "octocat",
+          "credential_ref" => "cred-github-1",
+          "secret_ref" => "vault://github/cred-github-1",
+          "auth_type" => "oauth2",
+          "environment" => "prod"
+        },
+        "secret" => %{"access_token" => "env-secret-token"}
+      })
+      |> json_response(422)
+
+    assert response["error"] =~ "governed_direct_connector_field"
+    refute response["error"] =~ "env-secret-token"
+  end
+
+  test "governed connector completion uses external secret refs without projecting raw secrets",
+       %{
+         conn: conn
+       } do
+    install_id =
+      conn
+      |> post(~p"/api/connectors/github/installs", %{
+        "tenant_id" => "workspace-local",
+        "governed_authority" => %{
+          "authority_ref" => "auth-connector-1",
+          "tenant_id" => "workspace-local",
+          "actor_id" => "operator-1",
+          "subject" => "octocat",
+          "credential_ref" => "cred-github-1",
+          "secret_ref" => "vault://github/cred-github-1",
+          "auth_type" => "oauth2",
+          "environment" => "prod",
+          "requested_scopes" => ["repo"]
+        }
+      })
+      |> json_response(200)
+      |> get_in(["data", "install", "install_id"])
+
+    response =
+      conn
+      |> recycle()
+      |> post(~p"/api/connectors/installs/#{install_id}/complete", %{
+        "governed_authority" => %{
+          "authority_ref" => "auth-connector-1",
+          "actor_id" => "operator-1",
+          "subject" => "octocat",
+          "credential_ref" => "cred-github-1",
+          "secret_ref" => "vault://github/cred-github-1",
+          "auth_type" => "oauth2",
+          "environment" => "prod",
+          "granted_scopes" => ["repo"],
+          "redaction_values" => ["env-secret-token"]
+        }
+      })
+      |> json_response(200)
+
+    assert is_binary(get_in(response, ["data", "credential_ref", "id"]))
+    refute inspect(response) =~ "env-secret-token"
+  end
 end

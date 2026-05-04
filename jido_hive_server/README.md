@@ -174,6 +174,19 @@ Current server behavior:
 
 That prevents the old failure mode where a connection appeared connected but execution was denied because the scope set was empty.
 
+### Governed connector authority
+
+The connector controller also accepts a governed authority packet for install
+and completion requests. Governed mode materializes actor, subject, auth type,
+environment, scope lists, external secret ref, credential ref metadata, and
+redaction refs from that packet. Direct raw secret fields, manual secret-source
+overrides, OAuth state fields, connection overrides, and request-body identity
+overrides are rejected before the request reaches the integration store.
+
+Standalone manual installs remain available through the documented token flow
+below. Those env tokens are standalone operator inputs only; they do not satisfy
+governed connector authority.
+
 ### Validated manual-install token types
 
 Use these exact token types for current production manual installs:

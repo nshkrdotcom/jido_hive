@@ -106,6 +106,15 @@ Responsibilities:
 - configure worker runtime and optional control API app env
 - start the worker supervision tree and relay worker
 
+Standalone CLI mode keeps the existing flags and local env defaults for local
+development. Governed CLI mode starts only when `--governed-authority-ref`,
+`--governed-worker-ref`, and `--governed-credential-ref` are present. In that
+mode worker identity, provider selection, model selection, reasoning effort,
+runtime id, control endpoint, and credential refs are materialized from the
+governed packet. Direct flags such as `--provider`, `--model`,
+`--reasoning-effort`, `--cli-path`, `--control-port`, and worker identity
+overrides are rejected instead of falling back to Application or OS env state.
+
 ### Relay worker
 
 The long-lived websocket client that:
@@ -126,6 +135,11 @@ Responsibilities:
 - recent assignment history
 - assignment failure tracking
 - event stream for the control API
+
+Governed runtime opts may carry materialized redaction values for the single
+effect. Runtime snapshots and event-log entries redact those values before they
+are exposed through the control API or retained in the worker-local event
+history.
 
 ### Session executor
 

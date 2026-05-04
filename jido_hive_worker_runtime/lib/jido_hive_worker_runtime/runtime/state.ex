@@ -164,7 +164,9 @@ defmodule JidoHiveWorkerRuntime.Runtime.State do
       workspace_root: Keyword.get(opts, :workspace_root, File.cwd!()),
       provider: normalize_atomish(Keyword.get(executor_opts, :provider, :codex)),
       model: Keyword.get(executor_opts, :model),
-      runtime_id: normalize_atomish(Keyword.get(opts, :runtime_id, :asm))
+      runtime_id: normalize_atomish(Keyword.get(opts, :runtime_id, :asm)),
+      authority_ref: Keyword.get(opts, :governed_authority_ref),
+      credential_ref: Keyword.get(opts, :credential_ref)
     }
   end
 

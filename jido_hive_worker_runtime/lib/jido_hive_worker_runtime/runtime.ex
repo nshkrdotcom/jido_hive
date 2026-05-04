@@ -6,13 +6,14 @@ defmodule JidoHiveWorkerRuntime.Runtime do
   alias JidoHiveWorkerRuntime.Boundary.ProtocolCodec
   alias JidoHiveWorkerRuntime.{EventLog, Runtime.State}
 
-  defstruct snapshot: nil, event_log: nil, executor: nil, subscribers: %{}
+  defstruct snapshot: nil, event_log: nil, executor: nil, subscribers: %{}, redaction_values: []
 
   @type server_state :: %__MODULE__{
           snapshot: State.t(),
           event_log: EventLog.t(),
           executor: {module(), keyword()},
-          subscribers: %{optional(pid()) => reference()}
+          subscribers: %{optional(pid()) => reference()},
+          redaction_values: [String.t()]
         }
 
   @spec child_spec(keyword()) :: Supervisor.child_spec()
@@ -117,7 +118,8 @@ defmodule JidoHiveWorkerRuntime.Runtime do
       snapshot: State.new(opts),
       event_log: EventLog.new(limit: Keyword.get(opts, :event_limit, 200)),
       executor: normalize_executor(Keyword.get(opts, :executor)),
-      subscribers: %{}
+      subscribers: %{},
+      redaction_values: redaction_values(opts)
     }
 
     {:ok, state}
@@ -128,7 +130,8 @@ defmodule JidoHiveWorkerRuntime.Runtime do
     next_state = %{
       state
       | snapshot: State.new(opts),
-        executor: normalize_executor(opts[:executor])
+        executor: normalize_executor(opts[:executor]),
+        redaction_values: redaction_values(opts)
     }
 
     {:reply, :ok, next_state}
@@ -214,14 +217,16 @@ defmodule JidoHiveWorkerRuntime.Runtime do
   end
 
   def handle_call({:assignment_failed, assignment, reason}, _from, %__MODULE__{} = state) do
+    safe_reason = redact_term(reason, state.redaction_values)
+
     next_state =
       state
-      |> Map.update!(:snapshot, &State.assignment_failed(&1, assignment, reason))
+      |> Map.update!(:snapshot, &State.assignment_failed(&1, assignment, safe_reason))
       |> append_event(%{
         type: "client.assignment.failed",
         room_id: assignment["room_id"],
         assignment_id: assignment["id"],
-        payload: %{"reason" => inspect(reason)}
+        payload: %{"reason" => safe_reason}
       })
 
     {:reply, :ok, next_state}
@@ -257,7 +262,8 @@ defmodule JidoHiveWorkerRuntime.Runtime do
   end
 
   defp append_event(%__MODULE__{} = state, attrs) do
-    {event_log, entry} = EventLog.append(state.event_log, attrs)
+    {event_log, entry} =
+      EventLog.append(state.event_log, redact_attrs(attrs, state.redaction_values))
 
     Enum.each(Map.keys(state.subscribers), fn subscriber ->
       send(subscriber, {:client_runtime_event, entry})
@@ -290,4 +296,33 @@ defmodule JidoHiveWorkerRuntime.Runtime do
 
   defp normalize_payload(payload) when is_map(payload), do: payload
   defp normalize_payload(_other), do: %{}
+
+  defp redaction_values(opts) do
+    opts
+    |> Keyword.get(:redaction_values, [])
+    |> Enum.filter(fn value -> is_binary(value) and value != "" end)
+  end
+
+  defp redact_attrs(attrs, []), do: attrs
+  defp redact_attrs(attrs, values), do: redact_value(attrs, values)
+
+  defp redact_term(term, values), do: term |> inspect() |> redact_string(values)
+
+  defp redact_value(value, values) when is_binary(value), do: redact_string(value, values)
+
+  defp redact_value(value, values) when is_map(value) do
+    Map.new(value, fn {key, inner_value} -> {key, redact_value(inner_value, values)} end)
+  end
+
+  defp redact_value(value, values) when is_list(value) do
+    Enum.map(value, &redact_value(&1, values))
+  end
+
+  defp redact_value(value, _values), do: value
+
+  defp redact_string(value, values) when is_binary(value) do
+    Enum.reduce(values, value, fn redaction_value, acc ->
+      String.replace(acc, redaction_value, "[REDACTED]")
+    end)
+  end
 end
