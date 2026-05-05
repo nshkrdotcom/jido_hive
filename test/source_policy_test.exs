@@ -27,8 +27,12 @@ defmodule JidoHiveSourcePolicyTest do
     "String.to_existing_" <> "atom",
     "binary_to_" <> "atom",
     "binary_to_existing_" <> "atom",
+    "list_to_" <> "atom",
+    "list_to_existing_" <> "atom",
     ":" <> <<35, 123>>,
+    Enum.join(["Module", ".concat"]),
     "Reg" <> "ex",
+    "reg" <> "ex",
     "~" <> "r",
     ":re" <> ".",
     "String." <> "match",
@@ -50,10 +54,36 @@ defmodule JidoHiveSourcePolicyTest do
   defp token_hits(path) do
     content = File.read!(path)
 
-    @forbidden_tokens
-    |> Enum.filter(&String.contains?(content, &1))
-    |> Enum.map(fn token -> "#{Path.relative_to(path, @root)} contains #{inspect(token)}" end)
+    token_hits =
+      @forbidden_tokens
+      |> Enum.filter(&String.contains?(content, &1))
+      |> Enum.map(fn token -> "#{Path.relative_to(path, @root)} contains #{inspect(token)}" end)
+
+    dynamic_quoted_atom_hits(path, content) ++ token_hits
   end
+
+  defp dynamic_quoted_atom_hits(path, content) do
+    if dynamic_quoted_atom_interpolation?(String.to_charlist(content)) do
+      ["#{Path.relative_to(path, @root)} contains dynamic quoted atom interpolation"]
+    else
+      []
+    end
+  end
+
+  defp dynamic_quoted_atom_interpolation?([?:, ?" | rest]) do
+    quoted_atom_interpolates?(rest) or dynamic_quoted_atom_interpolation?(rest)
+  end
+
+  defp dynamic_quoted_atom_interpolation?([_char | rest]),
+    do: dynamic_quoted_atom_interpolation?(rest)
+
+  defp dynamic_quoted_atom_interpolation?([]), do: false
+
+  defp quoted_atom_interpolates?([?", _next | _rest]), do: false
+  defp quoted_atom_interpolates?([?#, ?{ | _rest]), do: true
+  defp quoted_atom_interpolates?([?\\, _escaped | rest]), do: quoted_atom_interpolates?(rest)
+  defp quoted_atom_interpolates?([_char | rest]), do: quoted_atom_interpolates?(rest)
+  defp quoted_atom_interpolates?([]), do: false
 
   defp source_files(root), do: source_files(root, [])
 

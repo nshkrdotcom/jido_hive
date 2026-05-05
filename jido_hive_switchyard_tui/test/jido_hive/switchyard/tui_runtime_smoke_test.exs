@@ -370,6 +370,6 @@ defmodule JidoHive.Switchyard.TUIRuntimeSmokeTest do
   end
 
   defp key_event(code, modifiers \\ []) do
-    struct(Module.concat([ExRatatui.Event, Key]), code: code, kind: "press", modifiers: modifiers)
+    %ExRatatui.Event.Key{code: code, kind: "press", modifiers: modifiers}
   end
 end

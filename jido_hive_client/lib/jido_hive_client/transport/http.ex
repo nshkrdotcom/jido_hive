@@ -9,6 +9,19 @@ defmodule JidoHiveClient.Transport.HTTP do
   @default_connect_timeout_ms 5_000
   @response_options [body_format: :binary]
   @stats_table :jido_hive_client_transport_http_stats
+  @lane_profiles %{
+    default: :jido_hive_transport_default,
+    operator_control: :jido_hive_transport_operator_control,
+    operator_events: :jido_hive_transport_operator_events,
+    operator_room: :jido_hive_transport_operator_room,
+    operator_contribution: :jido_hive_transport_operator_contribution,
+    room_run_control: :jido_hive_transport_room_run_control,
+    room_run_status: :jido_hive_transport_room_run_status,
+    room_hydrate: :jido_hive_transport_room_hydrate,
+    room_events: :jido_hive_transport_room_events,
+    room_submit: :jido_hive_transport_room_submit,
+    room_sync: :jido_hive_transport_room_sync
+  }
 
   @spec get(String.t(), String.t(), keyword()) :: {:ok, map()} | {:error, term()}
   def get(api_base_url, path, opts \\ []), do: request(:get, api_base_url, path, nil, opts)
@@ -22,52 +35,54 @@ defmodule JidoHiveClient.Transport.HTTP do
           {:ok, map()} | {:error, term()}
   def request(method, api_base_url, path, payload, opts)
       when method in [:get, :post] and is_binary(path) and is_list(opts) do
-    :ok = ensure_http_started()
-
-    base_url =
-      api_base_url
-      |> to_string()
-      |> String.trim()
-      |> String.trim_trailing("/")
-
-    url = String.to_charlist(base_url <> path)
-    headers = [{~c"content-type", ~c"application/json"}, {~c"accept", ~c"application/json"}]
     lane = Keyword.get(opts, :lane, :default)
-    surface = Keyword.get(opts, :surface, :unknown)
-    request_timeout_ms = Keyword.get(opts, :request_timeout_ms, @default_request_timeout_ms)
-    connect_timeout_ms = Keyword.get(opts, :connect_timeout_ms, @default_connect_timeout_ms)
-    operation_id = Keyword.get(opts, :operation_id)
-    request_options = [timeout: request_timeout_ms, connect_timeout: connect_timeout_ms]
-    started_at = System.monotonic_time(:millisecond)
-    queued_at = now_iso8601()
-    profile = lane_profile(lane)
 
-    request_meta = %{
-      lane: lane,
-      surface: surface,
-      operation_id: operation_id,
-      method: method,
-      path: path,
-      started_at: started_at,
-      request_timeout_ms: request_timeout_ms,
-      connect_timeout_ms: connect_timeout_ms
-    }
+    with {:ok, profile} <- lane_profile(lane) do
+      :ok = ensure_http_started()
 
-    request =
-      case method do
-        :get -> {url, headers}
-        :post -> {url, headers, ~c"application/json", Jason.encode!(payload)}
-      end
+      base_url =
+        api_base_url
+        |> to_string()
+        |> String.trim()
+        |> String.trim_trailing("/")
 
-    record_request_start(request_meta, queued_at)
+      url = String.to_charlist(base_url <> path)
+      headers = [{~c"content-type", ~c"application/json"}, {~c"accept", ~c"application/json"}]
+      surface = Keyword.get(opts, :surface, :unknown)
+      request_timeout_ms = Keyword.get(opts, :request_timeout_ms, @default_request_timeout_ms)
+      connect_timeout_ms = Keyword.get(opts, :connect_timeout_ms, @default_connect_timeout_ms)
+      operation_id = Keyword.get(opts, :operation_id)
+      request_options = [timeout: request_timeout_ms, connect_timeout: connect_timeout_ms]
+      started_at = System.monotonic_time(:millisecond)
+      queued_at = now_iso8601()
 
-    request_result =
-      case ensure_http_profile_started(profile) do
-        :ok -> request_with_retry(method, request, request_options, @response_options, profile)
-        {:error, reason} -> {:error, {:http_profile_not_started, profile, reason}}
-      end
+      request_meta = %{
+        lane: lane,
+        surface: surface,
+        operation_id: operation_id,
+        method: method,
+        path: path,
+        started_at: started_at,
+        request_timeout_ms: request_timeout_ms,
+        connect_timeout_ms: connect_timeout_ms
+      }
 
-    handle_response(request_result, request_meta)
+      request =
+        case method do
+          :get -> {url, headers}
+          :post -> {url, headers, ~c"application/json", Jason.encode!(payload)}
+        end
+
+      record_request_start(request_meta, queued_at)
+
+      request_result =
+        case ensure_http_profile_started(profile) do
+          :ok -> request_with_retry(method, request, request_options, @response_options, profile)
+          {:error, reason} -> {:error, {:http_profile_not_started, profile, reason}}
+        end
+
+      handle_response(request_result, request_meta)
+    end
   end
 
   @spec diagnostics() :: map()
@@ -183,11 +198,18 @@ defmodule JidoHiveClient.Transport.HTTP do
     }
   end
 
-  defp lane_profile(lane), do: :"jido_hive_transport_#{lane}"
+  defp lane_profile(lane) when is_atom(lane) do
+    case Map.fetch(@lane_profiles, lane) do
+      {:ok, profile} -> {:ok, profile}
+      :error -> {:error, {:unsupported_lane, lane}}
+    end
+  end
+
+  defp lane_profile(lane), do: {:error, {:unsupported_lane, lane}}
 
   defp update_lane_stats(lane, fun) do
     ensure_stats_table()
-    profile = lane_profile(lane)
+    {:ok, profile} = lane_profile(lane)
 
     current =
       case :ets.lookup(@stats_table, lane) do
