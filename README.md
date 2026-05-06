@@ -29,6 +29,17 @@ This repo currently contains:
 - `core/skill_engine`
   memory-default skill admission, versioning, bounded composition, and
   invocation gate logic
+- `core/agent_coordinator`
+  workflow-scoped spawn, handoff, cancel, and supervise contracts for
+  governed agents
+- `core/inter_agent_messaging`
+  bounded inter-agent message contracts with tenant, authority, budget, and
+  trace gates
+- `core/shared_memory_facade`
+  explicit shared-memory grants over governed memory scopes
+- `core/coordination_patterns`
+  bounded orchestrator-worker, debate, consensus, and hierarchical
+  decomposition pattern contracts
 - `conformance_contracts/skill_conformance_contracts`
   external-author ExUnit helpers that validate safe skill manifests without
   importing runtime internals
@@ -235,6 +246,20 @@ combination of:
 
 ## Package guide
 
+- [core/agent_coordinator/README.md](core/agent_coordinator/README.md)
+  workflow-scoped spawn, handoff, cancel, and supervision contracts
+- [core/inter_agent_messaging/README.md](core/inter_agent_messaging/README.md)
+  bounded inter-agent message routing contracts
+- [core/shared_memory_facade/README.md](core/shared_memory_facade/README.md)
+  explicit shared-memory grants over governed memory scopes
+- [core/coordination_patterns/README.md](core/coordination_patterns/README.md)
+  bounded reusable multi-agent pattern contracts
+- [core/skill_contracts/README.md](core/skill_contracts/README.md)
+  ref-only skill manifest and invocation contracts
+- [core/skill_engine/README.md](core/skill_engine/README.md)
+  memory-default skill admission and invocation gate logic
+- [conformance_contracts/skill_conformance_contracts/README.md](conformance_contracts/skill_conformance_contracts/README.md)
+  external-author skill conformance helpers
 - [jido_hive_server/README.md](jido_hive_server/README.md)
   server truth, routes, publications, deployment
 - [jido_hive_client/README.md](jido_hive_client/README.md)

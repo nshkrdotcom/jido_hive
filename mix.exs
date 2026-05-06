@@ -67,6 +67,10 @@ defmodule JidoHiveWorkspace.MixProject do
     [
       root: __DIR__,
       projects: [
+        "core/agent_coordinator",
+        "core/inter_agent_messaging",
+        "core/shared_memory_facade",
+        "core/coordination_patterns",
         "core/skill_contracts",
         "core/skill_engine",
         "conformance_contracts/skill_conformance_contracts",

@@ -75,5 +75,21 @@ defmodule JidoHive.Build.DependencyResolverTest do
              "conformance_contracts/skill_conformance_contracts"
 
     assert skill_conformance_opts[:branch] == "main"
+
+    for {function, app, subdir} <- [
+          {:jido_hive_agent_coordinator, :jido_hive_agent_coordinator,
+           "core/agent_coordinator"},
+          {:jido_hive_inter_agent_messaging, :jido_hive_inter_agent_messaging,
+           "core/inter_agent_messaging"},
+          {:jido_hive_shared_memory_facade, :jido_hive_shared_memory_facade,
+           "core/shared_memory_facade"},
+          {:jido_hive_coordination_patterns, :jido_hive_coordination_patterns,
+           "core/coordination_patterns"}
+        ] do
+      assert {^app, opts} = apply(isolated_resolver, function, [])
+      assert opts[:git] == "https://github.com/nshkrdotcom/jido_hive.git"
+      assert opts[:subdir] == subdir
+      assert opts[:branch] == "main"
+    end
   end
 end

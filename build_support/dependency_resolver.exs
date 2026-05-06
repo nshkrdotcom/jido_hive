@@ -221,6 +221,42 @@ defmodule JidoHive.Build.DependencyResolver do
     )
   end
 
+  def jido_hive_agent_coordinator(opts \\ []) do
+    resolve(
+      :jido_hive_agent_coordinator,
+      ["core/agent_coordinator"],
+      [git: @jido_hive_repo, branch: "main", subdir: "core/agent_coordinator"],
+      opts
+    )
+  end
+
+  def jido_hive_inter_agent_messaging(opts \\ []) do
+    resolve(
+      :jido_hive_inter_agent_messaging,
+      ["core/inter_agent_messaging"],
+      [git: @jido_hive_repo, branch: "main", subdir: "core/inter_agent_messaging"],
+      opts
+    )
+  end
+
+  def jido_hive_shared_memory_facade(opts \\ []) do
+    resolve(
+      :jido_hive_shared_memory_facade,
+      ["core/shared_memory_facade"],
+      [git: @jido_hive_repo, branch: "main", subdir: "core/shared_memory_facade"],
+      opts
+    )
+  end
+
+  def jido_hive_coordination_patterns(opts \\ []) do
+    resolve(
+      :jido_hive_coordination_patterns,
+      ["core/coordination_patterns"],
+      [git: @jido_hive_repo, branch: "main", subdir: "core/coordination_patterns"],
+      opts
+    )
+  end
+
   defp resolve(app, local_paths, fallback_opts, opts) do
     case workspace_path(local_paths) do
       nil -> {app, Keyword.merge(fallback_opts, opts)}
