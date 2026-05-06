@@ -8,29 +8,41 @@ defmodule JidoHiveWorkerRuntime.CollaborationPromptTest do
 
     assert request.allowed_tools == []
 
-    assert request.system_prompt =~
+    assert String.contains?(
+             request.system_prompt,
              "Return exactly one JSON object that starts with { and ends with }."
+           )
 
-    assert request.system_prompt =~ "Allowed contribution types: reasoning, artifact"
-    assert request.system_prompt =~ "\"kind\": \"reasoning|artifact\""
-    assert request.system_prompt =~ "\"payload\": {"
-    assert request.system_prompt =~ "\"summary\": \"string\""
+    assert String.contains?(
+             request.system_prompt,
+             "Allowed contribution types: reasoning, artifact"
+           )
 
-    assert request.system_prompt =~
+    assert String.contains?(request.system_prompt, "\"kind\": \"reasoning|artifact\"")
+    assert String.contains?(request.system_prompt, "\"payload\": {")
+    assert String.contains?(request.system_prompt, "\"summary\": \"string\"")
+
+    assert String.contains?(
+             request.system_prompt,
              "Do not return wrapper keys like schema_version, room_id, participant_id"
+           )
 
-    assert request.system_prompt =~
+    assert String.contains?(
+             request.system_prompt,
              "Do not return legacy top-level keys like summary, context_objects, artifacts, or authority_level."
+           )
 
-    assert request.prompt =~ "Return the JSON object only."
-    assert request.prompt =~ "Assignment packet JSON:"
-    assert request.prompt =~ "\"allowed_contribution_types\""
-    assert request.prompt =~ "\"reasoning\""
+    assert String.contains?(request.prompt, "Return the JSON object only.")
+    assert String.contains?(request.prompt, "Assignment packet JSON:")
+    assert String.contains?(request.prompt, "\"allowed_contribution_types\"")
+    assert String.contains?(request.prompt, "\"reasoning\"")
 
-    assert request.system_prompt =~
+    assert String.contains?(
+             request.system_prompt,
              "Valid relation target ids from visible room context: ctx-root-1"
+           )
 
-    assert request.system_prompt =~ "Never invent ids"
+    assert String.contains?(request.system_prompt, "Never invent ids")
   end
 
   test "explicit allowed tools still pass through when requested" do

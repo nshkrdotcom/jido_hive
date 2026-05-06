@@ -6,11 +6,16 @@ defmodule JidoHiveServerWeb.HomeControllerTest do
 
     body = html_response(conn, 200)
 
-    assert body =~ "Jido Hive Server"
-    assert body =~ "Production browser visits land here instead of a raw JSON 404."
-    assert body =~ "bin/client-worker --prod --worker-index 1"
-    assert body =~ "participant_count * 3"
-    assert body =~ "/api/targets"
+    assert String.contains?(body, "Jido Hive Server")
+
+    assert String.contains?(
+             body,
+             "Production browser visits land here instead of a raw JSON 404."
+           )
+
+    assert String.contains?(body, "bin/client-worker --prod --worker-index 1")
+    assert String.contains?(body, "participant_count * 3")
+    assert String.contains?(body, "/api/targets")
   end
 
   test "renders structured metadata for json requests to the root path", %{conn: conn} do
@@ -27,8 +32,8 @@ defmodule JidoHiveServerWeb.HomeControllerTest do
              "endpoints" => %{"api_base" => api_base, "websocket" => websocket}
            } = json_response(conn, 200)
 
-    assert api_base =~ "/api"
-    assert websocket =~ "/socket/websocket"
+    assert String.contains?(api_base, "/api")
+    assert String.contains?(websocket, "/socket/websocket")
   end
 
   test "renders a friendly html 404 for unknown browser get routes", %{conn: conn} do
@@ -36,8 +41,8 @@ defmodule JidoHiveServerWeb.HomeControllerTest do
 
     body = html_response(conn, 404)
 
-    assert body =~ "Route Not Found"
-    assert body =~ "/missing"
+    assert String.contains?(body, "Route Not Found")
+    assert String.contains?(body, "/missing")
   end
 
   test "preserves json 404s for unknown api routes", %{conn: conn} do

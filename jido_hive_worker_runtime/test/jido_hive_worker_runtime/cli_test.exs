@@ -5,9 +5,9 @@ defmodule JidoHiveWorkerRuntime.CLITest do
 
   test "run returns help for help flags" do
     assert {:help, output} = CLI.run(["--help"])
-    assert output =~ "jido_hive_worker [options]"
-    assert output =~ "--participant-id"
-    assert output =~ "--control-port"
+    assert String.contains?(output, "jido_hive_worker [options]")
+    assert String.contains?(output, "--participant-id")
+    assert String.contains?(output, "--control-port")
   end
 
   test "run normalizes valid worker runtime options" do

@@ -47,25 +47,25 @@ defmodule JidoHiveConsole.CLITest do
   test "help_text documents the main console entrypoints" do
     output = CLI.help_text(:main)
 
-    assert output =~ "hive console"
-    assert output =~ "hive workflow room-smoke"
-    assert output =~ "hive help"
+    assert String.contains?(output, "hive console")
+    assert String.contains?(output, "hive workflow room-smoke")
+    assert String.contains?(output, "hive help")
   end
 
   test "help_text documents the console-specific flags" do
     output = CLI.help_text(:console)
 
-    assert output =~ "--participant-id"
-    assert output =~ "--room-id"
-    assert output =~ "--debug"
+    assert String.contains?(output, "--participant-id")
+    assert String.contains?(output, "--room-id")
+    assert String.contains?(output, "--debug")
   end
 
   test "help_text documents the workflow room smoke flags" do
     output = CLI.help_text(:workflow_room_smoke)
 
-    assert output =~ "--name"
-    assert output =~ "--text"
-    assert output =~ "--run"
+    assert String.contains?(output, "--name")
+    assert String.contains?(output, "--text")
+    assert String.contains?(output, "--run")
   end
 
   test "run_status returns success for help entrypoints" do

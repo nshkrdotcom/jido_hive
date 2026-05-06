@@ -83,7 +83,7 @@ defmodule JidoHiveWorkerRuntime.Executor.ProjectionTest do
     assert projection.execution["session_id"] == "session-1"
     assert projection.execution["provider"] == "codex"
     assert projection.execution["status"] == "completed"
-    assert projection.execution["text"] =~ "\"summary\":\"done\""
+    assert String.contains?(projection.execution["text"], "\"summary\":\"done\"")
     assert projection.execution["cost"] == %{"input_tokens" => 10, "output_tokens" => 20}
     assert Enum.map(projection.tool_events, & &1["event_type"]) == ["tool_call", "tool_result"]
   end
@@ -104,7 +104,7 @@ defmodule JidoHiveWorkerRuntime.Executor.ProjectionTest do
     merged = Projection.merge_repair(projection, repair_projection, :json_not_found)
 
     assert merged.execution["metadata"]["repair_attempted"] == true
-    assert merged.execution["metadata"]["repair_reason"] =~ "json_not_found"
+    assert String.contains?(merged.execution["metadata"]["repair_reason"], "json_not_found")
     assert merged.execution["cost"] == %{"input_tokens" => 10, "output_tokens" => 20}
     assert Enum.map(merged.tool_events, & &1["event_type"]) == ["tool_call", "tool_result"]
     assert Enum.map(merged.approvals, & &1["event_type"]) == ["approval_requested"]

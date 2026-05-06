@@ -44,14 +44,14 @@ defmodule JidoHivePublications.ServiceTest do
 
     github_plan = Enum.find(plan.publications, &(&1.channel == "github"))
     assert github_plan.capability_id == "github.issue.create"
-    assert github_plan.draft.title =~ "client-server collaboration protocol"
-    assert github_plan.draft.body =~ "Shared packet"
-    assert github_plan.draft.body =~ "Conflict handling is underspecified"
+    assert String.contains?(github_plan.draft.title, "client-server collaboration protocol")
+    assert String.contains?(github_plan.draft.body, "Shared packet")
+    assert String.contains?(github_plan.draft.body, "Conflict handling is underspecified")
     assert String.split(github_plan.draft.body, "Shared packet") |> length() == 2
 
     notion_plan = Enum.find(plan.publications, &(&1.channel == "notion"))
     assert notion_plan.capability_id == "notion.pages.create"
-    assert notion_plan.draft.title =~ "client-server collaboration protocol"
+    assert String.contains?(notion_plan.draft.title, "client-server collaboration protocol")
     assert is_list(notion_plan.draft.children)
     assert length(notion_plan.draft.children) >= 3
 

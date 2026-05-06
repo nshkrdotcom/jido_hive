@@ -75,7 +75,7 @@ defmodule JidoHivePublicationsTest do
 
     assert workspace.ready?
     assert workspace.selected_channel.channel == "github"
-    assert workspace.preview_lines |> hd() =~ "Hive review"
+    assert String.contains?(workspace.preview_lines |> hd(), "Hive review")
   end
 
   test "publishes a selected channel payload from the explicit extension seam" do

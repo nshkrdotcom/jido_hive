@@ -173,8 +173,8 @@ defmodule JidoHiveServerWeb.ConnectorControllerTest do
       })
       |> json_response(422)
 
-    assert response["error"] =~ "governed_direct_connector_field"
-    refute response["error"] =~ "env-secret-token"
+    assert String.contains?(response["error"], "governed_direct_connector_field")
+    refute String.contains?(response["error"], "env-secret-token")
   end
 
   test "governed connector completion uses external secret refs without projecting raw secrets",
@@ -219,6 +219,6 @@ defmodule JidoHiveServerWeb.ConnectorControllerTest do
       |> json_response(200)
 
     assert is_binary(get_in(response, ["data", "credential_ref", "id"]))
-    refute inspect(response) =~ "env-secret-token"
+    refute String.contains?(inspect(response), "env-secret-token")
   end
 end

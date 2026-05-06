@@ -295,7 +295,7 @@ defmodule JidoHiveClient.Scenario.RoomWorkflowTest do
     assert Enum.any?(report.final_sync.operations, &(&1["operation_id"] == "room_run-1"))
     assert Enum.any?(report.final_sync.entries, &(&1["body"] == "Message during run"))
     assert report.workflow_summary.stage == "Ready to publish"
-    assert report.workflow_summary.next_action =~ "publication plan"
+    assert String.contains?(report.workflow_summary.next_action, "publication plan")
     assert report.workflow_summary.graph_counts.duplicates == 0
   end
 

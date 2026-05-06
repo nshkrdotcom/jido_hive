@@ -12,7 +12,7 @@ defmodule JidoHiveWorkerRuntime.Executor.SessionTest do
                driver_opts: [scenario: :analyst]
              )
 
-    assert get_in(result, ["payload", "summary"]) =~ "analysis pass"
+    assert String.contains?(get_in(result, ["payload", "summary"]), "analysis pass")
     assert result["kind"] == "reasoning"
 
     assert Enum.map(get_in(result, ["payload", "context_objects"]), & &1["object_type"]) == [
@@ -34,11 +34,11 @@ defmodule JidoHiveWorkerRuntime.Executor.SessionTest do
                driver_opts: [scenario: :codex_like]
              )
 
-    assert get_in(result, ["payload", "summary"]) =~ "analysis pass"
+    assert String.contains?(get_in(result, ["payload", "summary"]), "analysis pass")
     assert result["kind"] == "reasoning"
     assert get_in(result, ["meta", "execution", "status"]) == "completed"
     assert get_in(result, ["meta", "execution", "provider"]) == "codex"
-    assert get_in(result, ["meta", "execution", "text"]) =~ "\"summary\""
+    assert String.contains?(get_in(result, ["meta", "execution", "text"]), "\"summary\"")
 
     assert get_in(result, ["meta", "execution", "cost"]) == %{
              "input_tokens" => 10,
@@ -61,7 +61,7 @@ defmodule JidoHiveWorkerRuntime.Executor.SessionTest do
                driver_opts: [scenario: :repairable]
              )
 
-    assert get_in(result, ["payload", "summary"]) =~ "analysis pass"
+    assert String.contains?(get_in(result, ["payload", "summary"]), "analysis pass")
     assert result["kind"] == "reasoning"
     assert get_in(result, ["meta", "execution", "status"]) == "completed"
     assert get_in(result, ["meta", "execution", "metadata", "repair_attempted"]) == true
@@ -84,8 +84,12 @@ defmodule JidoHiveWorkerRuntime.Executor.SessionTest do
 
     assert get_in(result, ["meta", "status"]) == "failed"
     assert get_in(result, ["meta", "execution", "status"]) == "failed"
-    assert get_in(result, ["meta", "execution", "text"]) =~ "not returning JSON"
-    assert get_in(result, ["meta", "execution", "error", "reason"]) =~ "json_not_found"
+    assert String.contains?(get_in(result, ["meta", "execution", "text"]), "not returning JSON")
+
+    assert String.contains?(
+             get_in(result, ["meta", "execution", "error", "reason"]),
+             "json_not_found"
+           )
 
     assert Enum.any?(get_in(result, ["payload", "artifacts"]), fn artifact ->
              artifact["title"] == "invalid_json"

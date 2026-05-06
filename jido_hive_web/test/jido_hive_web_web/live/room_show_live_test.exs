@@ -34,28 +34,28 @@ defmodule JidoHiveWebWeb.RoomShowLiveTest do
   test "renders room workflow, provenance, steering, and run controls", %{conn: conn} do
     {:ok, view, html} = live(conn, ~p"/rooms/room-1")
 
-    assert html =~ "data-screen=\"room-show\""
-    assert html =~ "Inspect contradiction"
-    assert html =~ "Question"
-    assert html =~ "Shared Graph"
-    assert html =~ "Steering Composer"
+    assert String.contains?(html, "data-screen=\"room-show\"")
+    assert String.contains?(html, "Inspect contradiction")
+    assert String.contains?(html, "Question")
+    assert String.contains?(html, "Shared Graph")
+    assert String.contains?(html, "Steering Composer")
 
     assert_receive {:room_session_start, opts}
     assert opts[:room_id] == "room-1"
-    assert render(view) =~ "Conversation"
+    assert String.contains?(render(view), "Conversation")
 
     view
     |> element("#show-provenance")
     |> render_click()
 
-    assert render(view) =~ "Send clarification"
+    assert String.contains?(render(view), "Send clarification")
 
     assert view
            |> element("#draft-form")
            |> render_submit(%{"draft" => %{"text" => "Need decision"}})
 
     assert_receive {:submit_chat, "Need decision"}
-    assert render(view) =~ "Need decision"
+    assert String.contains?(render(view), "Need decision")
 
     assert view
            |> element("#run-room-form")

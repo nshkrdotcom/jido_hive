@@ -8,7 +8,7 @@ defmodule JidoHiveContextGraph.RoomInsightTest do
 
     assert digest.objective == "Stabilize the Redis auth path"
     assert digest.stage == "Resolve contradictions"
-    assert digest.next_action =~ "binding resolution"
+    assert String.contains?(digest.next_action, "binding resolution")
     assert digest.reason == "Open contradictions remain"
     assert digest.publish_ready == false
 

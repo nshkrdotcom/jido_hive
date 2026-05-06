@@ -19,9 +19,13 @@ defmodule JidoHiveWorkerRuntime.StatusTest do
         )
       end)
 
-    assert output =~ "participant=analyst"
-    assert output =~ "workspace=workspace-prod"
-    assert output =~ "url=wss://jido-hive-server-test.app.nsai.online/socket/websocket"
+    assert String.contains?(output, "participant=analyst")
+    assert String.contains?(output, "workspace=workspace-prod")
+
+    assert String.contains?(
+             output,
+             "url=wss://jido-hive-server-test.app.nsai.online/socket/websocket"
+           )
 
     [line | _rest] = String.split(output, "\n")
     [timestamp, message] = String.split(line, " ", parts: 2)
@@ -44,10 +48,14 @@ defmodule JidoHiveWorkerRuntime.StatusTest do
         })
       end)
 
-    assert output =~ "ready participant=analyst"
-    assert output =~ "rooms=room-1"
-    assert output =~ "waiting_for=assignment.offer"
-    assert output =~ "url=wss://jido-hive-server-test.app.nsai.online/socket/websocket"
+    assert String.contains?(output, "ready participant=analyst")
+    assert String.contains?(output, "rooms=room-1")
+    assert String.contains?(output, "waiting_for=assignment.offer")
+
+    assert String.contains?(
+             output,
+             "url=wss://jido-hive-server-test.app.nsai.online/socket/websocket"
+           )
   end
 
   test "execution_started prints prompt previews for the pending llm call" do
@@ -83,15 +91,19 @@ defmodule JidoHiveWorkerRuntime.StatusTest do
         )
       end)
 
-    assert output =~
+    assert String.contains?(
+             output,
              "executing room=room-1 phase=analysis provider=codex assigned_role=analyst model=gpt-5.4"
+           )
 
-    assert output =~ "system prompt preview room=room-1 phase=analysis"
-    assert output =~ ~s(preview="Return strict JSON only.")
-    assert output =~ "user prompt preview room=room-1 phase=analysis"
+    assert String.contains?(output, "system prompt preview room=room-1 phase=analysis")
+    assert String.contains?(output, ~s(preview="Return strict JSON only."))
+    assert String.contains?(output, "user prompt preview room=room-1 phase=analysis")
 
-    assert output =~
+    assert String.contains?(
+             output,
              ~s(preview="Execute the current assignment. {\\\"room_id\\\":\\\"room-1\\\"}")
+           )
   end
 
   test "execution_finished prints a response preview before the summary" do
@@ -115,9 +127,13 @@ defmodule JidoHiveWorkerRuntime.StatusTest do
         )
       end)
 
-    assert output =~ "response preview room=room-1 phase=analysis"
-    assert output =~ ~s(preview="{\\\"summary\\\":\\\"bad json path\\\")
-    assert output =~ "completed room=room-1 phase=analysis status=failed contribution=reasoning"
+    assert String.contains?(output, "response preview room=room-1 phase=analysis")
+    assert String.contains?(output, ~s(preview="{\\\"summary\\\":\\\"bad json path\\\"))
+
+    assert String.contains?(
+             output,
+             "completed room=room-1 phase=analysis status=failed contribution=reasoning"
+           )
   end
 
   defp valid_log_timestamp?(<<h1, h2, ?:, m1, m2, ?:, s1, s2, ?., ms1, ms2, ms3>>) do

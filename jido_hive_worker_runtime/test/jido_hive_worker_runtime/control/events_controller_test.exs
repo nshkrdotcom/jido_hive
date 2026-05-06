@@ -71,9 +71,14 @@ defmodule JidoHiveWorkerRuntime.Control.EventsControllerTest do
       |> call_router(runtime)
 
     assert conn.status == 200
-    assert List.first(get_resp_header(conn, "content-type")) =~ "text/event-stream"
-    assert conn.resp_body =~ "event: client.connection.changed"
-    assert conn.resp_body =~ "\"type\":\"client.connection.changed\""
+
+    assert String.contains?(
+             List.first(get_resp_header(conn, "content-type")),
+             "text/event-stream"
+           )
+
+    assert String.contains?(conn.resp_body, "event: client.connection.changed")
+    assert String.contains?(conn.resp_body, "\"type\":\"client.connection.changed\"")
   end
 
   test "returns 404 for removed top-level runtime event routes", %{runtime: runtime} do

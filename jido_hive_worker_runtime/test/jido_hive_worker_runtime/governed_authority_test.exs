@@ -78,12 +78,12 @@ defmodule JidoHiveWorkerRuntime.GovernedAuthorityTest do
     snapshot = Runtime.snapshot(runtime)
     events = Runtime.recent_events(runtime)
 
-    assert snapshot.last_error.reason =~ "[REDACTED]"
-    refute snapshot.last_error.reason =~ "env-secret-worker"
+    assert String.contains?(snapshot.last_error.reason, "[REDACTED]")
+    refute String.contains?(snapshot.last_error.reason, "env-secret-worker")
 
     assert [%{payload: %{"reason" => event_reason}}] = events
-    assert event_reason =~ "[REDACTED]"
-    refute event_reason =~ "env-secret-worker"
+    assert String.contains?(event_reason, "[REDACTED]")
+    refute String.contains?(event_reason, "env-secret-worker")
   end
 
   defp restore_env(name, nil), do: System.delete_env(name)

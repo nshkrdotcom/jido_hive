@@ -31,13 +31,13 @@ defmodule JidoHiveWebWeb.PublicationShowLiveTest do
   test "renders publication workspace and publishes bindings", %{conn: conn} do
     {:ok, view, html} = live(conn, ~p"/rooms/room-1/publications")
 
-    assert html =~ "data-screen=\"publication-show\""
-    assert html =~ "Draft"
-    assert html =~ "blocks"
-    assert html =~ "rich_text"
-    assert html =~ "Repository name"
-    assert html =~ "Publish Controls"
-    assert html =~ "publication-run-1"
+    assert String.contains?(html, "data-screen=\"publication-show\"")
+    assert String.contains?(html, "Draft")
+    assert String.contains?(html, "blocks")
+    assert String.contains?(html, "rich_text")
+    assert String.contains?(html, "Repository name")
+    assert String.contains?(html, "Publish Controls")
+    assert String.contains?(html, "publication-run-1")
 
     assert view
            |> element("#publish-form")

@@ -121,7 +121,7 @@ perform_request() {
     esac
   fi
 
-  if [[ ! "$status" =~ ^[0-9]{3}$ ]]; then
+  if [[ ${#status} -ne 3 || "$status" == *[!0123456789]* ]]; then
     rm -f "$body_file"
     die "unexpected HTTP status from $method $url: $status"
   fi
