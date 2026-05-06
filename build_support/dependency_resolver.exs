@@ -2,6 +2,7 @@ defmodule JidoHive.Build.DependencyResolver do
   @moduledoc false
 
   @repo_root Path.expand("..", __DIR__)
+  @jido_hive_repo "https://github.com/nshkrdotcom/jido_hive.git"
   @jido_integration_repo "https://github.com/agentjido/jido_integration.git"
   @jido_ai_repo "https://github.com/agentjido/jido_ai.git"
   @switchyard_repo "https://github.com/nshkrdotcom/switchyard.git"
@@ -185,6 +186,37 @@ defmodule JidoHive.Build.DependencyResolver do
       :workbench_widgets,
       ["../switchyard/core/workbench_widgets"],
       [git: @switchyard_repo, branch: "main", sparse: "core/workbench_widgets"],
+      opts
+    )
+  end
+
+  def jido_hive_skill_contracts(opts \\ []) do
+    resolve(
+      :jido_hive_skill_contracts,
+      ["core/skill_contracts"],
+      [git: @jido_hive_repo, branch: "main", subdir: "core/skill_contracts"],
+      opts
+    )
+  end
+
+  def jido_hive_skill_engine(opts \\ []) do
+    resolve(
+      :jido_hive_skill_engine,
+      ["core/skill_engine"],
+      [git: @jido_hive_repo, branch: "main", subdir: "core/skill_engine"],
+      opts
+    )
+  end
+
+  def jido_hive_skill_conformance_contracts(opts \\ []) do
+    resolve(
+      :jido_hive_skill_conformance_contracts,
+      ["conformance_contracts/skill_conformance_contracts"],
+      [
+        git: @jido_hive_repo,
+        branch: "main",
+        subdir: "conformance_contracts/skill_conformance_contracts"
+      ],
       opts
     )
   end

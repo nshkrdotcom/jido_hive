@@ -67,6 +67,9 @@ defmodule JidoHiveWorkspace.MixProject do
     [
       root: __DIR__,
       projects: [
+        "core/skill_contracts",
+        "core/skill_engine",
+        "conformance_contracts/skill_conformance_contracts",
         "jido_hive_client",
         "jido_hive_context_graph",
         "jido_hive_publications",

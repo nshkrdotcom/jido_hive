@@ -23,6 +23,15 @@ seam is still wrong.
 
 This repo currently contains:
 
+- `core/skill_contracts`
+  ref-only skill manifest, capability binding, composition, version, and
+  invocation contracts for governed AI skill bundles
+- `core/skill_engine`
+  memory-default skill admission, versioning, bounded composition, and
+  invocation gate logic
+- `conformance_contracts/skill_conformance_contracts`
+  external-author ExUnit helpers that validate safe skill manifests without
+  importing runtime internals
 - `jido_hive_server`
   authoritative room engine, REST API, websocket room transport, persistence,
   and connector state

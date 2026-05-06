@@ -51,5 +51,29 @@ defmodule JidoHive.Build.DependencyResolverTest do
     assert asm_bridge_opts[:git] == "https://github.com/agentjido/jido_integration.git"
     assert asm_bridge_opts[:subdir] == "core/asm_runtime_bridge"
     assert asm_bridge_opts[:branch] == "main"
+
+    assert {:jido_hive_skill_contracts, skill_contract_opts} =
+             apply(isolated_resolver, :jido_hive_skill_contracts, [])
+
+    assert skill_contract_opts[:git] == "https://github.com/nshkrdotcom/jido_hive.git"
+    assert skill_contract_opts[:subdir] == "core/skill_contracts"
+    assert skill_contract_opts[:branch] == "main"
+
+    assert {:jido_hive_skill_engine, skill_engine_opts} =
+             apply(isolated_resolver, :jido_hive_skill_engine, [])
+
+    assert skill_engine_opts[:git] == "https://github.com/nshkrdotcom/jido_hive.git"
+    assert skill_engine_opts[:subdir] == "core/skill_engine"
+    assert skill_engine_opts[:branch] == "main"
+
+    assert {:jido_hive_skill_conformance_contracts, skill_conformance_opts} =
+             apply(isolated_resolver, :jido_hive_skill_conformance_contracts, [])
+
+    assert skill_conformance_opts[:git] == "https://github.com/nshkrdotcom/jido_hive.git"
+
+    assert skill_conformance_opts[:subdir] ==
+             "conformance_contracts/skill_conformance_contracts"
+
+    assert skill_conformance_opts[:branch] == "main"
   end
 end
