@@ -1,0 +1,3 @@
+%{
+  "blitz": {:hex, :blitz, "0.3.0", "1152ed918508a6f3828875b41700be0571b77a5ce6d58f3e45e06f96960569d8", [:mix], [], "hexpm", "226b9f99cc5b151514b2eed8cf8c16bc1e0985a3abeccb96087c48826afeb678"},
+}

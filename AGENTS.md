@@ -224,8 +224,8 @@ Shortcuts:
 - `mix mr.dialyzer`
 - `mix mr.docs`
 
-Root workspace prefers local `../blitz`; otherwise it falls back to Hex
-`~> 0.1.0`.
+Root workspace uses published Hex Blitz `~> 0.3.0` by default; use a local
+Blitz checkout only in an explicit Blitz-development branch.
 
 ## Documentation Rules
 
@@ -253,3 +253,7 @@ MIX_ENV=coolify mix coolify.status --project server --latest
 - local web UI: `http://127.0.0.1:4100/rooms`
 - production API: `https://jido-hive-server-test.app.nsai.online/api`
 - production websocket: `wss://jido-hive-server-test.app.nsai.online/socket/websocket`
+
+## Blitz 0.3.0 operational note
+
+Root workspace Blitz uses published Hex `~> 0.3.0` by default; `.blitz/` is committed compact impact state after green QC. Source and `mix.exs` changes cascade through reverse workspace dependencies; docs-only changes should stay owner-local.
