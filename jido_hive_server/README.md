@@ -314,3 +314,7 @@ MIX_ENV=coolify mix coolify.status --project server --latest
 - General debugging guide: [../docs/debugging_guide.md](../docs/debugging_guide.md)
 - Client guide: [jido_hive_client/README.md](../jido_hive_client/README.md)
 - Compatibility launcher guide: [examples/jido_hive_console/README.md](../examples/jido_hive_console/README.md)
+
+## Persistence Documentation
+
+See `docs/persistence.md` for tiers, defaults, adapters, unsupported selections, config examples, restart claims, durability claims, debug sidecar behavior, redaction guarantees, migration or preflight behavior, and no-bypass scope when applicable.

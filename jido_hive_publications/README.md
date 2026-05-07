@@ -11,3 +11,7 @@ It is an explicit extension package over canonical room resources. It depends on
 
 The base room engine and the base surface do not own publication workflows after
 the big-bang cutover.
+
+## Persistence Documentation
+
+See `docs/persistence.md` for tiers, defaults, adapters, unsupported selections, config examples, restart claims, durability claims, debug sidecar behavior, redaction guarantees, migration or preflight behavior, and no-bypass scope when applicable.

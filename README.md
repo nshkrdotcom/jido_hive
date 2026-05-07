@@ -258,6 +258,10 @@ combination of:
   ref-only skill manifest and invocation contracts
 - [core/skill_engine/README.md](core/skill_engine/README.md)
   memory-default skill admission and invocation gate logic
+- `docs/persistence.md`
+  repo-level persistence tiers, owner scopes, and restart claims
+- `docs/product_no_bypass.md`
+  product-surface scan scope and store-owner package exclusions
 - [conformance_contracts/skill_conformance_contracts/README.md](conformance_contracts/skill_conformance_contracts/README.md)
   external-author skill conformance helpers
 - [jido_hive_server/README.md](jido_hive_server/README.md)
@@ -349,3 +353,7 @@ For the detailed triage sequence, read
 ## License
 
 [MIT](LICENSE)
+
+## Persistence Documentation
+
+See `docs/persistence.md` for tiers, defaults, adapters, unsupported selections, config examples, restart claims, durability claims, debug sidecar behavior, redaction guarantees, migration or preflight behavior, and no-bypass scope when applicable.
