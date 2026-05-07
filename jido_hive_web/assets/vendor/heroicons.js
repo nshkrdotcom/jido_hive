@@ -19,7 +19,7 @@ module.exports = plugin(function({matchComponents, theme}) {
   })
   matchComponents({
     "hero": ({name, fullPath}) => {
-      let content = fs.readFileSync(fullPath).toString().replace(/\r?\n|\r/g, "")
+      let content = fs.readFileSync(fullPath).toString().split("\r").join("").split("\n").join("")
       content = encodeURIComponent(content)
       let size = theme("spacing.6")
       if (name.endsWith("-mini")) {

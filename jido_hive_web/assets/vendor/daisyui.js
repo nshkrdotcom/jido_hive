@@ -216,6 +216,96 @@ var getPrefixedSelector = (selector, prefix) => {
     return selector;
   return `.${prefix}${selector.slice(1)}`;
 };
+var isClassNameCharacter = (character) => {
+  if (!character)
+    return false;
+  const code = character.charCodeAt(0);
+  return character === "-" || character === "_" || code >= 48 && code <= 57 || code >= 65 && code <= 90 || code >= 97 && code <= 122;
+};
+var prefixClassSelectors = (value, prefix) => {
+  let result = "";
+  let index = 0;
+  while (index < value.length) {
+    const character = value[index];
+    if (character === "." && isClassNameCharacter(value[index + 1])) {
+      let end = index + 1;
+      while (isClassNameCharacter(value[end])) {
+        end += 1;
+      }
+      result += `.${prefix}${value.slice(index + 1, end)}`;
+      index = end;
+      continue;
+    }
+    result += character;
+    index += 1;
+  }
+  return result;
+};
+var containsPseudoFunctionSelector = (value) => {
+  let index = 0;
+  while (index < value.length) {
+    if (value[index] !== ":") {
+      index += 1;
+      continue;
+    }
+    let end = index + 1;
+    while (value[end] === "-" || value[end] >= "a" && value[end] <= "z") {
+      end += 1;
+    }
+    if (end > index + 1 && value[end] === "(") {
+      return true;
+    }
+    index = end + 1;
+  }
+  return false;
+};
+var splitOnCommas = (value) => value.split(",").map((part) => part.trim());
+var isWhitespaceCharacter = (character) => character === " " || character === "\t" || character === "\n" || character === "\r" || character === "\f";
+var splitOnWhitespace = (value) => {
+  const parts = [];
+  let current = "";
+  for (const character of value) {
+    if (isWhitespaceCharacter(character)) {
+      if (current) {
+        parts.push(current);
+        current = "";
+      }
+    } else {
+      current += character;
+    }
+  }
+  if (current) {
+    parts.push(current);
+  }
+  return parts;
+};
+var prefixCssVariables = (value, prefix, excludedPrefixes) => {
+  const marker = "var(--";
+  let result = "";
+  let index = 0;
+  while (index < value.length) {
+    const start = value.indexOf(marker, index);
+    if (start === -1) {
+      result += value.slice(index);
+      break;
+    }
+    const end = value.indexOf(")", start + marker.length);
+    if (end === -1) {
+      result += value.slice(index);
+      break;
+    }
+    result += value.slice(index, start);
+    const variableName = value.slice(start + marker.length, end);
+    const original = value.slice(start, end + 1);
+    if (shouldExcludeVariable(variableName, excludedPrefixes)) {
+      result += original;
+    } else {
+      result += `var(--${prefix}${variableName})`;
+    }
+    index = end + 1;
+  }
+  return result;
+};
 var getPrefixedKey = (key, prefix, excludedPrefixes) => {
   const prefixAmpDot = prefix ? `&.${prefix}` : "";
   if (!prefix)
@@ -228,34 +318,34 @@ var getPrefixedKey = (key, prefix, excludedPrefixes) => {
     return key;
   }
   if (key.startsWith("&")) {
-    if (key.match(/:[a-z-]+\(/)) {
-      return key.replace(/\.([\w-]+)/g, `.${prefix}$1`);
+    if (containsPseudoFunctionSelector(key)) {
+      return prefixClassSelectors(key, prefix);
     }
     if (key.startsWith("&.")) {
       return `${prefixAmpDot}${key.slice(2)}`;
     }
-    return key.replace(/\.([\w-]+)/g, `.${prefix}$1`);
+    return prefixClassSelectors(key, prefix);
   }
   if (key.startsWith(":")) {
-    return key.replace(/\.([\w-]+)/g, `.${prefix}$1`);
+    return prefixClassSelectors(key, prefix);
   }
   if (key.includes(".") && !key.includes(" ") && !key.includes(">") && !key.includes("+") && !key.includes("~")) {
-    return key.split(".").filter(Boolean).map((part) => prefix + part).join(".").replace(/^/, ".");
+    return `.${key.split(".").filter(Boolean).map((part) => prefix + part).join(".")}`;
   }
   if (key.includes(">") || key.includes("+") || key.includes("~")) {
     if (key.includes(",")) {
-      return key.split(/\s*,\s*/).map((part) => {
-        return part.replace(/\.([\w-]+)/g, `.${prefix}$1`);
+      return splitOnCommas(key).map((part) => {
+        return prefixClassSelectors(part, prefix);
       }).join(", ");
     }
-    let processedKey = key.replace(/\.([\w-]+)/g, `.${prefix}$1`);
+    let processedKey = prefixClassSelectors(key, prefix);
     if (processedKey.startsWith(">") || processedKey.startsWith("+") || processedKey.startsWith("~")) {
       processedKey = ` ${processedKey}`;
     }
     return processedKey;
   }
   if (key.includes(" ")) {
-    return key.split(/\s+/).map((part) => {
+    return splitOnWhitespace(key).map((part) => {
       if (part.startsWith(".")) {
         return getPrefixedSelector(part, prefix);
       }
@@ -267,7 +357,7 @@ var getPrefixedKey = (key, prefix, excludedPrefixes) => {
     if (selector.startsWith(".")) {
       return `${getPrefixedSelector(selector, prefix)}:${pseudo.join(":")}`;
     }
-    return key.replace(/\.([\w-]+)/g, `.${prefix}$1`);
+    return prefixClassSelectors(key, prefix);
   }
   if (key.startsWith(".")) {
     return getPrefixedSelector(key, prefix);
@@ -288,12 +378,7 @@ var processArrayValue = (value, prefix, excludedPrefixes) => {
 var processStringValue = (value, prefix, excludedPrefixes) => {
   if (prefix === 0)
     return value;
-  return value.replace(/var\(--([^)]+)\)/g, (match, variableName) => {
-    if (shouldExcludeVariable(variableName, excludedPrefixes)) {
-      return match;
-    }
-    return `var(--${prefix}${variableName})`;
-  });
+  return prefixCssVariables(value, prefix, excludedPrefixes);
 };
 var processValue = (value, prefix, excludedPrefixes) => {
   if (Array.isArray(value)) {
