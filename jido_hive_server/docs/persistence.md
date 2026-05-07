@@ -75,3 +75,15 @@ Evidence stores opaque refs, stable redacted ids, hashes, bounded metadata, clai
 ## Migration And Preflight Behavior
 
 priv/repo/migrations owns room event, run, snapshot, target, and connector persistence.
+
+## Phase 12 Migration And Preflight Closeout
+
+- Tier: `:local_restart_safe` for SQLite ownership and `:integration_postgres` only as the shared durable profile token used by overlay tests.
+- Schema owner: `JidoHiveServer.Repo`.
+- Migration owner: `jido_hive_server/priv/repo/migrations`.
+- Migration command: `cd jido_hive_server && mix ecto.migrate` for local development or `JidoHiveServer.Release.migrate/0` for release migration.
+- Migration preflight command: `JidoHiveServer.Persistence.preflight(profile: :integration_postgres, migration_proof: :present)`.
+- Failure behavior: missing migration proof returns `{:error, {:missing_migration_proof, :jido_hive_server}}` before room, event, run, snapshot, target, or connector mutation.
+- Rollback behavior: rollback uses `JidoHiveServer.Release.rollback/2` or an operator-owned SQLite database restore; release claims remain open until post-rollback focused tests are recorded.
+- Tagged test command: `cd jido_hive_server && mix test test/jido_hive_server/persistence_preflight_test.exs`.
+- Release claim boundary: durable room truth is valid only after migration proof, focused tests, root QC, static scans, and pushed commit evidence are recorded.

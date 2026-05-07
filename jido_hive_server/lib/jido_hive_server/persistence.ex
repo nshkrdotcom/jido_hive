@@ -21,6 +21,23 @@ defmodule JidoHiveServer.Persistence do
 
   @default_contribution_window 200
 
+  @spec preflight(keyword() | map()) :: :ok | {:error, term()}
+  def preflight(opts \\ []) do
+    attrs = Map.new(opts)
+    component = Map.get(attrs, :component, Map.get(attrs, "component", :jido_hive_server))
+
+    case selected_profile(attrs) do
+      profile when profile in [:mickey_mouse, :memory_debug, :off] ->
+        :ok
+
+      profile when profile in [:integration_postgres, :local_restart_safe] ->
+        require_migration_proof(component, attrs)
+
+      other ->
+        {:error, {:unsupported_persistence_tier, component, other}}
+    end
+  end
+
   @spec persist_room_transition(String.t(), [RoomEvent.t()], RoomSnapshot.t(), list()) ::
           {:ok, RoomSnapshot.t()} | {:error, term()}
   def persist_room_transition(room_id, events, %RoomSnapshot{} = snapshot, _run_updates \\ [])
@@ -519,4 +536,33 @@ defmodule JidoHiveServer.Persistence do
 
   defp normalize_key(key) when is_atom(key), do: Atom.to_string(key)
   defp normalize_key(key), do: key
+
+  defp selected_profile(attrs) do
+    attrs
+    |> Map.get(:profile, Map.get(attrs, "profile"))
+    |> case do
+      nil ->
+        Map.get(attrs, :persistence_profile, Map.get(attrs, "persistence_profile", :mickey_mouse))
+
+      profile ->
+        profile
+    end
+    |> normalize_profile()
+  end
+
+  defp normalize_profile("mickey_mouse"), do: :mickey_mouse
+  defp normalize_profile("memory_debug"), do: :memory_debug
+  defp normalize_profile("off"), do: :off
+  defp normalize_profile("integration_postgres"), do: :integration_postgres
+  defp normalize_profile("local_restart_safe"), do: :local_restart_safe
+  defp normalize_profile(profile), do: profile
+
+  defp require_migration_proof(component, attrs) do
+    case Map.get(attrs, :migration_proof) || Map.get(attrs, "migration_proof") do
+      :present -> :ok
+      true -> :ok
+      paths when is_list(paths) and paths != [] -> :ok
+      _missing -> {:error, {:missing_migration_proof, component}}
+    end
+  end
 end

@@ -75,3 +75,15 @@ Evidence stores opaque refs, stable redacted ids, hashes, bounded metadata, clai
 ## Migration And Preflight Behavior
 
 Uses server migrations and explicit publication storage helpers.
+
+## Phase 12 Migration And Preflight Closeout
+
+- Tier: `:local_restart_safe` through the server SQLite repo and `:integration_postgres` only as the shared durable profile token used by overlay tests.
+- Schema owner: `JidoHiveServer.Repo`.
+- Migration owner: `jido_hive_server/priv/repo/migrations`.
+- Migration command: `JidoHivePublications.Infrastructure.migrate_repo!/0` or the server release migration command before publication-run mutation.
+- Migration preflight command: `JidoHivePublications.Infrastructure.preflight(profile: :integration_postgres, migration_proof: :present)`.
+- Failure behavior: missing migration proof returns `{:error, {:missing_migration_proof, :jido_hive_publications}}` before publication run writes.
+- Rollback behavior: rollback follows the server repo rollback/restore plan; publication release claims remain open until server and publication focused tests pass after rollback.
+- Tagged test command: `cd jido_hive_publications && mix test test/jido_hive_publications/infrastructure_test.exs`.
+- Release claim boundary: publication-run durability is valid only after server migration proof, focused publication tests, root QC, static scans, and pushed commit evidence are recorded.

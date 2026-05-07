@@ -6,6 +6,14 @@ defmodule JidoHivePublications.Infrastructure do
   @ecto_repos_key :ecto_repos
   @repo_app :jido_hive_server
 
+  @spec preflight(keyword() | map()) :: :ok | {:error, term()}
+  def preflight(opts \\ []) do
+    opts
+    |> Map.new()
+    |> Map.put(:component, :jido_hive_publications)
+    |> JidoHiveServer.Persistence.preflight()
+  end
+
   @spec ensure_repo_started() :: :ok | {:error, term()}
   def ensure_repo_started do
     configure_repo()
