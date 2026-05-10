@@ -66,8 +66,7 @@ defmodule JidoHivePublications.Infrastructure do
   end
 
   defp default_database_path do
-    System.get_env("JIDO_HIVE_SERVER_DB") ||
-      Application.get_env(:jido_hive_publications, :server_database) ||
+    Application.get_env(:jido_hive_publications, :server_database) ||
       env_database_path()
   end
 
@@ -106,7 +105,7 @@ defmodule JidoHivePublications.Infrastructure do
 
   defp current_env do
     :jido_hive_publications
-    |> Application.get_env(:server_env, System.get_env("MIX_ENV", "dev"))
+    |> Application.get_env(:server_env, :dev)
     |> to_string()
     |> normalize_env()
   end

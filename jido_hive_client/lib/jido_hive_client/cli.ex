@@ -24,19 +24,21 @@ defmodule JidoHiveClient.CLI do
   @doc false
   @spec run_headless([String.t()]) :: 0 | 1
   defp run_headless(args) do
-    configure_logger()
+    {log_level, command_args} = extract_log_level(args)
+
+    configure_logger(log_level)
     :ok = EscriptBootstrap.start_cli_dependencies()
     started_at = System.monotonic_time(:millisecond)
 
     DebugTrace.emit(:info, "headless.command.started", %{
-      argv: args,
-      command_family: List.first(args)
+      argv: command_args,
+      command_family: List.first(command_args)
     })
 
-    case HeadlessCLI.dispatch(args) do
+    case HeadlessCLI.dispatch(command_args) do
       {:ok, output} ->
         DebugTrace.emit(:info, "headless.command.completed", %{
-          argv: args,
+          argv: command_args,
           elapsed_ms: System.monotonic_time(:millisecond) - started_at,
           status: "ok"
         })
@@ -46,7 +48,7 @@ defmodule JidoHiveClient.CLI do
 
       {:error, reason} ->
         DebugTrace.emit(:error, "headless.command.failed", %{
-          argv: args,
+          argv: command_args,
           elapsed_ms: System.monotonic_time(:millisecond) - started_at,
           reason: inspect(reason)
         })
@@ -56,15 +58,27 @@ defmodule JidoHiveClient.CLI do
     end
   end
 
-  defp configure_logger do
-    level = parse_log_level(System.get_env("JIDO_HIVE_CLIENT_LOG_LEVEL", "warning"))
+  defp extract_log_level(["--log-level", level | rest]), do: {parse_log_level(level), rest}
 
+  defp extract_log_level([<<"--log-level=", level::binary>> | rest]),
+    do: {parse_log_level(level), rest}
+
+  defp extract_log_level(args), do: {configured_log_level(), args}
+
+  defp configured_log_level do
+    :jido_hive_client
+    |> Application.get_env(:log_level, :warning)
+    |> parse_log_level()
+  end
+
+  defp configure_logger(level) do
     Logger.configure(level: primary_logger_level(level))
     Application.put_env(:jido_hive_client, :debug_trace_level, debug_trace_level(level))
     clear_structured_module_levels()
     apply_structured_module_levels(level)
   end
 
+  defp parse_log_level(level) when is_atom(level), do: parse_log_level(Atom.to_string(level))
   defp parse_log_level("debug"), do: :debug
   defp parse_log_level("info"), do: :info
   defp parse_log_level("warning"), do: :warning

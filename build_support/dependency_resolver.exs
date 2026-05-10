@@ -1,3 +1,7 @@
+unless Code.ensure_loaded?(DependencySources) do
+  Code.require_file("dependency_sources.exs", __DIR__)
+end
+
 defmodule JidoHive.Build.DependencyResolver do
   @moduledoc false
 
@@ -68,6 +72,32 @@ defmodule JidoHive.Build.DependencyResolver do
       :pristine,
       ["../pristine/apps/pristine_runtime"],
       [github: "nshkrdotcom/pristine", branch: "main", subdir: "apps/pristine_runtime"],
+      opts
+    )
+  end
+
+  def execution_plane(opts \\ []) do
+    resolve(
+      :execution_plane,
+      ["../execution_plane/core/execution_plane"],
+      [
+        github: "nshkrdotcom/execution_plane",
+        branch: "main",
+        subdir: "core/execution_plane"
+      ],
+      opts
+    )
+  end
+
+  def ground_plane_persistence_policy(opts \\ []) do
+    resolve(
+      :ground_plane_persistence_policy,
+      ["../ground_plane/core/persistence_policy"],
+      [
+        github: "nshkrdotcom/ground_plane",
+        branch: "main",
+        subdir: "core/persistence_policy"
+      ],
       opts
     )
   end
@@ -258,10 +288,12 @@ defmodule JidoHive.Build.DependencyResolver do
   end
 
   defp resolve(app, local_paths, fallback_opts, opts) do
-    case workspace_path(local_paths) do
-      nil -> {app, Keyword.merge(fallback_opts, opts)}
-      path -> {app, Keyword.merge([path: path], opts)}
-    end
+    _local_paths = local_paths
+    _fallback_opts = fallback_opts
+
+    app
+    |> DependencySources.dep(@repo_root, opts)
+    |> absolutize_path()
   end
 
   defp resolve_hex(app, requirement, local_paths, opts) do
@@ -286,6 +318,30 @@ defmodule JidoHive.Build.DependencyResolver do
 
     if File.dir?(expanded_path) do
       expanded_path
+    end
+  end
+
+  defp absolutize_path({app, opts}) when is_list(opts) do
+    {app, absolutize_path_opts(opts)}
+  end
+
+  defp absolutize_path({app, requirement, opts}) when is_list(opts) do
+    {app, requirement, absolutize_path_opts(opts)}
+  end
+
+  defp absolutize_path(dep), do: dep
+
+  defp absolutize_path_opts(opts) do
+    case Keyword.fetch(opts, :path) do
+      {:ok, path} when is_binary(path) ->
+        if Path.type(path) == :absolute do
+          opts
+        else
+          Keyword.put(opts, :path, Path.expand(path, @repo_root))
+        end
+
+      _other ->
+        opts
     end
   end
 end

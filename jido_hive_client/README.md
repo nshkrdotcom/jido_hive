@@ -56,8 +56,7 @@ mix escript.build
 ### Capture a structured trace
 
 ```bash
-JIDO_HIVE_CLIENT_LOG_LEVEL=debug \
-./jido_hive_client room show --api-base-url http://127.0.0.1:4000/api --room-id <room-id> \
+./jido_hive_client --log-level debug room show --api-base-url http://127.0.0.1:4000/api --room-id <room-id> \
   > room.json \
   2> trace.ndjson
 ```

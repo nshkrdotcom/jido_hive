@@ -127,8 +127,7 @@ For bash-first debugging, prefer:
 
 ```bash
 cd jido_hive_client
-JIDO_HIVE_CLIENT_LOG_LEVEL=debug \
-./jido_hive_client room show --api-base-url http://127.0.0.1:4000/api --room-id <room-id> \
+./jido_hive_client --log-level debug room show --api-base-url http://127.0.0.1:4000/api --room-id <room-id> \
   > room.json \
   2> trace.ndjson
 ```
@@ -185,6 +184,26 @@ Specific guardrails:
 - `jido_hive_web` must not bypass the shared operator seam to reach into server internals
 - `jido_hive_switchyard_tui` owns terminal workflow state, not server truth
 - `examples/jido_hive_console` stays a thin composition layer
+
+## Dependency Sources
+
+Jido Hive is not in the Weld consumer set. Do not add a Weld dependency or Weld
+task here as part of dependency cleanup.
+
+Cross-repo dependency selection belongs in
+`build_support/dependency_sources.config.exs` and is consumed through
+`build_support/dependency_resolver.exs`. Keep local path/GitHub fallback data in
+that config instead of adding new one-off resolver logic or process-env toggles.
+Machine-local overrides belong in `.dependency_sources.local.exs`, which must
+remain untracked.
+
+## Runtime Environment
+
+Do not read or mutate OS environment variables from runtime `lib/**` code.
+Deployment environment reads belong at OTP boot boundaries such as
+`config/runtime.exs`; runtime modules should receive explicit options or
+materialized application config. CLI behavior should use explicit flags such as
+`--log-level`, `--control-port`, and `--control-host`.
 
 ## Connector Tokens
 

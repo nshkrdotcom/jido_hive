@@ -53,6 +53,9 @@ defmodule JidoHiveConsole.MixProject do
       {:jido_hive_switchyard_tui, path: "../../jido_hive_switchyard_tui"},
       DependencyResolver.jido_signal(override: true),
       DependencyResolver.jido_integration_contracts(override: true),
+      DependencyResolver.jido_integration_platform(override: true),
+      DependencyResolver.execution_plane(override: true),
+      DependencyResolver.ground_plane_persistence_policy(override: true),
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
       {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false},
       {:ex_doc, "~> 0.40", only: [:dev, :test], runtime: false}

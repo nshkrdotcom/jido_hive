@@ -14,7 +14,7 @@ defmodule JidoHiveWorkerRuntime.CLI do
   def main(args) do
     case run(args) do
       {:ok, opts} ->
-        configure_logger()
+        configure_logger(Keyword.get(opts, :log_level, :warning))
         :ok = EscriptBootstrap.start_cli_dependencies()
         configure_application(opts)
 
@@ -70,6 +70,7 @@ defmodule JidoHiveWorkerRuntime.CLI do
       --reasoning-effort LEVEL
       --timeout-ms N
       --cli-path PATH
+      --log-level LEVEL
       --control-port N
       --control-host HOST
     """
@@ -95,6 +96,7 @@ defmodule JidoHiveWorkerRuntime.CLI do
           reasoning_effort: :string,
           timeout_ms: :integer,
           cli_path: :string,
+          log_level: :string,
           control_port: :integer,
           control_host: :string,
           governed_authority_ref: :string,
@@ -131,24 +133,21 @@ defmodule JidoHiveWorkerRuntime.CLI do
   end
 
   defp normalize_cli_opts(opts) do
+    log_level = parse_log_level(Keyword.get(opts, :log_level, "warning"))
+
     case Keyword.get(opts, :governed_authority_ref) do
-      nil -> {:ok, standalone_cli_opts(opts)}
-      _authority_ref -> governed_cli_opts(opts)
+      nil ->
+        {:ok, Keyword.put(standalone_cli_opts(opts), :log_level, log_level)}
+
+      _authority_ref ->
+        with {:ok, worker_opts} <- governed_cli_opts(opts) do
+          {:ok, Keyword.put(worker_opts, :log_level, log_level)}
+        end
     end
   end
 
   defp standalone_cli_opts(opts) do
     workspace_id = Keyword.get(opts, :workspace_id, "workspace-local")
-
-    control_port =
-      Keyword.get(opts, :control_port) || env_integer("JIDO_HIVE_CLIENT_CONTROL_PORT")
-
-    control_host =
-      Keyword.get(
-        opts,
-        :control_host,
-        System.get_env("JIDO_HIVE_CLIENT_CONTROL_HOST", "127.0.0.1")
-      )
 
     [
       url: Keyword.get(opts, :url, "ws://127.0.0.1:4000/socket/websocket"),
@@ -162,8 +161,8 @@ defmodule JidoHiveWorkerRuntime.CLI do
       capability_id: Keyword.get(opts, :capability_id, "workspace.exec.session"),
       workspace_root: Keyword.get(opts, :workspace_root, File.cwd!()),
       runtime_id: :asm,
-      control_port: control_port,
-      control_host: control_host,
+      control_port: Keyword.get(opts, :control_port),
+      control_host: Keyword.get(opts, :control_host, "127.0.0.1"),
       runtime: JidoHiveWorkerRuntime.Runtime,
       executor:
         {JidoHiveWorkerRuntime.Executor.Session,
@@ -272,14 +271,13 @@ defmodule JidoHiveWorkerRuntime.CLI do
     end
   end
 
-  defp configure_logger do
-    level = parse_log_level(System.get_env("JIDO_HIVE_CLIENT_LOG_LEVEL", "warning"))
-
+  defp configure_logger(level) do
     Logger.configure(level: primary_logger_level(level))
     clear_structured_module_levels()
     apply_structured_module_levels(level)
   end
 
+  defp parse_log_level(level) when is_atom(level), do: parse_log_level(Atom.to_string(level))
   defp parse_log_level("debug"), do: :debug
   defp parse_log_level("info"), do: :info
   defp parse_log_level("warning"), do: :warning
@@ -328,19 +326,6 @@ defmodule JidoHiveWorkerRuntime.CLI do
       "high" -> :high
       "xhigh" -> :xhigh
       _other -> nil
-    end
-  end
-
-  defp env_integer(name) when is_binary(name) do
-    case System.get_env(name) do
-      nil ->
-        nil
-
-      value ->
-        case Integer.parse(value) do
-          {integer, ""} -> integer
-          _other -> nil
-        end
     end
   end
 

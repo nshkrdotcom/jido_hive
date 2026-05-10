@@ -65,6 +65,8 @@ defmodule JidoHiveWeb.MixProject do
       {:jido_hive_surface, path: "../jido_hive_surface"},
       DependencyResolver.jido_signal(override: true),
       DependencyResolver.jido_integration_contracts(override: true),
+      DependencyResolver.execution_plane(override: true),
+      DependencyResolver.ground_plane_persistence_policy(override: true),
       {:phoenix, "~> 1.8.1"},
       {:phoenix_html, "~> 4.1"},
       {:phoenix_live_reload, "~> 1.2", only: :dev},

@@ -93,7 +93,7 @@ defmodule JidoHiveWorkspace.MixProject do
         unset_env: ["HEX_API_KEY", "SSLKEYLOGFILE"]
       ],
       parallelism: [
-        env: "JIDO_HIVE_MONOREPO_MAX_CONCURRENCY",
+        max_concurrency: nil,
         multiplier: :auto,
         base: [
           deps_get: 3,
@@ -120,6 +120,7 @@ defmodule JidoHiveWorkspace.MixProject do
 
   defp package do
     [
+      files: ["build_support", "mix.exs", "README.md", "LICENSE"],
       licenses: ["MIT"],
       links: %{"GitHub" => @source_url}
     ]

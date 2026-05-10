@@ -3,15 +3,6 @@ defmodule JidoHiveWorkerRuntime.GovernedAuthorityTest do
 
   alias JidoHiveWorkerRuntime.{CLI, Runtime}
 
-  setup do
-    previous_control_port = System.get_env("JIDO_HIVE_CLIENT_CONTROL_PORT")
-    System.put_env("JIDO_HIVE_CLIENT_CONTROL_PORT", "5999")
-
-    on_exit(fn ->
-      restore_env("JIDO_HIVE_CLIENT_CONTROL_PORT", previous_control_port)
-    end)
-  end
-
   test "governed worker CLI materializes worker and provider options from authority only" do
     assert {:ok, opts} =
              CLI.run([
@@ -30,7 +21,9 @@ defmodule JidoHiveWorkerRuntime.GovernedAuthorityTest do
                "--governed-control-port",
                "4555",
                "--governed-control-host",
-               "127.0.0.2"
+               "127.0.0.2",
+               "--log-level",
+               "info"
              ])
 
     assert Keyword.fetch!(opts, :governed_authority_ref) == "auth-worker-1"
@@ -38,6 +31,7 @@ defmodule JidoHiveWorkerRuntime.GovernedAuthorityTest do
     assert Keyword.fetch!(opts, :participant_id) == "worker-ref-1"
     assert Keyword.fetch!(opts, :control_port) == 4555
     assert Keyword.fetch!(opts, :control_host) == "127.0.0.2"
+    assert Keyword.fetch!(opts, :log_level) == :info
 
     assert {JidoHiveWorkerRuntime.Executor.Session, executor_opts} =
              Keyword.fetch!(opts, :executor)
@@ -46,10 +40,9 @@ defmodule JidoHiveWorkerRuntime.GovernedAuthorityTest do
     assert Keyword.fetch!(executor_opts, :model) == "claude-opus"
     assert Keyword.fetch!(executor_opts, :reasoning_effort) == :medium
     assert Keyword.fetch!(executor_opts, :credential_ref) == "cred-worker-1"
-    refute Keyword.fetch!(opts, :control_port) == 5999
   end
 
-  test "governed worker CLI rejects direct singleton and env-driven runtime fields" do
+  test "governed worker CLI rejects direct singleton runtime fields" do
     assert CLI.run([
              "--governed-authority-ref",
              "auth-worker-1",
@@ -85,7 +78,4 @@ defmodule JidoHiveWorkerRuntime.GovernedAuthorityTest do
     assert String.contains?(event_reason, "[REDACTED]")
     refute String.contains?(event_reason, "env-secret-worker")
   end
-
-  defp restore_env(name, nil), do: System.delete_env(name)
-  defp restore_env(name, value), do: System.put_env(name, value)
 end
