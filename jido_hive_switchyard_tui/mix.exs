@@ -47,6 +47,7 @@ defmodule JidoHive.Switchyard.TUI.MixProject do
       DependencyResolver.jido_integration_contracts(override: true),
       DependencyResolver.jido_integration_platform(override: true),
       DependencyResolver.execution_plane(override: true),
+      DependencyResolver.ground_plane_contracts(override: true),
       DependencyResolver.ground_plane_persistence_policy(override: true),
       DependencyResolver.switchyard_tui(),
       DependencyResolver.switchyard_tui_framework(),

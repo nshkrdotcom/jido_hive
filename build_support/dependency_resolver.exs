@@ -30,7 +30,7 @@ defmodule JidoHive.Build.DependencyResolver do
   def jido_signal(opts \\ []) do
     resolve(
       :jido_signal,
-      ["../jido_signal"],
+      ["../../j/jido_signal"],
       [github: "nshkrdotcom/jido_signal", branch: "main"],
       opts
     )
@@ -84,6 +84,19 @@ defmodule JidoHive.Build.DependencyResolver do
         github: "nshkrdotcom/execution_plane",
         branch: "main",
         subdir: "core/execution_plane"
+      ],
+      opts
+    )
+  end
+
+  def ground_plane_contracts(opts \\ []) do
+    resolve(
+      :ground_plane_contracts,
+      ["../ground_plane/core/ground_plane_contracts"],
+      [
+        github: "nshkrdotcom/ground_plane",
+        branch: "main",
+        subdir: "core/ground_plane_contracts"
       ],
       opts
     )

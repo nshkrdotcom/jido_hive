@@ -7,7 +7,7 @@
       publish_order: [:github]
     },
     jido_signal: %{
-      path: "../jido_signal",
+      path: "../../j/jido_signal",
       github: %{repo: "nshkrdotcom/jido_signal", branch: "main"},
       default_order: [:path, :github],
       publish_order: [:github]
@@ -47,6 +47,17 @@
         repo: "nshkrdotcom/execution_plane",
         branch: "main",
         subdir: "core/execution_plane"
+      },
+      opts: [override: true],
+      default_order: [:path, :github],
+      publish_order: [:github]
+    },
+    ground_plane_contracts: %{
+      path: "../ground_plane/core/ground_plane_contracts",
+      github: %{
+        repo: "nshkrdotcom/ground_plane",
+        branch: "main",
+        subdir: "core/ground_plane_contracts"
       },
       opts: [override: true],
       default_order: [:path, :github],
