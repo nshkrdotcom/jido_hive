@@ -12,4 +12,3 @@ repomix*.xml
 /jido_hive_client/jido_hive_client
 /examples/jido_hive_console/hive
 **/doc/
-/.dependency_sources.local.exs

@@ -1,9 +1,7 @@
-Code.require_file("../build_support/dependency_resolver.exs", __DIR__)
+if bootstrap = System.get_env("MIX_WORKSPACE_OPS_BOOTSTRAP"), do: Code.require_file(bootstrap)
 
 defmodule JidoHiveServer.MixProject do
   use Mix.Project
-
-  alias JidoHive.Build.DependencyResolver
 
   @source_url "https://github.com/nshkrdotcom/jido_hive"
 
@@ -70,22 +68,72 @@ defmodule JidoHiveServer.MixProject do
       {:ecto_sql, "~> 3.13"},
       {:ecto_sqlite3, "~> 0.20"},
       {:jido_hive_context_graph, path: "../jido_hive_context_graph"},
-      DependencyResolver.jido(override: true),
-      DependencyResolver.jido_action(override: true),
-      DependencyResolver.jido_signal(override: true),
-      DependencyResolver.jido_harness(override: true),
-      DependencyResolver.jido_shell(override: true),
-      DependencyResolver.jido_vfs(override: true),
-      DependencyResolver.sprites(override: true),
-      DependencyResolver.pristine(override: true),
-      DependencyResolver.execution_plane(override: true),
-      DependencyResolver.ground_plane_contracts(override: true),
-      DependencyResolver.ground_plane_persistence_policy(override: true),
-      DependencyResolver.jido_integration_platform(override: true),
-      DependencyResolver.jido_integration_asm_runtime_bridge(override: true),
-      DependencyResolver.jido_integration_github(),
-      DependencyResolver.jido_integration_notion(),
-      DependencyResolver.coolify_ex(only: :coolify, runtime: false),
+      {:jido, "~> 2.2", override: true},
+      {:jido_action, "~> 2.2", override: true},
+      workspace_dep(
+        {:jido_signal, github: "nshkrdotcom/jido_signal", branch: "main", override: true}
+      ),
+      workspace_dep(
+        {:jido_harness, github: "nshkrdotcom/jido_harness", branch: "main", override: true}
+      ),
+      workspace_dep(
+        {:jido_shell, github: "nshkrdotcom/jido_shell", branch: "main", override: true}
+      ),
+      workspace_dep({:jido_vfs, github: "nshkrdotcom/jido_vfs", branch: "main", override: true}),
+      workspace_dep(
+        {:sprites, github: "mikehostetler/sprites-ex", branch: "main", override: true}
+      ),
+      workspace_dep(
+        {:pristine,
+         github: "nshkrdotcom/pristine",
+         branch: "main",
+         subdir: "apps/pristine_runtime",
+         override: true}
+      ),
+      workspace_dep(
+        {:execution_plane,
+         github: "nshkrdotcom/execution_plane",
+         branch: "main",
+         subdir: "core/execution_plane",
+         override: true}
+      ),
+      workspace_dep(
+        {:ground_plane_contracts,
+         github: "nshkrdotcom/ground_plane",
+         branch: "main",
+         subdir: "core/ground_plane_contracts",
+         override: true}
+      ),
+      workspace_dep(
+        {:ground_plane_persistence_policy,
+         github: "nshkrdotcom/ground_plane",
+         branch: "main",
+         subdir: "core/persistence_policy",
+         override: true}
+      ),
+      workspace_dep(
+        {:jido_integration_v2,
+         github: "agentjido/jido_integration",
+         branch: "main",
+         subdir: "core/platform",
+         override: true}
+      ),
+      workspace_dep(
+        {:jido_integration_v2_asm_runtime_bridge,
+         github: "agentjido/jido_integration",
+         branch: "main",
+         subdir: "core/asm_runtime_bridge",
+         override: true}
+      ),
+      workspace_dep(
+        {:jido_integration_v2_github,
+         github: "agentjido/jido_integration", branch: "main", subdir: "connectors/github"}
+      ),
+      workspace_dep(
+        {:jido_integration_v2_notion,
+         github: "agentjido/jido_integration", branch: "main", subdir: "connectors/notion"}
+      ),
+      {:coolify_ex, "~> 0.5.1", only: :coolify, runtime: false},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
       {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false},
       {:ex_doc, "~> 0.40", only: [:dev, :test], runtime: false},
@@ -139,5 +187,11 @@ defmodule JidoHiveServer.MixProject do
       ],
       source_url: @source_url
     ]
+  end
+
+  defp workspace_dep(committed) do
+    if function_exported?(MixWorkspaceOpsBootstrap, :dep, 2),
+      do: apply(MixWorkspaceOpsBootstrap, :dep, [committed, __DIR__]),
+      else: committed
   end
 end

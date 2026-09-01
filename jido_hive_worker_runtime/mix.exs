@@ -1,6 +1,4 @@
-unless Code.ensure_loaded?(JidoHive.Build.DependencyResolver) do
-  Code.require_file("../build_support/dependency_resolver.exs", __DIR__)
-end
+if bootstrap = System.get_env("MIX_WORKSPACE_OPS_BOOTSTRAP"), do: Code.require_file(bootstrap)
 
 unless Code.ensure_loaded?(JidoHive.Build.PackageDocs) do
   Code.require_file("../build_support/package_docs.exs", __DIR__)
@@ -9,7 +7,7 @@ end
 defmodule JidoHiveWorkerRuntime.MixProject do
   use Mix.Project
 
-  alias JidoHive.Build.{DependencyResolver, PackageDocs}
+  alias JidoHive.Build.PackageDocs
 
   def project do
     [
@@ -58,16 +56,48 @@ defmodule JidoHiveWorkerRuntime.MixProject do
       {:jason, "~> 1.4"},
       {:phoenix_client, "~> 0.11.1"},
       {:plug_cowboy, "~> 2.7"},
-      DependencyResolver.jido(override: true),
-      DependencyResolver.jido_signal(override: true),
-      DependencyResolver.jido_harness(override: true),
-      DependencyResolver.jido_shell(override: true),
-      DependencyResolver.jido_vfs(override: true),
-      DependencyResolver.sprites(override: true),
-      DependencyResolver.execution_plane(override: true),
-      DependencyResolver.ground_plane_contracts(override: true),
-      DependencyResolver.ground_plane_persistence_policy(override: true),
-      DependencyResolver.jido_integration_asm_runtime_bridge(override: true),
+      {:jido, "~> 2.2", override: true},
+      workspace_dep(
+        {:jido_signal, github: "nshkrdotcom/jido_signal", branch: "main", override: true}
+      ),
+      workspace_dep(
+        {:jido_harness, github: "nshkrdotcom/jido_harness", branch: "main", override: true}
+      ),
+      workspace_dep(
+        {:jido_shell, github: "nshkrdotcom/jido_shell", branch: "main", override: true}
+      ),
+      workspace_dep({:jido_vfs, github: "nshkrdotcom/jido_vfs", branch: "main", override: true}),
+      workspace_dep(
+        {:sprites, github: "mikehostetler/sprites-ex", branch: "main", override: true}
+      ),
+      workspace_dep(
+        {:execution_plane,
+         github: "nshkrdotcom/execution_plane",
+         branch: "main",
+         subdir: "core/execution_plane",
+         override: true}
+      ),
+      workspace_dep(
+        {:ground_plane_contracts,
+         github: "nshkrdotcom/ground_plane",
+         branch: "main",
+         subdir: "core/ground_plane_contracts",
+         override: true}
+      ),
+      workspace_dep(
+        {:ground_plane_persistence_policy,
+         github: "nshkrdotcom/ground_plane",
+         branch: "main",
+         subdir: "core/persistence_policy",
+         override: true}
+      ),
+      workspace_dep(
+        {:jido_integration_v2_asm_runtime_bridge,
+         github: "agentjido/jido_integration",
+         branch: "main",
+         subdir: "core/asm_runtime_bridge",
+         override: true}
+      ),
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
       {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false},
       {:ex_doc, "~> 0.40", only: [:dev, :test], runtime: false}
@@ -90,5 +120,11 @@ defmodule JidoHiveWorkerRuntime.MixProject do
 
   defp docs do
     PackageDocs.docs(package_title: "Jido Hive Worker Runtime")
+  end
+
+  defp workspace_dep(committed) do
+    if function_exported?(MixWorkspaceOpsBootstrap, :dep, 2),
+      do: apply(MixWorkspaceOpsBootstrap, :dep, [committed, __DIR__]),
+      else: committed
   end
 end

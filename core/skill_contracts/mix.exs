@@ -1,6 +1,4 @@
-unless Code.ensure_loaded?(JidoHive.Build.DependencyResolver) do
-  Code.require_file("../../build_support/dependency_resolver.exs", __DIR__)
-end
+if bootstrap = System.get_env("MIX_WORKSPACE_OPS_BOOTSTRAP"), do: Code.require_file(bootstrap)
 
 unless Code.ensure_loaded?(JidoHive.Build.PackageDocs) do
   Code.require_file("../../build_support/package_docs.exs", __DIR__)
@@ -9,7 +7,6 @@ end
 defmodule JidoHive.SkillContracts.MixProject do
   use Mix.Project
 
-  alias JidoHive.Build.DependencyResolver
   alias JidoHive.Build.PackageDocs
 
   def project do
@@ -44,7 +41,13 @@ defmodule JidoHive.SkillContracts.MixProject do
 
   defp deps do
     [
-      DependencyResolver.jido_integration_contracts(runtime: false),
+      workspace_dep(
+        {:jido_integration_contracts,
+         github: "agentjido/jido_integration",
+         branch: "main",
+         subdir: "core/contracts",
+         runtime: false}
+      ),
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
       {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false},
       {:ex_doc, "~> 0.40", only: [:dev, :test], runtime: false}
@@ -53,5 +56,11 @@ defmodule JidoHive.SkillContracts.MixProject do
 
   defp docs do
     PackageDocs.docs(package_title: "Jido Hive Skill Contracts", root_prefix: "../..")
+  end
+
+  defp workspace_dep(committed) do
+    if function_exported?(MixWorkspaceOpsBootstrap, :dep, 2),
+      do: apply(MixWorkspaceOpsBootstrap, :dep, [committed, __DIR__]),
+      else: committed
   end
 end

@@ -190,12 +190,12 @@ Specific guardrails:
 Jido Hive is not in the Weld consumer set. Do not add a Weld dependency or Weld
 task here as part of dependency cleanup.
 
-Cross-repo dependency selection belongs in
-`build_support/dependency_sources.config.exs` and is consumed through
-`build_support/dependency_resolver.exs`. Keep local path/GitHub fallback data in
-that config instead of adding new one-off resolver logic or process-env toggles.
-Machine-local overrides belong in `.dependency_sources.local.exs`, which must
-remain untracked.
+Every `mix.exs` contains its ordinary standalone dependency tuple. Same-repo
+packages use relative `path:` tuples; normal external packages use Hex or Git
+coordinates. For cross-repository packages only, Mix Workspace Ops may
+substitute source coordinates through the tuple-first `workspace_dep/1` seam.
+Do not add repository-local source resolvers, machine-specific paths, or
+ambient source-selection configuration.
 
 ## Runtime Environment
 
