@@ -26,7 +26,7 @@ defmodule JidoHiveWorkspace.MixProject do
 
   defp deps do
     [
-      {:blitz, "~> 0.3.0", runtime: false}
+      {:blitz, "~> 0.4.1", runtime: false}
     ]
   end
 

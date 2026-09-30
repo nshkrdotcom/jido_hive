@@ -92,13 +92,13 @@ defmodule JidoHiveWeb.MixProject do
          subdir: "core/persistence_policy",
          override: true}
       ),
-      {:phoenix, "~> 1.8.1"},
-      {:phoenix_html, "~> 4.1"},
-      {:phoenix_live_reload, "~> 1.2", only: :dev},
-      {:phoenix_live_view, "~> 1.2.7"},
+      {:phoenix, "~> 1.8.15"},
+      {:phoenix_html, "~> 4.3.0"},
+      {:phoenix_live_reload, "~> 1.7.0", only: :dev},
+      {:phoenix_live_view, "~> 1.2.12"},
       {:lazy_html, ">= 0.1.0", only: :test},
-      {:esbuild, "~> 0.10", runtime: Mix.env() == :dev},
-      {:tailwind, "~> 0.3", runtime: Mix.env() == :dev},
+      {:esbuild, "~> 0.10.0", runtime: Mix.env() == :dev},
+      {:tailwind, "~> 0.5.1", runtime: Mix.env() == :dev},
       {:heroicons,
        github: "tailwindlabs/heroicons",
        tag: "v2.2.0",
@@ -106,14 +106,14 @@ defmodule JidoHiveWeb.MixProject do
        app: false,
        compile: false,
        depth: 1},
-      {:telemetry_metrics, "~> 1.0"},
-      {:telemetry_poller, "~> 1.0"},
-      {:jason, "~> 1.2"},
-      {:dns_cluster, "~> 0.2.0"},
-      {:bandit, "~> 1.5"},
-      {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
-      {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false},
-      {:ex_doc, "~> 0.40", only: [:dev, :test], runtime: false}
+      {:telemetry_metrics, "~> 1.2.0"},
+      {:telemetry_poller, "~> 1.3.0"},
+      {:jason, "~> 1.4.5"},
+      {:dns_cluster, "~> 0.3.0"},
+      {:bandit, "~> 1.12.5"},
+      {:credo, "~> 1.7.19", only: [:dev, :test], runtime: false},
+      {:dialyxir, "~> 1.4.8", only: [:dev, :test], runtime: false},
+      {:ex_doc, "~> 0.40.4", only: [:dev, :test], runtime: false}
     ]
   end
 

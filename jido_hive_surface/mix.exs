@@ -42,9 +42,9 @@ defmodule JidoHive.Surface.MixProject do
       {:app_kit_scope_objects, path: "../../app_kit/core/scope_objects"},
       {:app_kit_chat_surface, path: "../../app_kit/core/chat_surface"},
       {:app_kit_operator_surface, path: "../../app_kit/core/operator_surface"},
-      {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
-      {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false},
-      {:ex_doc, "~> 0.40", only: [:dev, :test], runtime: false}
+      {:credo, "~> 1.7.19", only: [:dev, :test], runtime: false},
+      {:dialyxir, "~> 1.4.8", only: [:dev, :test], runtime: false},
+      {:ex_doc, "~> 0.40.4", only: [:dev, :test], runtime: false}
     ]
   end
 

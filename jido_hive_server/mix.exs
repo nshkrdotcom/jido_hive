@@ -58,18 +58,18 @@ defmodule JidoHiveServer.MixProject do
   # Type `mix help deps` for examples and options.
   defp deps do
     [
-      {:phoenix, "~> 1.8.5"},
-      {:telemetry_metrics, "~> 1.0"},
-      {:telemetry_poller, "~> 1.0"},
-      {:gettext, "~> 1.0"},
-      {:jason, "~> 1.4"},
-      {:dns_cluster, "~> 0.2.0"},
-      {:bandit, "~> 1.5"},
-      {:ecto_sql, "~> 3.13"},
-      {:ecto_sqlite3, "~> 0.20"},
+      {:phoenix, "~> 1.8.15"},
+      {:telemetry_metrics, "~> 1.2.0"},
+      {:telemetry_poller, "~> 1.3.0"},
+      {:gettext, "~> 1.0.2"},
+      {:jason, "~> 1.4.5"},
+      {:dns_cluster, "~> 0.3.0"},
+      {:bandit, "~> 1.12.5"},
+      {:ecto_sql, "~> 3.14.0"},
+      {:ecto_sqlite3, "~> 0.25.0"},
       {:jido_hive_context_graph, path: "../jido_hive_context_graph"},
-      {:jido, "~> 2.2", override: true},
-      {:jido_action, "~> 2.2", override: true},
+      {:jido, "~> 2.3.3", override: true},
+      {:jido_action, "~> 2.3.2", override: true},
       workspace_dep(
         {:jido_signal, github: "nshkrdotcom/jido_signal", branch: "main", override: true}
       ),
@@ -134,9 +134,9 @@ defmodule JidoHiveServer.MixProject do
          github: "agentjido/jido_integration", branch: "main", subdir: "connectors/notion"}
       ),
       {:coolify_ex, "~> 0.5.1", only: :coolify, runtime: false},
-      {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
-      {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false},
-      {:ex_doc, "~> 0.40", only: [:dev, :test], runtime: false},
+      {:credo, "~> 1.7.19", only: [:dev, :test], runtime: false},
+      {:dialyxir, "~> 1.4.8", only: [:dev, :test], runtime: false},
+      {:ex_doc, "~> 0.40.4", only: [:dev, :test], runtime: false},
       {:jido_hive_worker_runtime, path: "../jido_hive_worker_runtime", only: :test},
       {:phoenix_client, "~> 0.11.1", only: :test}
     ]

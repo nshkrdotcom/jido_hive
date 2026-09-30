@@ -53,10 +53,10 @@ defmodule JidoHiveWorkerRuntime.MixProject do
 
   defp deps do
     [
-      {:jason, "~> 1.4"},
+      {:jason, "~> 1.4.5"},
       {:phoenix_client, "~> 0.11.1"},
-      {:plug_cowboy, "~> 2.7"},
-      {:jido, "~> 2.2", override: true},
+      {:plug_cowboy, "~> 2.9.0"},
+      {:jido, "~> 2.3.3", override: true},
       workspace_dep(
         {:jido_signal, github: "nshkrdotcom/jido_signal", branch: "main", override: true}
       ),
@@ -98,9 +98,9 @@ defmodule JidoHiveWorkerRuntime.MixProject do
          subdir: "core/asm_runtime_bridge",
          override: true}
       ),
-      {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
-      {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false},
-      {:ex_doc, "~> 0.40", only: [:dev, :test], runtime: false}
+      {:credo, "~> 1.7.19", only: [:dev, :test], runtime: false},
+      {:dialyxir, "~> 1.4.8", only: [:dev, :test], runtime: false},
+      {:ex_doc, "~> 0.40.4", only: [:dev, :test], runtime: false}
     ]
   end
 

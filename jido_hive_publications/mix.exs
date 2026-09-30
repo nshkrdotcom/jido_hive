@@ -45,10 +45,10 @@ defmodule JidoHive.Publications.MixProject do
       {:jido_hive_client, path: "../jido_hive_client"},
       {:jido_hive_context_graph, path: "../jido_hive_context_graph"},
       {:jido_hive_server, path: "../jido_hive_server", runtime: false},
-      {:ecto_sql, "~> 3.13"},
-      {:ecto_sqlite3, "~> 0.20"},
-      {:jido, "~> 2.2", override: true},
-      {:jido_action, "~> 2.2", override: true},
+      {:ecto_sql, "~> 3.14.0"},
+      {:ecto_sqlite3, "~> 0.25.0"},
+      {:jido, "~> 2.3.3", override: true},
+      {:jido_action, "~> 2.3.2", override: true},
       workspace_dep(
         {:jido_signal, github: "nshkrdotcom/jido_signal", branch: "main", override: true}
       ),
@@ -80,13 +80,13 @@ defmodule JidoHive.Publications.MixProject do
          subdir: "core/platform",
          override: true}
       ),
-      {:phoenix, "~> 1.8.1"},
-      {:phoenix_html, "~> 4.1"},
-      {:phoenix_live_view, "~> 1.2.7"},
+      {:phoenix, "~> 1.8.15"},
+      {:phoenix_html, "~> 4.3.0"},
+      {:phoenix_live_view, "~> 1.2.12"},
       {:lazy_html, ">= 0.1.0", only: :test},
-      {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
-      {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false},
-      {:ex_doc, "~> 0.40", only: [:dev, :test], runtime: false}
+      {:credo, "~> 1.7.19", only: [:dev, :test], runtime: false},
+      {:dialyxir, "~> 1.4.8", only: [:dev, :test], runtime: false},
+      {:ex_doc, "~> 0.40.4", only: [:dev, :test], runtime: false}
     ]
   end
 
